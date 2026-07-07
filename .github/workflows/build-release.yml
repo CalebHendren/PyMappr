@@ -1,0 +1,257 @@
+name: Build and release
+
+# Builds installers/packages for Windows, macOS, Linux (Ubuntu) and
+# Linux (Arch), and attaches them to a GitHub release. Runs automatically
+# whenever a pull request is merged into main (and for v* tags or manual
+# dispatch).
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    if: github.event_name != 'pull_request' || github.event.pull_request.merged == true
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt pyinstaller pytest
+
+      - name: Cache Natural Earth downloads
+        uses: actions/cache@v4
+        with:
+          path: data/downloads
+          key: naturalearth-${{ hashFiles('scripts/fetch_data.py') }}
+
+      - name: Fetch map data
+        run: python scripts/fetch_data.py
+
+      - name: Run tests
+        run: python -m pytest tests/ -q
+
+      - name: Read version
+        id: version
+        run: |
+          $v = python -c "import ezmaps; print(ezmaps.__version__)"
+          "version=$v" >> $env:GITHUB_OUTPUT
+
+      - name: Build executable (PyInstaller)
+        run: python -m PyInstaller packaging/ezmaps.spec --noconfirm
+
+      - name: Smoke-test executable
+        run: |
+          if (-not (Test-Path "dist/EzMaps/EzMaps.exe")) {
+            throw "EzMaps.exe was not produced"
+          }
+          if (-not (Test-Path "dist/EzMaps/_internal/data/shapes")) {
+            throw "bundled map data missing"
+          }
+
+      - name: Build installer (Inno Setup)
+        run: |
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" `
+            /DMyAppVersion=${{ steps.version.outputs.version }} `
+            packaging\installer.iss
+
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-installer
+          path: dist/installer/EzMaps-Setup-*.exe
+          if-no-files-found: error
+
+  build-macos:
+    if: github.event_name != 'pull_request' || github.event.pull_request.merged == true
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt pyinstaller pytest
+
+      - name: Cache Natural Earth downloads
+        uses: actions/cache@v4
+        with:
+          path: data/downloads
+          key: naturalearth-${{ hashFiles('scripts/fetch_data.py') }}
+
+      - name: Fetch map data
+        run: python scripts/fetch_data.py
+
+      - name: Run tests
+        run: python -m pytest tests/ -q
+
+      - name: Read version
+        id: version
+        run: |
+          v=$(python -c "import ezmaps; print(ezmaps.__version__)")
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+
+      - name: Build app bundle (PyInstaller)
+        run: python -m PyInstaller packaging/ezmaps.spec --noconfirm
+
+      - name: Smoke-test app bundle
+        run: |
+          test -d dist/EzMaps.app || { echo "EzMaps.app missing"; exit 1; }
+          test -e dist/EzMaps.app/Contents/MacOS/EzMaps || exit 1
+
+      - name: Build DMG
+        run: |
+          hdiutil create -volname EzMaps \
+            -srcfolder dist/EzMaps.app -ov -format UDZO \
+            "dist/EzMaps-${{ steps.version.outputs.version }}-macOS.dmg"
+
+      - name: Upload DMG artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-dmg
+          path: dist/EzMaps-*-macOS.dmg
+          if-no-files-found: error
+
+  build-ubuntu:
+    if: github.event_name != 'pull_request' || github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt pyinstaller pytest
+
+      - name: Cache Natural Earth downloads
+        uses: actions/cache@v4
+        with:
+          path: data/downloads
+          key: naturalearth-${{ hashFiles('scripts/fetch_data.py') }}
+
+      - name: Fetch map data
+        run: python scripts/fetch_data.py
+
+      - name: Run tests
+        run: python -m pytest tests/ -q
+
+      - name: Build executable (PyInstaller)
+        run: python -m PyInstaller packaging/ezmaps.spec --noconfirm
+
+      - name: Smoke-test executable
+        run: |
+          test -x dist/EzMaps/EzMaps || { echo "EzMaps binary missing"; exit 1; }
+          test -d dist/EzMaps/_internal/data/shapes || exit 1
+
+      - name: Package tarball and .deb
+        run: bash packaging/build_linux.sh ubuntu --deb
+
+      - name: Upload Ubuntu artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-ubuntu
+          path: |
+            dist/EzMaps-*-linux-ubuntu-*.tar.gz
+            dist/ezmaps_*_amd64.deb
+          if-no-files-found: error
+
+  build-arch:
+    if: github.event_name != 'pull_request' || github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    container: archlinux:base-devel
+    steps:
+      - name: Install system packages
+        run: pacman -Syu --noconfirm git python tk
+
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          python -m venv .venv
+          .venv/bin/pip install -r requirements.txt pyinstaller pytest
+
+      - name: Cache Natural Earth downloads
+        uses: actions/cache@v4
+        with:
+          path: data/downloads
+          key: naturalearth-${{ hashFiles('scripts/fetch_data.py') }}
+
+      - name: Fetch map data
+        run: .venv/bin/python scripts/fetch_data.py
+
+      - name: Run tests
+        run: .venv/bin/python -m pytest tests/ -q
+
+      - name: Build executable (PyInstaller)
+        run: .venv/bin/python -m PyInstaller packaging/ezmaps.spec --noconfirm
+
+      - name: Smoke-test executable
+        run: |
+          test -x dist/EzMaps/EzMaps || { echo "EzMaps binary missing"; exit 1; }
+          test -d dist/EzMaps/_internal/data/shapes || exit 1
+
+      - name: Package tarball
+        run: bash packaging/build_linux.sh arch
+
+      - name: Build Arch package (makepkg)
+        run: |
+          version=$(sed -n 's/^__version__ = "\(.*\)"/\1/p' ezmaps/__init__.py)
+          sed -i "s/^pkgver=.*/pkgver=$version/" packaging/arch/PKGBUILD
+          useradd -m builder
+          chown -R builder:builder .
+          su builder -c "cd packaging/arch && makepkg --noconfirm"
+          cp packaging/arch/ezmaps-*.pkg.tar.zst dist/
+
+      - name: Upload Arch artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-arch
+          path: |
+            dist/EzMaps-*-linux-arch-*.tar.gz
+            dist/ezmaps-*.pkg.tar.zst
+          if-no-files-found: error
+
+  release:
+    needs: [build-windows, build-macos, build-ubuntu, build-arch]
+    if: github.event_name != 'pull_request' || github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read version
+        id: version
+        run: |
+          v=$(sed -n 's/^__version__ = "\(.*\)"/\1/p' ezmaps/__init__.py)
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+
+      - name: Create or update release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || format('v{0}', steps.version.outputs.version) }}
+          name: EzMaps ${{ steps.version.outputs.version }}
+          files: release-assets/**
+          fail_on_unmatched_files: true

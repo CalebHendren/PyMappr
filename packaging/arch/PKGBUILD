@@ -1,0 +1,31 @@
+# Maintainer: Caleb Hendren <calebahendren@gmail.com>
+# Packages the PyInstaller output (../../dist/EzMaps) built on Arch Linux.
+# The CI workflow runs pyinstaller first, then makepkg in this directory.
+pkgname=ezmaps
+pkgver=1.0.0
+pkgrel=1
+pkgdesc="Simple desktop mapping software: plot CSV points, heatmaps, PNG export"
+arch=('x86_64')
+url="https://github.com/CalebHendren/EzMaps"
+license=('MIT')
+options=('!strip' '!debug')
+
+package() {
+    local dist="$startdir/../../dist/EzMaps"
+    [ -d "$dist" ] || { echo "dist/EzMaps missing - run pyinstaller first"; return 1; }
+
+    install -dm755 "$pkgdir/opt/ezmaps" "$pkgdir/usr/bin" \
+                   "$pkgdir/usr/share/applications"
+    cp -a "$dist/." "$pkgdir/opt/ezmaps/"
+    ln -s /opt/ezmaps/EzMaps "$pkgdir/usr/bin/ezmaps"
+
+    cat > "$pkgdir/usr/share/applications/ezmaps.desktop" <<EOF
+[Desktop Entry]
+Type=Application
+Name=EzMaps
+Comment=Simple desktop mapping software
+Exec=/opt/ezmaps/EzMaps
+Terminal=false
+Categories=Education;Geography;Science;
+EOF
+}
