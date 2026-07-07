@@ -106,10 +106,16 @@ class MapRenderer:
 
         self._heatmap_on = False
         self._heatmap_radius = 10.0
+        self._heatmap_blur = 0.0
+        self._heatmap_intensity = 1.0
+        self._heatmap_threshold = 0.0
+        self._heatmap_levels = 0
+        self._heatmap_bloom = False
         self._heatmap_cmap = "hot"
         self._heatmap_opacity = 0.7
         self._heatmap_points = False
         self._heatmap_artist = None
+        self._heatmap_bloom_artist = None
 
         self.set_extent("World")
         self._apply_graticule()
@@ -314,9 +320,23 @@ class MapRenderer:
 
     def set_heatmap(self, enabled: bool, radius: float = 10.0,
                     cmap: str = "hot", opacity: float = 0.7,
-                    show_points: bool = False) -> None:
+                    show_points: bool = False, blur: float = 0.0,
+                    intensity: float = 1.0, threshold: float = 0.0,
+                    levels: int = 0, bloom: bool = False) -> None:
+        """Configure the heatmap overlay.
+
+        *radius* is the bandwidth / area of influence, *blur* adds extra
+        smoothing, *intensity* is the weight (gamma) curve, *threshold*
+        clips faint densities, *levels* > 1 classifies the density into
+        discrete bands, and *bloom* draws a soft glow under the heatmap.
+        """
         self._heatmap_on = enabled
         self._heatmap_radius = radius
+        self._heatmap_blur = blur
+        self._heatmap_intensity = intensity
+        self._heatmap_threshold = threshold
+        self._heatmap_levels = levels
+        self._heatmap_bloom = bloom
         self._heatmap_cmap = cmap
         self._heatmap_opacity = opacity
         self._heatmap_points = show_points
@@ -336,6 +356,9 @@ class MapRenderer:
         if self._heatmap_artist is not None:
             self._heatmap_artist.remove()
             self._heatmap_artist = None
+        if self._heatmap_bloom_artist is not None:
+            self._heatmap_bloom_artist.remove()
+            self._heatmap_bloom_artist = None
 
         points_visible = self._point_groups and (
             not self._heatmap_on or self._heatmap_points)
@@ -351,15 +374,35 @@ class MapRenderer:
         if self._heatmap_on and lons.size:
             import matplotlib.pyplot as plt
 
-            density, extent = compute_heatmap(lons, lats,
-                                              radius=self._heatmap_radius)
-            rgba = plt.get_cmap(self._heatmap_cmap)(density)
+            density, extent = compute_heatmap(
+                lons, lats, radius=self._heatmap_radius,
+                blur=self._heatmap_blur, intensity=self._heatmap_intensity,
+                threshold=self._heatmap_threshold,
+                levels=self._heatmap_levels)
+            cmap = plt.get_cmap(self._heatmap_cmap)
+            rgba = cmap(density)
             rgba[..., 3] = self._heatmap_opacity * np.minimum(
                 density / 0.10, 1.0)
             with self._preserving_view():
+                if self._heatmap_bloom:
+                    from scipy.ndimage import gaussian_filter
+
+                    glow = gaussian_filter(density, sigma=8.0)
+                    peak = glow.max()
+                    if peak > 0:
+                        glow /= peak
+                    glow_rgba = cmap(glow)
+                    glow_rgba[..., 3] = (0.55 * self._heatmap_opacity
+                                         * np.minimum(glow / 0.05, 1.0))
+                    self._heatmap_bloom_artist = self.ax.imshow(
+                        glow_rgba, extent=extent, origin="lower",
+                        interpolation="bilinear", zorder=Z_HEATMAP - 0.05)
+                # Keep class boundaries crisp when the density is quantised.
+                interp = ("nearest" if self._heatmap_levels > 1
+                          else "bilinear")
                 self._heatmap_artist = self.ax.imshow(
                     rgba, extent=extent, origin="lower",
-                    interpolation="bilinear", zorder=Z_HEATMAP)
+                    interpolation=interp, zorder=Z_HEATMAP)
         self._update_legend()
 
     def _update_legend(self) -> None:
