@@ -87,6 +87,9 @@ class EzMapsApp:
 
         help_menu = tk.Menu(menubar, tearoff=0)
         help_menu.add_command(label="About EzMaps", command=self._about)
+        help_menu.add_separator()
+        help_menu.add_command(label="Support me on Patreon",
+                              command=self._open_patreon)
         menubar.add_cascade(label="Help", menu=help_menu)
         self.root.config(menu=menubar)
         self.root.bind("<Control-o>", lambda _e: self.on_open_csv())
@@ -100,6 +103,12 @@ class EzMapsApp:
             "Map data \N{COPYRIGHT SIGN} Natural Earth (public domain),\n"
             "naturalearthdata.com",
             parent=self.root)
+
+    def _open_patreon(self) -> None:
+        import webbrowser
+
+        from ezmaps.ui.control_panel import PATREON_URL
+        webbrowser.open(PATREON_URL)
 
     def set_status(self, text: str) -> None:
         self.status.config(text=text)
@@ -163,18 +172,15 @@ class EzMapsApp:
 
     def _update_group_choices(self) -> None:
         assert self.dataset is not None
-        choices = ["None",
-                   f"Name 1 ({self.dataset.name1_label})",
-                   f"Name 2 ({self.dataset.name2_label})"]
-        self.panel.set_group_by_choices(choices, choices[1])
+        choices = ["None"] + list(self.dataset.name_labels)
+        self._group_choice_keys = dict(zip(self.dataset.name_labels,
+                                           self.dataset.name_keys))
+        default = choices[1] if len(choices) > 1 else choices[0]
+        self.panel.set_group_by_choices(choices, default)
 
     def _group_by_key(self) -> str | None:
         value = self.panel.group_by_var.get()
-        if value.startswith("Name 1"):
-            return "name1"
-        if value.startswith("Name 2"):
-            return "name2"
-        return None
+        return getattr(self, "_group_choice_keys", {}).get(value)
 
     def _push_points(self) -> None:
         if self.dataset is None:
@@ -217,10 +223,10 @@ class EzMapsApp:
         title = None
         if self.dataset is not None:
             key = self._group_by_key()
-            if key == "name1":
-                title = self.dataset.name1_label
-            elif key == "name2":
-                title = self.dataset.name2_label
+            if key is not None:
+                labels = dict(zip(self.dataset.name_keys,
+                                  self.dataset.name_labels))
+                title = labels.get(key)
         self.renderer.set_legend(self.panel.legend_show_var.get(), title,
                                  self.panel.legend_loc_var.get())
         if redraw:
@@ -298,6 +304,11 @@ class EzMapsApp:
         self.renderer.set_heatmap(
             enabled=panel.heatmap_var.get() and self.dataset is not None,
             radius=float(panel.heatmap_radius_var.get()),
+            blur=float(panel.heatmap_blur_var.get()),
+            intensity=float(panel.heatmap_intensity_var.get()),
+            threshold=float(panel.heatmap_threshold_var.get()) / 100.0,
+            levels=panel.heatmap_levels(),
+            bloom=panel.heatmap_bloom_var.get(),
             cmap=panel.heatmap_cmap_var.get(),
             opacity=float(panel.heatmap_opacity_var.get()) / 100.0,
             show_points=panel.heatmap_points_var.get())

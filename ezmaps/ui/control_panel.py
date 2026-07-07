@@ -15,7 +15,12 @@ PANEL_WIDTH = 300
 
 GRATICULE_CHOICES = {"Off": None, "1\N{DEGREE SIGN}": 1.0,
                      "5\N{DEGREE SIGN}": 5.0, "10\N{DEGREE SIGN}": 10.0}
-HEATMAP_CMAPS = ["hot", "viridis", "plasma", "inferno", "cool", "YlOrRd"]
+HEATMAP_CMAPS = ["hot", "viridis", "plasma", "inferno", "magma", "cividis",
+                 "cool", "spring", "summer", "autumn", "winter", "turbo",
+                 "jet", "YlOrRd", "YlGnBu", "RdPu", "Reds", "Blues",
+                 "Greens", "Purples"]
+HEATMAP_LEVELS = ["Continuous", "3", "4", "5", "6", "7", "8", "9"]
+PATREON_URL = "https://www.patreon.com/cw/CalebHendren"
 LEGEND_LOCATIONS = ["best", "upper right", "upper left", "lower left",
                     "lower right", "center right"]
 DPI_CHOICES = ["100", "150", "200", "300"]
@@ -62,6 +67,7 @@ class ControlPanel(ttk.Frame):
         self._build_graticule_section()
         self._build_heatmap_section()
         self._build_export_section()
+        self._build_support_section()
 
     # ------------------------------------------------------------- sections
 
@@ -196,27 +202,55 @@ class ControlPanel(ttk.Frame):
         ttk.Checkbutton(sec, text="Show data points on top",
                         variable=self.heatmap_points_var,
                         command=self.app.on_heatmap).pack(anchor="w")
+        self.heatmap_bloom_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(sec, text="Bloom (soft outer glow)",
+                        variable=self.heatmap_bloom_var,
+                        command=self.app.on_heatmap).pack(anchor="w")
 
-        ttk.Label(sec, text="Radius:").pack(anchor="w", pady=(4, 0))
+        def scale(label: str, var, lo, hi, resolution=1.0):
+            ttk.Label(sec, text=label).pack(anchor="w", pady=(4, 0))
+            tk.Scale(sec, from_=lo, to=hi, orient="horizontal", variable=var,
+                     showvalue=True, resolution=resolution,
+                     command=lambda _v: self.app.on_heatmap()).pack(fill="x")
+
         self.heatmap_radius_var = tk.DoubleVar(value=10.0)
-        tk.Scale(sec, from_=2, to=40, orient="horizontal",
-                 variable=self.heatmap_radius_var, showvalue=True,
-                 command=lambda _v: self.app.on_heatmap()).pack(fill="x")
+        scale("Radius / bandwidth:", self.heatmap_radius_var, 2, 40)
 
-        ttk.Label(sec, text="Opacity (%):").pack(anchor="w")
+        self.heatmap_blur_var = tk.DoubleVar(value=0.0)
+        scale("Blur / smoothing:", self.heatmap_blur_var, 0, 20)
+
+        self.heatmap_intensity_var = tk.DoubleVar(value=1.0)
+        scale("Intensity / weight:", self.heatmap_intensity_var,
+              0.2, 3.0, resolution=0.1)
+
+        self.heatmap_threshold_var = tk.DoubleVar(value=0.0)
+        scale("Threshold (% of peak):", self.heatmap_threshold_var, 0, 90)
+
         self.heatmap_opacity_var = tk.DoubleVar(value=70.0)
-        tk.Scale(sec, from_=10, to=100, orient="horizontal",
-                 variable=self.heatmap_opacity_var, showvalue=True,
-                 command=lambda _v: self.app.on_heatmap()).pack(fill="x")
+        scale("Opacity (%):", self.heatmap_opacity_var, 10, 100)
 
         row = ttk.Frame(sec)
         row.pack(fill="x", pady=2)
-        ttk.Label(row, text="Color scheme:").pack(side="left")
+        ttk.Label(row, text="Color palette:").pack(side="left")
         self.heatmap_cmap_var = tk.StringVar(value="hot")
         box = ttk.Combobox(row, textvariable=self.heatmap_cmap_var,
                            state="readonly", values=HEATMAP_CMAPS, width=10)
         box.pack(side="right")
         box.bind("<<ComboboxSelected>>", lambda _e: self.app.on_heatmap())
+
+        row = ttk.Frame(sec)
+        row.pack(fill="x", pady=2)
+        ttk.Label(row, text="Classes:").pack(side="left")
+        self.heatmap_levels_var = tk.StringVar(value="Continuous")
+        box = ttk.Combobox(row, textvariable=self.heatmap_levels_var,
+                           state="readonly", values=HEATMAP_LEVELS, width=10)
+        box.pack(side="right")
+        box.bind("<<ComboboxSelected>>", lambda _e: self.app.on_heatmap())
+
+    def heatmap_levels(self) -> int:
+        """Selected number of classification levels; 0 = continuous."""
+        value = self.heatmap_levels_var.get()
+        return 0 if value == "Continuous" else int(value)
 
     def _build_export_section(self) -> None:
         sec = self._section("Export")
@@ -228,6 +262,18 @@ class ControlPanel(ttk.Frame):
                      values=DPI_CHOICES, width=6).pack(side="right")
         ttk.Button(sec, text="Save map as PNG\N{HORIZONTAL ELLIPSIS}",
                    command=self.app.on_save_png).pack(fill="x", pady=2)
+
+    def _build_support_section(self) -> None:
+        sec = self._section("Support Me")
+        ttk.Label(sec, text="Enjoying EzMaps? Support development:",
+                  wraplength=PANEL_WIDTH - 40).pack(anchor="w")
+        ttk.Button(sec, text="\N{BLACK HEART SUIT} Support on Patreon",
+                   command=self._open_patreon).pack(fill="x", pady=2)
+
+    def _open_patreon(self) -> None:
+        import webbrowser
+
+        webbrowser.open(PATREON_URL)
 
     # -------------------------------------------------------------- helpers
 
