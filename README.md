@@ -6,11 +6,17 @@ as a PNG.
 
 ![EzMaps](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-blue)
 
+![EzMaps main window with a Wyoming heatmap](docs/images/app_heatmap.png)
+
 ## Features
 
-- **CSV input** with four columns - Name 1, Name 2, Longitude, Latitude
-  (e.g. `County, City, Longitude, Latitude`). Any column order works; a
-  column-mapping dialog lets you confirm or fix the guess before import.
+- **CSV input** with a Longitude column, a Latitude column, and any number of
+  name columns (e.g. `Country, State, County, City, Longitude, Latitude`).
+  Any column order works.
+- **Column mapping on import**: when a CSV is opened you always choose which
+  column is Latitude and which is Longitude, tick the columns to use as
+  names, and pick whether the name labels use the CSV headers or the generic
+  `Name 1, Name 2, Name 3, ...` numbering.
 - **Coordinates in decimal degrees or DMS**: `-97.7431`, `97°44'35"W`,
   `97 44 35 W`, `97d 44m 35s W`, `37°46.493'N`, and more.
 - **Real-time map view** - pan, zoom, and toggle layers live.
@@ -24,29 +30,107 @@ as a PNG.
   North America, Oceania, South America, or the World.
 - **Graticule** at 1°, 5°, or 10° with optional grid labels.
 - **Customizable legend**: per-group color, symbol (circle, square, triangle,
-  diamond, star, ...), and size.
-- **Heatmap** mode with radius, opacity, and color-scheme controls, plus an
-  option to draw the raw data points on top.
+  diamond, star, ...), and size, grouped by any name column.
+- **Heatmap** mode with full control over the render:
+  - *Radius / bandwidth* - the area of influence of each point
+  - *Blur / smoothing* - extra gaussian smoothing on top of the bandwidth
+  - *Intensity / weight* - gamma curve that lifts faint areas or isolates
+    hot spots
+  - *Threshold* - clip densities below a fraction of the peak
+  - *Classes* - continuous gradient or 3-9 discrete classification bands
+  - *Color palette* - 20 gradients (hot, viridis, plasma, turbo, ...)
+  - *Bloom* - a soft outer glow under the heatmap
+  - *Opacity* - overall transparency
+  - plus an option to draw the raw data points on top
 - **Save map as PNG** at 100-300 DPI.
+
+## Screenshots
+
+Points grouped by county with the customizable legend:
+
+![Application window with grouped points](docs/images/app_points.png)
+
+The column-mapping dialog shown on every import - latitude/longitude
+selection is required, name columns are ticked on and off:
+
+![Column mapping dialog](docs/images/column_mapper.png)
+
+The offline satellite basemap with country labels:
+
+![Satellite basemap](docs/images/satellite_world.png)
+
+US cities grouped and styled per group:
+
+![US cities with legend](docs/images/us_cities_points.png)
 
 ## CSV format
 
-The expected layout (headers are flexible - you can remap columns on import):
+The expected layout - any number of name columns followed by coordinates
+(order is flexible; you confirm the mapping on import):
 
-| Name 1 | Name 2 | Longitude  | Latitude  |
-|--------|--------|------------|-----------|
-| County | City   | -97.7431   | 30.2672   |
-| King   | Seattle| 122°19'59"W| 47°36'35"N|
+| Country       | State   | County  | City     | Longitude   | Latitude   |
+|---------------|---------|---------|----------|-------------|------------|
+| United States | Wyoming | Laramie | Cheyenne | -104.8202   | 41.1400    |
+| United States | Wyoming | Natrona | Casper   | 106°18'47"W | 42°52'00"N |
 
-See [`sample_data/us_cities.csv`](sample_data/us_cities.csv) for a working
-example mixing decimal and DMS notation.
+Working examples in [`sample_data/`](sample_data):
 
-## Installing on Windows
+- [`us_cities.csv`](sample_data/us_cities.csv) - two name columns, mixed
+  decimal and DMS notation
+- [`wyoming_cities.csv`](sample_data/wyoming_cities.csv) - four name columns
+  (Country, State, County, City)
+- [`dog_breeds.csv`](sample_data/dog_breeds.csv) - Species + Breed with the
+  place of origin of ~90 dog breeds
 
-Download `EzMaps-Setup-<version>.exe` from the
-[releases page](../../releases) (or the latest
-[build artifact](../../actions/workflows/build-windows.yml)) and run it.
-The installer asks whether to create a desktop shortcut.
+## Test cases
+
+### Wyoming cities heatmap (four name columns)
+
+[`sample_data/wyoming_cities.csv`](sample_data/wyoming_cities.csv) lists the
+largest town in every Wyoming county as
+`United States, Wyoming, <county>, <city>` - Name 1 is the country, Name 2
+the state, Name 3 the county, and Name 4 the city (Cheyenne, Casper,
+Gillette, Laramie, ...). Grouping by the County column labels every group in
+the legend:
+
+![Wyoming cities grouped by county](docs/images/wyoming_points.png)
+
+The same data as a heatmap (radius 18, blur 4, intensity 1.6, points on
+top):
+
+![Wyoming heatmap](docs/images/wyoming_heatmap.png)
+
+### Dog breed diversity heatmap (a real-world use case)
+
+[`sample_data/dog_breeds.csv`](sample_data/dog_breeds.csv) maps ~90
+`Canis lupus` breeds (wolf, poodle, greyhound, dingo, ...) to their place of
+origin. Rendering it as a heatmap shows where dog diversity concentrates -
+the European breed cluster dominates (plasma palette, intensity 1.8, bloom
+enabled, points on top):
+
+![Dog breed diversity heatmap](docs/images/dogs_heatmap.png)
+
+The same dataset zoomed to Europe with a 5-class classified heatmap and a
+15% threshold (viridis palette):
+
+![Classified heatmap of Europe](docs/images/heatmap_classified.png)
+
+To reproduce these renders: `python scripts/make_screenshots.py`
+(writes to `docs/images/`).
+
+## Installing
+
+Grab the latest build for your platform from the
+[releases page](../../releases). Releases are built automatically whenever a
+pull request is merged.
+
+| Platform       | File                                     | Install |
+|----------------|------------------------------------------|---------|
+| Windows        | `EzMaps-Setup-<version>.exe`             | Run the installer (asks about a desktop shortcut) |
+| macOS          | `EzMaps-<version>-macOS.dmg`             | Open the DMG and drag EzMaps to Applications |
+| Linux (Ubuntu) | `ezmaps_<version>_amd64.deb`             | `sudo apt install ./ezmaps_<version>_amd64.deb`, then run `ezmaps` |
+| Linux (Arch)   | `ezmaps-<version>-1-x86_64.pkg.tar.zst`  | `sudo pacman -U ezmaps-<version>-1-x86_64.pkg.tar.zst`, then run `ezmaps` |
+| Any Linux      | `EzMaps-<version>-linux-<distro>-x86_64.tar.gz` | Extract and run `EzMaps/EzMaps` |
 
 ## Running from source
 
@@ -58,36 +142,54 @@ python scripts/fetch_data.py   # one-time download of Natural Earth data (~130 M
 python -m ezmaps
 ```
 
-## Building the Windows installer
+## Building the packages
 
-Automated: the [`build-windows.yml`](.github/workflows/build-windows.yml)
-GitHub Actions workflow builds `EzMaps-Setup-<version>.exe` on every push and
-attaches it to releases for `v*` tags.
+Automated: the
+[`build-release.yml`](.github/workflows/build-release.yml) GitHub Actions
+workflow builds the Windows installer, the macOS DMG, the Ubuntu `.deb` +
+tarball, and the Arch `pkg.tar.zst` + tarball, and attaches all of them to a
+GitHub release. It runs automatically when a pull request is merged into
+`main` (and for `v*` tags or manual dispatch).
 
-Locally on Windows (needs [Inno Setup 6](https://jrsoftware.org/isinfo.php)
-with `iscc` on PATH):
+Locally:
 
-```bat
-packaging\build_windows.bat
-```
+- **Windows** (needs [Inno Setup 6](https://jrsoftware.org/isinfo.php) with
+  `iscc` on PATH): `packaging\build_windows.bat`
+- **macOS**: `pyinstaller packaging/ezmaps.spec` then create a DMG from
+  `dist/EzMaps.app`
+- **Linux**: `pyinstaller packaging/ezmaps.spec` then
+  `packaging/build_linux.sh ubuntu --deb` (Debian/Ubuntu) or
+  `cd packaging/arch && makepkg` (Arch)
 
 ## Development
 
 ```bash
-python -m pytest tests/            # coordinate parser + CSV loader tests
+python -m pytest tests/            # coordinate parser + CSV loader + heatmap tests
 python scripts/render_preview.py   # headless render smoke test -> preview/*.png
+python scripts/make_screenshots.py # regenerate the README images
 ```
 
 Project layout:
 
 - `ezmaps/coords.py` - decimal/DMS coordinate parsing
-- `ezmaps/data_loader.py` - CSV reading and column mapping
+- `ezmaps/data_loader.py` - CSV reading and column mapping (N name columns)
+- `ezmaps/heatmap.py` - density grid: bandwidth, blur, intensity,
+  threshold, classification
 - `ezmaps/layers.py` - Natural Earth layer store (lazy loading)
 - `ezmaps/renderer.py` - matplotlib map rendering (layers, labels, graticule,
-  heatmap, legend)
+  heatmap + bloom, legend)
 - `ezmaps/app.py`, `ezmaps/ui/` - Tkinter application
 - `scripts/fetch_data.py` - downloads and prepares the bundled map data
-- `packaging/` - PyInstaller spec, Inno Setup script, local build script
+- `packaging/` - PyInstaller spec, Inno Setup script, Linux/Arch packaging
+
+## Support Me
+
+If EzMaps is useful to you, you can support its development on Patreon:
+
+[**patreon.com/cw/CalebHendren**](https://www.patreon.com/cw/CalebHendren)
+
+There is also a *Support Me* section in the app's side panel and a
+*Support me on Patreon* entry in the Help menu.
 
 ## Data credits
 
