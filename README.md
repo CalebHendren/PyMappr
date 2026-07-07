@@ -6,7 +6,7 @@ as a PNG.
 
 ![EzMaps](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-blue)
 
-![EzMaps main window with a Wyoming heatmap](docs/images/app_heatmap.png)
+![EzMaps main window with grouped points and a legend](docs/images/app_points.png)
 
 ## Features
 
@@ -46,9 +46,9 @@ as a PNG.
 
 ## Screenshots
 
-Points grouped by county with the customizable legend:
+Heatmap mode with the full set of render controls:
 
-![Application window with grouped points](docs/images/app_points.png)
+![EzMaps main window with a Wyoming heatmap](docs/images/app_heatmap.png)
 
 The column-mapping dialog shown on every import - latitude/longitude
 selection is required, name columns are ticked on and off:
@@ -190,6 +190,15 @@ If EzMaps is useful to you, you can support its development on Patreon:
 
 There is also a *Support Me* section in the app's side panel and a
 *Support me on Patreon* entry in the Help menu.
+
+## Citation
+
+Citing EzMaps is not necessary, but it is welcome. If EzMaps was useful in
+your work - a map in a paper, a poster, a blog post, anything - you can
+credit it like this:
+
+> Hendren, Caleb. *EzMaps* [computer software].
+> https://github.com/CalebHendren/EzMaps
 
 ## Data credits
 
