@@ -41,12 +41,13 @@ class PointStyle:
 def group_points(frame: pd.DataFrame, group_by: str | None):
     """Split a point frame into ordered (label, sub_frame) pairs.
 
-    *group_by* is ``"name1"``, ``"name2"`` or ``None`` (single group).
-    Groups are ordered by first appearance in the file.
+    *group_by* is a name column key (``"name1"``, ``"name2"``, ``"name3"``,
+    ...) or ``None`` (single group). Groups are ordered by first appearance
+    in the file.
     """
     if frame.empty:
         return []
-    if group_by not in ("name1", "name2"):
+    if group_by is None or group_by not in frame.columns:
         return [("All points", frame)]
     values = frame[group_by].fillna("")
     labels = list(dict.fromkeys(values))
