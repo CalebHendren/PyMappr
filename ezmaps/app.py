@@ -182,12 +182,24 @@ class EzMapsApp:
         value = self.panel.group_by_var.get()
         return getattr(self, "_group_choice_keys", {}).get(value)
 
+    def _color_by_key(self) -> str | None:
+        value = self.panel.color_by_var.get()
+        return getattr(self, "_group_choice_keys", {}).get(value)
+
     def _push_points(self) -> None:
         if self.dataset is None:
             return
         groups = group_points(self.dataset.frame, self._group_by_key())
         labels = [label for label, _ in groups]
-        fresh = default_styles(labels)
+        color_by = self._color_by_key()
+        color_keys = None
+        if color_by is not None and color_by in self.dataset.frame.columns:
+            # One color-key per group: the group's value in the color-by
+            # column (e.g. every cat group keyed "Felines").
+            color_keys = [str(sub[color_by].iloc[0]) if len(sub) else ""
+                          for _label, sub in groups]
+        fresh = default_styles(labels, color_keys=color_keys,
+                               vary_symbols=self.panel.vary_symbols_var.get())
         # Keep customized styles for groups that still exist.
         self.styles = {lb: self.styles.get(lb, fresh[lb]) for lb in labels}
         self.renderer.set_point_groups([
@@ -195,7 +207,6 @@ class EzMapsApp:
              sub["lat"].to_numpy())
             for label, sub in groups
         ])
-        self._apply_heatmap(redraw=False)
         self._apply_legend(redraw=False)
         self.renderer.redraw()
 
@@ -214,21 +225,32 @@ class EzMapsApp:
     # ------------------------------------------------------------- handlers
 
     def on_group_by(self) -> None:
+        # New grouping: rebuild styles from scratch for the new groups.
+        self.styles = {}
+        self._push_points()
+
+    def on_style_scheme(self) -> None:
+        """Color-by column or symbol variation changed."""
+        self.styles = {}
         self._push_points()
 
     def on_legend_options(self) -> None:
         self._apply_legend()
 
     def _apply_legend(self, redraw: bool = True) -> None:
-        title = None
-        if self.dataset is not None:
+        title = self.panel.legend_title_var.get().strip() or None
+        if title is None and self.dataset is not None:
             key = self._group_by_key()
             if key is not None:
                 labels = dict(zip(self.dataset.name_keys,
                                   self.dataset.name_labels))
                 title = labels.get(key)
-        self.renderer.set_legend(self.panel.legend_show_var.get(), title,
-                                 self.panel.legend_loc_var.get())
+        self.renderer.set_legend(
+            self.panel.legend_show_var.get(), title,
+            self.panel.legend_loc_var.get(),
+            fontsize=self.panel.legend_fontsize(),
+            columns=self.panel.legend_columns(),
+            frame=self.panel.legend_frame_var.get())
         if redraw:
             self.renderer.redraw()
 
@@ -250,6 +272,22 @@ class EzMapsApp:
     def on_continent(self) -> None:
         self.renderer.set_extent(self.panel.continent_var.get())
         self.toolbar.update()
+        self.renderer.redraw()
+
+    def on_projection(self) -> None:
+        self.set_status(f"Reprojecting to {self.panel.projection_var.get()}"
+                        f"\N{HORIZONTAL ELLIPSIS}")
+        self._busy(True)
+        try:
+            self.renderer.set_projection(self.panel.projection_var.get())
+        finally:
+            self._busy(False)
+        self.toolbar.update()
+        self.set_status("Ready.")
+        self.renderer.redraw()
+
+    def on_line_width(self) -> None:
+        self.renderer.set_line_width_scale(self.panel.line_width_var.get())
         self.renderer.redraw()
 
     def on_layer(self, key: str) -> None:
@@ -295,26 +333,6 @@ class EzMapsApp:
         self.renderer.set_graticule(
             interval, show_labels=not self.panel.hide_grid_labels_var.get())
         self.renderer.redraw()
-
-    def on_heatmap(self) -> None:
-        self._apply_heatmap()
-
-    def _apply_heatmap(self, redraw: bool = True) -> None:
-        panel = self.panel
-        self.renderer.set_heatmap(
-            enabled=panel.heatmap_var.get() and self.dataset is not None,
-            radius=float(panel.heatmap_radius_var.get()),
-            blur=float(panel.heatmap_blur_var.get()),
-            intensity=float(panel.heatmap_intensity_var.get()),
-            threshold=float(panel.heatmap_threshold_var.get()) / 100.0,
-            levels=panel.heatmap_levels(),
-            bloom=panel.heatmap_bloom_var.get(),
-            cmap=panel.heatmap_cmap_var.get(),
-            opacity=float(panel.heatmap_opacity_var.get()) / 100.0,
-            show_points=panel.heatmap_points_var.get())
-        self._apply_legend(redraw=False)
-        if redraw:
-            self.renderer.redraw()
 
     def on_save_png(self) -> None:
         path = filedialog.asksaveasfilename(

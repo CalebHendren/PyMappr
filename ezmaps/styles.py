@@ -14,12 +14,25 @@ MARKERS = {
     "Circle": "o",
     "Square": "s",
     "Triangle": "^",
+    "Triangle down": "v",
+    "Triangle left": "<",
+    "Triangle right": ">",
     "Diamond": "D",
+    "Thin diamond": "d",
     "Star": "*",
     "Plus": "P",
     "X": "X",
     "Pentagon": "p",
+    "Hexagon": "h",
+    "Octagon": "8",
+    "Dot": ".",
 }
+
+# Marker cycle used when symbols vary per group (color-by grouping or the
+# "vary symbols" option): visually distinct shapes first.
+MARKER_CYCLE = ["Circle", "Square", "Triangle", "Diamond", "Star", "Plus",
+                "X", "Pentagon", "Triangle down", "Hexagon", "Thin diamond",
+                "Triangle left", "Octagon", "Triangle right"]
 
 DEFAULT_PALETTE = [
     "#d62728", "#1f77b4", "#2ca02c", "#ff7f0e", "#9467bd",
@@ -58,9 +71,36 @@ def group_points(frame: pd.DataFrame, group_by: str | None):
     return groups
 
 
-def default_styles(labels: list[str]) -> dict[str, PointStyle]:
-    """Assign palette colors round-robin to the given group labels."""
-    return {
-        label: PointStyle(color=DEFAULT_PALETTE[i % len(DEFAULT_PALETTE)])
-        for i, label in enumerate(labels)
-    }
+def default_styles(labels: list[str],
+                   color_keys: list[str] | None = None,
+                   vary_symbols: bool = False) -> dict[str, PointStyle]:
+    """Assign default styles to the given group labels.
+
+    Without *color_keys*, palette colors are assigned round-robin and every
+    group uses a circle (symbols also cycle if *vary_symbols* is set).
+
+    With *color_keys* (one value per label, e.g. the "Color by" column),
+    groups sharing a color key share a color - Felines one color, Canines
+    another - while the symbol cycles within each color group, so domestic
+    cats, lions and cheetahs each get their own shape.
+    """
+    if color_keys is None:
+        return {
+            label: PointStyle(
+                color=DEFAULT_PALETTE[i % len(DEFAULT_PALETTE)],
+                marker=(MARKER_CYCLE[i % len(MARKER_CYCLE)]
+                        if vary_symbols else "Circle"))
+            for i, label in enumerate(labels)
+        }
+
+    color_order = list(dict.fromkeys(color_keys))
+    seen_in_group: dict[str, int] = {}
+    styles: dict[str, PointStyle] = {}
+    for label, key in zip(labels, color_keys):
+        shape_idx = seen_in_group.get(key, 0)
+        seen_in_group[key] = shape_idx + 1
+        color_idx = color_order.index(key)
+        styles[label] = PointStyle(
+            color=DEFAULT_PALETTE[color_idx % len(DEFAULT_PALETTE)],
+            marker=MARKER_CYCLE[shape_idx % len(MARKER_CYCLE)])
+    return styles
