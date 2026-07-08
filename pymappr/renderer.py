@@ -135,6 +135,10 @@ class MapRenderer:
         self._legend_fontsize = 8.0
         self._legend_columns = 1
         self._legend_frame = True
+        # Structured legend: list of (section title, [(label, PointStyle)]).
+        # When set, it replaces the one-row-per-group legend.
+        self._legend_sections: list | None = None
+        self._point_alpha = 1.0
 
         self._artists: dict[str, list] = {}
         self._label_texts: dict[str, list] = {}
@@ -551,6 +555,15 @@ class MapRenderer:
         self._legend_frame = frame
         self._update_legend()
 
+    def set_structured_legend(self, sections: list | None) -> None:
+        """Set (or clear with None) a sectioned color/symbol key legend."""
+        self._legend_sections = sections
+        self._update_legend()
+
+    def set_point_alpha(self, alpha: float) -> None:
+        self._point_alpha = max(min(float(alpha), 1.0), 0.05)
+        self._rebuild_points()
+
     def _rebuild_points(self) -> None:
         for artist in self._point_artists:
             artist.remove()
@@ -565,8 +578,15 @@ class MapRenderer:
                     self._point_artists.append(self.ax.scatter(
                         xs, ys, s=style.size, c=style.color,
                         marker=style.mpl_marker, zorder=Z_POINTS,
-                        edgecolors="white", linewidths=0.5, label=label))
+                        edgecolors="white", linewidths=0.5,
+                        alpha=self._point_alpha, label=label))
         self._update_legend()
+
+    def _legend_handle(self, style: PointStyle, size: float | None = None):
+        area = style.size if size is None else size
+        return Line2D([], [], linestyle="", marker=style.mpl_marker,
+                      markersize=max(np.sqrt(area), 2), color=style.color,
+                      markeredgecolor="white", markeredgewidth=0.5)
 
     def _update_legend(self) -> None:
         legend = self.ax.get_legend()
@@ -574,18 +594,55 @@ class MapRenderer:
             legend.remove()
         if not (self._legend_visible and self._point_groups):
             return
+        if self._legend_sections is not None:
+            self._draw_structured_legend()
+            return
         handles = [
-            Line2D([], [], linestyle="", marker=style.mpl_marker,
-                   markersize=max(np.sqrt(style.size), 2), color=style.color,
-                   markeredgecolor="white", markeredgewidth=0.5, label=label)
-            for label, style, _, _ in self._point_groups
+            self._legend_handle(style)
+            for _label, style, _, _ in self._point_groups
         ]
+        for handle, (label, *_rest) in zip(handles, self._point_groups):
+            handle.set_label(label)
         self.ax.legend(handles=handles, loc=self._legend_loc,
                        title=self._legend_title,
                        fontsize=self._legend_fontsize,
                        title_fontsize=self._legend_fontsize,
                        ncols=self._legend_columns,
                        frameon=self._legend_frame, framealpha=0.85)
+
+    def _draw_structured_legend(self) -> None:
+        """A compact legend split into titled sections (a color key and a
+        symbol key), so encoding two columns needs only ``colors + symbols``
+        rows instead of one row per combination."""
+        handles: list = []
+        labels: list[str] = []
+        header_rows: list[int] = []
+
+        def blank():
+            return Line2D([], [], linestyle="", marker="")
+
+        for title, entries in self._legend_sections:
+            if handles:  # spacer between sections
+                header_rows.append(len(labels))
+                handles.append(blank())
+                labels.append(" ")
+            header_rows.append(len(labels))
+            handles.append(blank())
+            labels.append(title)
+            for label, style in entries:
+                handles.append(self._legend_handle(style, size=45))
+                labels.append("   " + label)
+        leg = self.ax.legend(handles, labels, loc=self._legend_loc,
+                             title=self._legend_title,
+                             fontsize=self._legend_fontsize,
+                             title_fontsize=self._legend_fontsize,
+                             ncols=self._legend_columns,
+                             frameon=self._legend_frame, framealpha=0.85,
+                             handletextpad=0.4, labelspacing=0.3)
+        texts = leg.get_texts()
+        for row in header_rows:
+            if row < len(texts):
+                texts[row].set_fontweight("bold")
 
     # --------------------------------------------------------------- output
 
