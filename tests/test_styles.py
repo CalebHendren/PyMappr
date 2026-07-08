@@ -4,8 +4,8 @@ import matplotlib.markers
 import pandas as pd
 
 from pymappr.styles import (DEFAULT_PALETTE, MARKER_CYCLE, MARKERS,
-                           attribute_style_maps, default_styles, group_points,
-                           style_by_attributes)
+                           OPEN_SUFFIX, PointStyle, attribute_style_maps,
+                           default_styles, group_points, style_by_attributes)
 
 
 def test_markers_are_valid_matplotlib_markers():
@@ -14,6 +14,19 @@ def test_markers_are_valid_matplotlib_markers():
         assert marker in valid, name
     for name in MARKER_CYCLE:
         assert name in MARKERS
+
+
+def test_every_marker_has_solid_and_open_versions():
+    solid = [name for name in MARKERS if not name.endswith(OPEN_SUFFIX)]
+    for name in solid:
+        open_name = name + OPEN_SUFFIX
+        assert open_name in MARKERS
+        # Openness is a fill style: both names share the marker shape.
+        assert MARKERS[open_name] == MARKERS[name]
+        assert not PointStyle(marker=name).is_open
+        assert PointStyle(marker=open_name).is_open
+        assert (PointStyle(marker=open_name).mpl_marker
+                == PointStyle(marker=name).mpl_marker)
 
 
 def test_default_styles_cycles_colors_circle_markers():
