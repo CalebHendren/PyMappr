@@ -229,8 +229,58 @@ jobs:
             dist/ezmaps-*.pkg.tar.zst
           if-no-files-found: error
 
+  build-fedora:
+    if: github.event_name != 'pull_request' || github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    container: fedora:latest
+    steps:
+      - name: Install system packages
+        run: dnf install -y git python3 python3-pip python3-tkinter rpm-build
+
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          python3 -m venv .venv
+          .venv/bin/pip install -r requirements.txt pyinstaller pytest
+
+      - name: Cache Natural Earth downloads
+        uses: actions/cache@v4
+        with:
+          path: data/downloads
+          key: naturalearth-${{ hashFiles('scripts/fetch_data.py') }}
+
+      - name: Fetch map data
+        run: .venv/bin/python scripts/fetch_data.py
+
+      - name: Run tests
+        run: .venv/bin/python -m pytest tests/ -q
+
+      - name: Build executable (PyInstaller)
+        run: .venv/bin/python -m PyInstaller packaging/ezmaps.spec --noconfirm
+
+      - name: Smoke-test executable
+        run: |
+          test -x dist/EzMaps/EzMaps || { echo "EzMaps binary missing"; exit 1; }
+          test -d dist/EzMaps/_internal/data/shapes || exit 1
+
+      - name: Package tarball
+        run: bash packaging/build_linux.sh fedora
+
+      - name: Build RPM (rpmbuild)
+        run: bash packaging/build_rpm.sh
+
+      - name: Upload Fedora artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-fedora
+          path: |
+            dist/EzMaps-*-linux-fedora-*.tar.gz
+            dist/ezmaps-*.rpm
+          if-no-files-found: error
+
   release:
-    needs: [build-windows, build-macos, build-ubuntu, build-arch]
+    needs: [build-windows, build-macos, build-ubuntu, build-arch, build-fedora]
     if: github.event_name != 'pull_request' || github.event.pull_request.merged == true
     runs-on: ubuntu-latest
     steps:
@@ -247,6 +297,14 @@ jobs:
         with:
           path: release-assets
           merge-multiple: true
+
+      - name: Archive the source code
+        run: |
+          v=${{ steps.version.outputs.version }}
+          git archive --format=zip --prefix="EzMaps-$v/" \
+            -o "release-assets/EzMaps-$v-source.zip" HEAD
+          git archive --format=tar.gz --prefix="EzMaps-$v/" \
+            -o "release-assets/EzMaps-$v-source.tar.gz" HEAD
 
       - name: Create or update release
         uses: softprops/action-gh-release@v2
