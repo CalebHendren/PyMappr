@@ -106,8 +106,8 @@ class PyMapprApp:
                               "\N{HORIZONTAL ELLIPSIS}",
                               command=self.on_check_updates)
         help_menu.add_separator()
-        help_menu.add_command(label="Support me on Patreon",
-                              command=self._open_patreon)
+        help_menu.add_command(label="Support me on Ko-fi",
+                              command=self._open_kofi)
         menubar.add_cascade(label="Help", menu=help_menu)
         self.root.config(menu=menubar)
         self.root.bind("<Control-o>", lambda _e: self.on_open_csv())
@@ -150,9 +150,9 @@ class PyMapprApp:
             "naturalearthdata.com",
             parent=self.root)
 
-    def _open_patreon(self) -> None:
-        from pymappr.ui.control_panel import PATREON_URL
-        webbrowser.open(PATREON_URL)
+    def _open_kofi(self) -> None:
+        from pymappr.ui.control_panel import KOFI_URL
+        webbrowser.open(KOFI_URL)
 
     # -------------------------------------------------------------- updates
 
