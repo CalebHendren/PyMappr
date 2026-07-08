@@ -63,8 +63,12 @@ class PyMapprApp:
         self.toolbar = NavigationToolbar2Tk(self.canvas, map_frame,
                                             pack_toolbar=False)
         self.toolbar.update()
+        self._add_zoom_buttons()
         self.toolbar.pack(side="top", fill="x")
         self.canvas.get_tk_widget().pack(side="top", fill="both", expand=True)
+
+        # Scroll wheel zooms the map about the cursor.
+        self.canvas.mpl_connect("scroll_event", self._on_scroll_zoom)
 
         self.status = ttk.Label(map_frame, text="Ready. Open a CSV to plot "
                                 "points, or explore the map layers.",
@@ -108,6 +112,34 @@ class PyMapprApp:
         self.root.config(menu=menubar)
         self.root.bind("<Control-o>", lambda _e: self.on_open_csv())
         self.root.bind("<Control-s>", lambda _e: self.on_save_png())
+        for seq in ("<Control-plus>", "<Control-equal>", "<Control-KP_Add>"):
+            self.root.bind(seq, lambda _e: self.zoom_step(1.3))
+        for seq in ("<Control-minus>", "<Control-KP_Subtract>"):
+            self.root.bind(seq, lambda _e: self.zoom_step(1 / 1.3))
+
+    # ----------------------------------------------------------------- zoom
+
+    def _add_zoom_buttons(self) -> None:
+        """Big, obvious zoom buttons next to the matplotlib toolbar."""
+        ttk.Separator(self.toolbar, orient="vertical").pack(
+            side="left", fill="y", padx=6, pady=2)
+        ttk.Button(self.toolbar, text="\N{HEAVY MINUS SIGN} Zoom out",
+                   command=lambda: self.zoom_step(1 / 1.5)).pack(side="left")
+        ttk.Button(self.toolbar, text="\N{HEAVY PLUS SIGN} Zoom in",
+                   command=lambda: self.zoom_step(1.5)).pack(side="left",
+                                                             padx=(2, 0))
+
+    def zoom_step(self, factor: float) -> None:
+        """Zoom about the view center (buttons, Ctrl+= / Ctrl+-)."""
+        self.renderer.zoom(factor)
+        self.renderer.redraw()
+
+    def _on_scroll_zoom(self, event) -> None:
+        if event.inaxes is None or event.xdata is None:
+            return
+        factor = 1.25 if event.button == "up" else 1 / 1.25
+        self.renderer.zoom(factor, (event.xdata, event.ydata))
+        self.renderer.redraw()
 
     def _about(self) -> None:
         messagebox.showinfo(
@@ -294,24 +326,41 @@ class PyMapprApp:
         # stay stable as the filter hides values.
         color_map, symbol_map = attribute_style_maps(
             self.dataset.frame, color_key, symbol_key)
-        groups = style_by_attributes(self._filtered_frame(), color_key,
+        shown_frame = self._filtered_frame()
+        groups = style_by_attributes(shown_frame, color_key,
                                      symbol_key, color_map, symbol_map)
         self.styles = {}
         self.renderer.set_point_groups([
             (label, style, sub["lon"].to_numpy(), sub["lat"].to_numpy())
             for label, style, sub in groups
         ])
+
+        # Legend sections list only the values currently shown: anything
+        # unticked in the filter bar disappears from the legend too (styles
+        # still come from the full-dataset maps, so they stay stable).
+        def shown_values(key):
+            if key is None or key not in shown_frame.columns:
+                return None
+            return set(shown_frame[key].fillna(""))
+
+        shown_colors = shown_values(color_key)
+        shown_symbols = shown_values(symbol_key)
         sections = []
         if color_map:
-            sections.append((self._label_for_key(color_key) or "Color", [
-                (value, PointStyle(color=color, marker="Circle"))
-                for value, color in color_map.items()
-            ]))
+            entries = [(value, PointStyle(color=color, marker="Circle"))
+                       for value, color in color_map.items()
+                       if shown_colors is None or value in shown_colors]
+            if entries:
+                sections.append((self._label_for_key(color_key) or "Color",
+                                 entries))
         if symbol_map:
-            sections.append((self._label_for_key(symbol_key) or "Symbol", [
-                (value, PointStyle(color=NEUTRAL_MARKER_COLOR, marker=marker))
-                for value, marker in symbol_map.items()
-            ]))
+            entries = [(value, PointStyle(color=NEUTRAL_MARKER_COLOR,
+                                          marker=marker))
+                       for value, marker in symbol_map.items()
+                       if shown_symbols is None or value in shown_symbols]
+            if entries:
+                sections.append((self._label_for_key(symbol_key) or "Symbol",
+                                 entries))
         self.renderer.set_structured_legend(sections)
         self._apply_legend(redraw=False)
         self.renderer.redraw()
