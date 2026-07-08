@@ -4,7 +4,7 @@ Usage: python scripts/render_preview.py [output_dir]
 
 Useful for checking that the data and renderer work without starting the
 GUI - it exercises basemaps, layer toggles, labels, graticules, points,
-legend, and the heatmap.
+legend, projections, and the continent-outline fallback.
 """
 
 from __future__ import annotations
@@ -52,7 +52,7 @@ def main() -> int:
     r.set_graticule(10, show_labels=True)
     r.save_png(out_dir / "1_simple_world.png")
 
-    # 2. Satellite world with lakes/rivers and country labels.
+    # 2. Satellite world with country labels (all countries labelled).
     r = new_renderer(store)
     r.set_basemap("satellite")
     r.set_layer("countries", True)
@@ -93,15 +93,20 @@ def main() -> int:
     r.set_legend(True, title=dataset.name1_label, location="lower left")
     r.save_png(out_dir / "5_points_legend.png")
 
-    # 6. Heatmap with points shown on top.
+    # 6. Countries off: political borders gone, continent outlines stay.
     r = new_renderer(store)
-    r.set_extent((-127, -65, 23, 51))
     r.set_layer("countries", True)
-    r.set_layer("states", True)
-    r.set_point_groups(point_groups)
-    r.set_heatmap(True, radius=12, cmap="hot", opacity=0.75, show_points=True)
-    r.set_legend(False)
-    r.save_png(out_dir / "6_heatmap_points.png")
+    r.set_layer("countries", False)
+    r.set_ocean("blue")
+    r.save_png(out_dir / "6_continent_outlines.png")
+
+    # 7. Robinson projection with a graticule and country labels.
+    r = new_renderer(store)
+    r.set_layer("countries", True)
+    r.set_projection("Robinson")
+    r.set_graticule(10)
+    r.set_labels("countries", True)
+    r.save_png(out_dir / "7_robinson_world.png")
 
     print("previews written to", out_dir)
     return 0

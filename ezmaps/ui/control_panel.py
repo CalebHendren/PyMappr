@@ -10,16 +10,12 @@ import tkinter as tk
 from tkinter import ttk
 
 from ezmaps.layers import CONTINENT_EXTENTS
+from ezmaps.projections import PROJECTIONS
 
 PANEL_WIDTH = 300
 
 GRATICULE_CHOICES = {"Off": None, "1\N{DEGREE SIGN}": 1.0,
                      "5\N{DEGREE SIGN}": 5.0, "10\N{DEGREE SIGN}": 10.0}
-HEATMAP_CMAPS = ["hot", "viridis", "plasma", "inferno", "magma", "cividis",
-                 "cool", "spring", "summer", "autumn", "winter", "turbo",
-                 "jet", "YlOrRd", "YlGnBu", "RdPu", "Reds", "Blues",
-                 "Greens", "Purples"]
-HEATMAP_LEVELS = ["Continuous", "3", "4", "5", "6", "7", "8", "9"]
 PATREON_URL = "https://www.patreon.com/cw/CalebHendren"
 LEGEND_LOCATIONS = ["best", "upper right", "upper left", "lower left",
                     "lower right", "center right"]
@@ -61,11 +57,11 @@ class ControlPanel(ttk.Frame):
         self._bind_mousewheel(canvas)
 
         self._build_data_section()
+        self._build_legend_section()
         self._build_view_section()
         self._build_layers_section()
         self._build_labels_section()
         self._build_graticule_section()
-        self._build_heatmap_section()
         self._build_export_section()
         self._build_support_section()
 
@@ -76,6 +72,17 @@ class ControlPanel(ttk.Frame):
         frame.pack(fill="x", padx=6, pady=4)
         return frame
 
+    def _combo_row(self, parent, label: str, var: tk.StringVar,
+                   values, command, width: int = 14) -> ttk.Combobox:
+        row = ttk.Frame(parent)
+        row.pack(fill="x", pady=2)
+        ttk.Label(row, text=label).pack(side="left")
+        box = ttk.Combobox(row, textvariable=var, state="readonly",
+                           values=list(values), width=width)
+        box.pack(side="right")
+        box.bind("<<ComboboxSelected>>", lambda _e: command())
+        return box
+
     def _build_data_section(self) -> None:
         sec = self._section("Data")
         ttk.Button(sec, text="Open CSV\N{HORIZONTAL ELLIPSIS}",
@@ -85,49 +92,86 @@ class ControlPanel(ttk.Frame):
                                     foreground="#666666")
         self.file_label.pack(anchor="w", pady=(0, 4))
 
-        row = ttk.Frame(sec)
-        row.pack(fill="x", pady=2)
-        ttk.Label(row, text="Group by:").pack(side="left")
         self.group_by_var = tk.StringVar(value="None")
-        self.group_by_box = ttk.Combobox(
-            row, textvariable=self.group_by_var, state="readonly",
-            values=["None"], width=18)
-        self.group_by_box.pack(side="right")
-        self.group_by_box.bind("<<ComboboxSelected>>",
-                               lambda _e: self.app.on_group_by())
+        self.group_by_box = self._combo_row(
+            sec, "Group by:", self.group_by_var, ["None"],
+            self.app.on_group_by, width=18)
 
+        # Color by: groups sharing a value in this column share a color
+        # while their symbols vary - e.g. group by Animal, color by Family
+        # keeps all felines one color and all canines another.
+        self.color_by_var = tk.StringVar(value="None")
+        self.color_by_box = self._combo_row(
+            sec, "Color by:", self.color_by_var, ["None"],
+            self.app.on_style_scheme, width=18)
+
+        self.vary_symbols_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(sec, text="Vary symbols per group",
+                        variable=self.vary_symbols_var,
+                        command=self.app.on_style_scheme).pack(anchor="w")
+
+    def _build_legend_section(self) -> None:
+        sec = self._section("Legend")
         self.legend_show_var = tk.BooleanVar(value=True)
         ttk.Checkbutton(sec, text="Show legend",
                         variable=self.legend_show_var,
                         command=self.app.on_legend_options).pack(anchor="w")
+        self.legend_frame_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(sec, text="Draw legend frame",
+                        variable=self.legend_frame_var,
+                        command=self.app.on_legend_options).pack(anchor="w")
+
+        self.legend_loc_var = tk.StringVar(value="best")
+        self._combo_row(sec, "Position:", self.legend_loc_var,
+                        LEGEND_LOCATIONS, self.app.on_legend_options,
+                        width=12)
+
         row = ttk.Frame(sec)
         row.pack(fill="x", pady=2)
-        ttk.Label(row, text="Legend position:").pack(side="left")
-        self.legend_loc_var = tk.StringVar(value="best")
-        box = ttk.Combobox(row, textvariable=self.legend_loc_var,
-                           state="readonly", values=LEGEND_LOCATIONS,
-                           width=12)
-        box.pack(side="right")
-        box.bind("<<ComboboxSelected>>",
-                 lambda _e: self.app.on_legend_options())
+        ttk.Label(row, text="Font size:").pack(side="left")
+        self.legend_fontsize_var = tk.StringVar(value="8")
+        spin = ttk.Spinbox(row, from_=5, to=20, increment=1, width=5,
+                           textvariable=self.legend_fontsize_var,
+                           command=self.app.on_legend_options)
+        spin.pack(side="right")
+        spin.bind("<KeyRelease>", lambda _e: self.app.on_legend_options())
+
+        row = ttk.Frame(sec)
+        row.pack(fill="x", pady=2)
+        ttk.Label(row, text="Columns:").pack(side="left")
+        self.legend_columns_var = tk.StringVar(value="1")
+        spin = ttk.Spinbox(row, from_=1, to=6, increment=1, width=5,
+                           textvariable=self.legend_columns_var,
+                           command=self.app.on_legend_options)
+        spin.pack(side="right")
+        spin.bind("<KeyRelease>", lambda _e: self.app.on_legend_options())
+
+        row = ttk.Frame(sec)
+        row.pack(fill="x", pady=2)
+        ttk.Label(row, text="Title:").pack(side="left")
+        self.legend_title_var = tk.StringVar(value="")
+        entry = ttk.Entry(row, textvariable=self.legend_title_var, width=18)
+        entry.pack(side="right")
+        entry.bind("<KeyRelease>", lambda _e: self.app.on_legend_options())
+        ttk.Label(sec, text="(blank = use the Group by column name)",
+                  foreground="#666666").pack(anchor="w")
+
         ttk.Button(sec, text="Customize legend\N{HORIZONTAL ELLIPSIS}",
                    command=self.app.on_edit_styles).pack(fill="x", pady=2)
 
     def _build_view_section(self) -> None:
         sec = self._section("View")
-        row = ttk.Frame(sec)
-        row.pack(fill="x", pady=2)
-        ttk.Label(row, text="Limit to:").pack(side="left")
         self.continent_var = tk.StringVar(value="World")
-        box = ttk.Combobox(row, textvariable=self.continent_var,
-                           state="readonly",
-                           values=list(CONTINENT_EXTENTS), width=16)
-        box.pack(side="right")
-        box.bind("<<ComboboxSelected>>", lambda _e: self.app.on_continent())
+        self._combo_row(sec, "Limit to:", self.continent_var,
+                        CONTINENT_EXTENTS, self.app.on_continent, width=16)
+
+        self.projection_var = tk.StringVar(value="Equirectangular")
+        self._combo_row(sec, "Projection:", self.projection_var,
+                        PROJECTIONS, self.app.on_projection, width=16)
 
         ttk.Label(sec, text="Basemap:").pack(anchor="w", pady=(4, 0))
         self.basemap_var = tk.StringVar(value="simple")
-        ttk.Radiobutton(sec, text="Simple (black country borders)",
+        ttk.Radiobutton(sec, text="Simple (white with borders)",
                         variable=self.basemap_var, value="simple",
                         command=self.app.on_basemap).pack(anchor="w")
         ttk.Radiobutton(sec, text="Satellite (full color)",
@@ -143,6 +187,15 @@ class ControlPanel(ttk.Frame):
                             command=lambda k=key: self.app.on_layer(k)).pack(
                 anchor="w")
             self.layer_vars[key] = var
+        ttk.Label(sec, text="(Countries off keeps continent outlines)",
+                  foreground="#666666").pack(anchor="w")
+
+        ttk.Label(sec, text="Line thickness:").pack(anchor="w", pady=(6, 0))
+        self.line_width_var = tk.DoubleVar(value=1.0)
+        tk.Scale(sec, from_=0.25, to=3.0, orient="horizontal",
+                 variable=self.line_width_var, showvalue=True,
+                 resolution=0.25,
+                 command=lambda _v: self.app.on_line_width()).pack(fill="x")
 
         ttk.Label(sec, text="Lakes fill:").pack(anchor="w", pady=(6, 0))
         self.lake_fill_var = tk.StringVar(value="none")
@@ -178,79 +231,13 @@ class ControlPanel(ttk.Frame):
 
     def _build_graticule_section(self) -> None:
         sec = self._section("Graticule (grid)")
-        row = ttk.Frame(sec)
-        row.pack(fill="x", pady=2)
-        ttk.Label(row, text="Grid spacing:").pack(side="left")
         self.graticule_var = tk.StringVar(value="Off")
-        box = ttk.Combobox(row, textvariable=self.graticule_var,
-                           state="readonly",
-                           values=list(GRATICULE_CHOICES), width=8)
-        box.pack(side="right")
-        box.bind("<<ComboboxSelected>>", lambda _e: self.app.on_graticule())
+        self._combo_row(sec, "Grid spacing:", self.graticule_var,
+                        GRATICULE_CHOICES, self.app.on_graticule, width=8)
         self.hide_grid_labels_var = tk.BooleanVar(value=False)
         ttk.Checkbutton(sec, text="Hide grid labels",
                         variable=self.hide_grid_labels_var,
                         command=self.app.on_graticule).pack(anchor="w")
-
-    def _build_heatmap_section(self) -> None:
-        sec = self._section("Heatmap")
-        self.heatmap_var = tk.BooleanVar(value=False)
-        ttk.Checkbutton(sec, text="Show as heatmap",
-                        variable=self.heatmap_var,
-                        command=self.app.on_heatmap).pack(anchor="w")
-        self.heatmap_points_var = tk.BooleanVar(value=False)
-        ttk.Checkbutton(sec, text="Show data points on top",
-                        variable=self.heatmap_points_var,
-                        command=self.app.on_heatmap).pack(anchor="w")
-        self.heatmap_bloom_var = tk.BooleanVar(value=False)
-        ttk.Checkbutton(sec, text="Bloom (soft outer glow)",
-                        variable=self.heatmap_bloom_var,
-                        command=self.app.on_heatmap).pack(anchor="w")
-
-        def scale(label: str, var, lo, hi, resolution=1.0):
-            ttk.Label(sec, text=label).pack(anchor="w", pady=(4, 0))
-            tk.Scale(sec, from_=lo, to=hi, orient="horizontal", variable=var,
-                     showvalue=True, resolution=resolution,
-                     command=lambda _v: self.app.on_heatmap()).pack(fill="x")
-
-        self.heatmap_radius_var = tk.DoubleVar(value=10.0)
-        scale("Radius / bandwidth:", self.heatmap_radius_var, 2, 40)
-
-        self.heatmap_blur_var = tk.DoubleVar(value=0.0)
-        scale("Blur / smoothing:", self.heatmap_blur_var, 0, 20)
-
-        self.heatmap_intensity_var = tk.DoubleVar(value=1.0)
-        scale("Intensity / weight:", self.heatmap_intensity_var,
-              0.2, 3.0, resolution=0.1)
-
-        self.heatmap_threshold_var = tk.DoubleVar(value=0.0)
-        scale("Threshold (% of peak):", self.heatmap_threshold_var, 0, 90)
-
-        self.heatmap_opacity_var = tk.DoubleVar(value=70.0)
-        scale("Opacity (%):", self.heatmap_opacity_var, 10, 100)
-
-        row = ttk.Frame(sec)
-        row.pack(fill="x", pady=2)
-        ttk.Label(row, text="Color palette:").pack(side="left")
-        self.heatmap_cmap_var = tk.StringVar(value="hot")
-        box = ttk.Combobox(row, textvariable=self.heatmap_cmap_var,
-                           state="readonly", values=HEATMAP_CMAPS, width=10)
-        box.pack(side="right")
-        box.bind("<<ComboboxSelected>>", lambda _e: self.app.on_heatmap())
-
-        row = ttk.Frame(sec)
-        row.pack(fill="x", pady=2)
-        ttk.Label(row, text="Classes:").pack(side="left")
-        self.heatmap_levels_var = tk.StringVar(value="Continuous")
-        box = ttk.Combobox(row, textvariable=self.heatmap_levels_var,
-                           state="readonly", values=HEATMAP_LEVELS, width=10)
-        box.pack(side="right")
-        box.bind("<<ComboboxSelected>>", lambda _e: self.app.on_heatmap())
-
-    def heatmap_levels(self) -> int:
-        """Selected number of classification levels; 0 = continuous."""
-        value = self.heatmap_levels_var.get()
-        return 0 if value == "Continuous" else int(value)
 
     def _build_export_section(self) -> None:
         sec = self._section("Export")
@@ -298,9 +285,23 @@ class ControlPanel(ttk.Frame):
     def graticule_interval(self) -> float | None:
         return GRATICULE_CHOICES[self.graticule_var.get()]
 
+    def legend_fontsize(self) -> float:
+        try:
+            return max(min(float(self.legend_fontsize_var.get()), 32.0), 4.0)
+        except ValueError:
+            return 8.0
+
+    def legend_columns(self) -> int:
+        try:
+            return max(min(int(self.legend_columns_var.get()), 6), 1)
+        except ValueError:
+            return 1
+
     def set_group_by_choices(self, choices: list[str], selected: str) -> None:
         self.group_by_box.configure(values=choices)
         self.group_by_var.set(selected)
+        self.color_by_box.configure(values=choices)
+        self.color_by_var.set("None")
 
     def set_file_info(self, text: str) -> None:
         self.file_label.config(text=text, foreground="#333333")
