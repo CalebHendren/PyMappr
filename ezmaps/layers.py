@@ -26,11 +26,11 @@ class LayerSpec:
 
 
 LAYER_SPECS = {
-    "countries": LayerSpec("countries", "ne_50m_admin_0_countries", "polygon", 40),
-    "states": LayerSpec("states", "ne_10m_admin_1_states_provinces", "polygon", 40),
-    "counties": LayerSpec("counties", "ne_10m_admin_2_counties", "polygon", 60),
-    "lakes": LayerSpec("lakes", "ne_50m_lakes", "polygon", 25),
-    "rivers": LayerSpec("rivers", "ne_10m_rivers_lake_centerlines", "line", 25),
+    "countries": LayerSpec("countries", "ne_50m_admin_0_countries", "polygon", 400),
+    "states": LayerSpec("states", "ne_10m_admin_1_states_provinces", "polygon", 600),
+    "counties": LayerSpec("counties", "ne_10m_admin_2_counties", "polygon", 1200),
+    "lakes": LayerSpec("lakes", "ne_50m_lakes", "polygon", 60),
+    "rivers": LayerSpec("rivers", "ne_10m_rivers_lake_centerlines", "line", 60),
     "ocean": LayerSpec("ocean", "ne_50m_ocean", "polygon"),
     "roads": LayerSpec("roads", "ne_10m_roads", "line"),
 }
@@ -62,6 +62,7 @@ class LayerStore:
     def __init__(self, data_dir: Path | None = None):
         self.data_dir = Path(data_dir) if data_dir else default_data_dir()
         self._frames: dict[str, "object"] = {}
+        self._projected: dict[tuple[str, str], "object"] = {}
         self._labels: dict[str, pd.DataFrame] = {}
         self._basemap: np.ndarray | None = None
 
@@ -75,16 +76,44 @@ class LayerStore:
         return None
 
     def frame(self, key: str):
-        """GeoDataFrame for a layer, columns lower-cased, cached."""
-        if key not in self._frames:
-            import geopandas as gpd
+        """GeoDataFrame for a layer, columns lower-cased, cached.
 
-            spec = LAYER_SPECS[key]
-            path = self.data_dir / "shapes" / spec.directory / f"{spec.directory}.shp"
-            gdf = gpd.read_file(path)
-            gdf.columns = [c.lower() for c in gdf.columns]
+        ``"continents"`` is a derived layer: the country polygons dissolved
+        by continent, giving continent outlines without political borders.
+        """
+        if key not in self._frames:
+            if key == "continents":
+                countries = self.frame("countries")
+                gdf = (countries[["continent", "geometry"]]
+                       .dissolve(by="continent").reset_index())
+            else:
+                import geopandas as gpd
+
+                spec = LAYER_SPECS[key]
+                path = (self.data_dir / "shapes" / spec.directory
+                        / f"{spec.directory}.shp")
+                gdf = gpd.read_file(path)
+                gdf.columns = [c.lower() for c in gdf.columns]
             self._frames[key] = gdf
         return self._frames[key]
+
+    def frame_projected(self, key: str, crs: str | None, max_lat: float = 90.0):
+        """A layer reprojected to *crs* (None = untouched lon/lat), cached.
+
+        *max_lat* clips the data first, for projections such as Mercator
+        that blow up at the poles.
+        """
+        if crs is None:
+            return self.frame(key)
+        cache_key = (key, crs)
+        if cache_key not in self._projected:
+            from shapely.geometry import box
+
+            gdf = self.frame(key)
+            if max_lat < 90.0:
+                gdf = gdf.clip(box(-180, -max_lat, 180, max_lat))
+            self._projected[cache_key] = gdf.to_crs(crs)
+        return self._projected[cache_key]
 
     def label_points(self, key: str) -> pd.DataFrame:
         """Label anchors for a layer: columns x, y, text, min_label.
