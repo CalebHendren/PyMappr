@@ -2,7 +2,7 @@ import math
 
 import pytest
 
-from ezmaps.coords import CoordinateError, parse_latitude, parse_longitude
+from pymappr.coords import CoordinateError, parse_latitude, parse_longitude
 
 
 def close(a, b):
