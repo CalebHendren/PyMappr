@@ -6,16 +6,20 @@ from dataclasses import dataclass
 
 import pandas as pd
 
-__all__ = ["PointStyle", "MARKERS", "DEFAULT_PALETTE", "group_points",
-           "default_styles", "attribute_style_maps", "style_by_attributes",
-           "NEUTRAL_MARKER_COLOR"]
+__all__ = ["PointStyle", "MARKERS", "OPEN_SUFFIX", "DEFAULT_PALETTE",
+           "group_points", "default_styles", "attribute_style_maps",
+           "style_by_attributes", "NEUTRAL_MARKER_COLOR"]
 
 # Marker color used in the legend's "symbol" key, where shape (not color)
 # carries the meaning.
 NEUTRAL_MARKER_COLOR = "#555555"
 
-# Display name -> matplotlib marker.
-MARKERS = {
+# Display name -> matplotlib marker. Every shape comes in a solid and an
+# open (outline-only) version; openness is a fill style, not a different
+# matplotlib marker, so both names map to the same marker code.
+OPEN_SUFFIX = " (open)"
+
+_BASE_MARKERS = {
     "Circle": "o",
     "Square": "s",
     "Triangle": "^",
@@ -32,6 +36,10 @@ MARKERS = {
     "Octagon": "8",
     "Dot": ".",
 }
+
+MARKERS = dict(_BASE_MARKERS)
+MARKERS.update({name + OPEN_SUFFIX: marker
+                for name, marker in _BASE_MARKERS.items()})
 
 # Marker cycle used when symbols vary per group (color-by grouping or the
 # "vary symbols" option): visually distinct shapes first.
@@ -54,6 +62,11 @@ class PointStyle:
     @property
     def mpl_marker(self) -> str:
         return MARKERS.get(self.marker, "o")
+
+    @property
+    def is_open(self) -> bool:
+        """Open markers draw only the outline in the style's color."""
+        return self.marker.endswith(OPEN_SUFFIX)
 
 
 def group_points(frame: pd.DataFrame, group_by: str | None):
