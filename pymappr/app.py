@@ -20,7 +20,9 @@ from pymappr.data_loader import (PointDataset, build_dataset,  # noqa: E402
                                 guess_mapping, read_csv)
 from pymappr.layers import LayerStore  # noqa: E402
 from pymappr.renderer import MapRenderer  # noqa: E402
-from pymappr.styles import PointStyle, default_styles, group_points  # noqa: E402
+from pymappr.styles import (NEUTRAL_MARKER_COLOR, PointStyle,  # noqa: E402
+                            attribute_style_maps, default_styles,
+                            group_points, style_by_attributes)
 from pymappr.ui.column_mapper import ColumnMapperDialog  # noqa: E402
 from pymappr.ui.control_panel import ControlPanel  # noqa: E402
 from pymappr.ui.filter_bar import FilterBar  # noqa: E402
@@ -241,8 +243,21 @@ class PyMapprApp:
         value = self.panel.color_by_var.get()
         return getattr(self, "_group_choice_keys", {}).get(value)
 
+    def _symbol_by_key(self) -> str | None:
+        value = self.panel.symbol_by_var.get()
+        return getattr(self, "_group_choice_keys", {}).get(value)
+
+    def _label_for_key(self, key: str | None) -> str | None:
+        if key is None or self.dataset is None:
+            return None
+        labels = dict(zip(self.dataset.name_keys, self.dataset.name_labels))
+        return labels.get(key)
+
     def _push_points(self) -> None:
         if self.dataset is None:
+            return
+        if self._symbol_by_key() is not None:
+            self._push_points_by_attributes()
             return
         # Styles come from the full, unfiltered grouping so each group's
         # color/symbol stays put while filter values are toggled.
@@ -260,11 +275,44 @@ class PyMapprApp:
         # Keep customized styles for groups that still exist.
         self.styles = {lb: self.styles.get(lb, fresh[lb]) for lb in labels}
         shown = group_points(self._filtered_frame(), self._group_by_key())
+        self.renderer.set_structured_legend(None)
         self.renderer.set_point_groups([
             (label, self.styles.get(label, fresh.get(label, PointStyle())),
              sub["lon"].to_numpy(), sub["lat"].to_numpy())
             for label, sub in shown
         ])
+        self._apply_legend(redraw=False)
+        self.renderer.redraw()
+
+    def _push_points_by_attributes(self) -> None:
+        """Style points by a color column and a symbol column at once, with a
+        compact color/symbol key legend (used when Symbol by is set)."""
+        assert self.dataset is not None
+        color_key = self._color_by_key()
+        symbol_key = self._symbol_by_key()
+        # Maps come from the full dataset so colors, symbols, and the legend
+        # stay stable as the filter hides values.
+        color_map, symbol_map = attribute_style_maps(
+            self.dataset.frame, color_key, symbol_key)
+        groups = style_by_attributes(self._filtered_frame(), color_key,
+                                     symbol_key, color_map, symbol_map)
+        self.styles = {}
+        self.renderer.set_point_groups([
+            (label, style, sub["lon"].to_numpy(), sub["lat"].to_numpy())
+            for label, style, sub in groups
+        ])
+        sections = []
+        if color_map:
+            sections.append((self._label_for_key(color_key) or "Color", [
+                (value, PointStyle(color=color, marker="Circle"))
+                for value, color in color_map.items()
+            ]))
+        if symbol_map:
+            sections.append((self._label_for_key(symbol_key) or "Symbol", [
+                (value, PointStyle(color=NEUTRAL_MARKER_COLOR, marker=marker))
+                for value, marker in symbol_map.items()
+            ]))
+        self.renderer.set_structured_legend(sections)
         self._apply_legend(redraw=False)
         self.renderer.redraw()
 
@@ -315,17 +363,20 @@ class PyMapprApp:
         self.styles = {}
         self._push_points()
 
+    def on_point_alpha(self) -> None:
+        self.renderer.set_point_alpha(self.panel.point_alpha_var.get())
+        self.renderer.redraw()
+
     def on_legend_options(self) -> None:
         self._apply_legend()
 
     def _apply_legend(self, redraw: bool = True) -> None:
         title = self.panel.legend_title_var.get().strip() or None
-        if title is None and self.dataset is not None:
-            key = self._group_by_key()
-            if key is not None:
-                labels = dict(zip(self.dataset.name_keys,
-                                  self.dataset.name_labels))
-                title = labels.get(key)
+        # In two-attribute mode the legend's own sections name the columns,
+        # so don't add a redundant group-by title on top.
+        if (title is None and self.dataset is not None
+                and self._symbol_by_key() is None):
+            title = self._label_for_key(self._group_by_key())
         self.renderer.set_legend(
             self.panel.legend_show_var.get(), title,
             self.panel.legend_loc_var.get(),
@@ -336,9 +387,16 @@ class PyMapprApp:
             self.renderer.redraw()
 
     def on_edit_styles(self) -> None:
-        if not self.styles:
+        if self.dataset is None:
             messagebox.showinfo("No data", "Open a CSV first to customize "
                                 "its legend.", parent=self.root)
+            return
+        if not self.styles:
+            messagebox.showinfo(
+                "Not available", "Per-group styles can't be edited while "
+                "Symbol by is set (colors and symbols come from the chosen "
+                "columns). Set Symbol by to None to customize groups.",
+                parent=self.root)
             return
         LegendEditorDialog(self.root, self.styles, self._push_points)
 
