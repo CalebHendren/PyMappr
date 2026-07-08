@@ -1,4 +1,4 @@
-"""Download and prepare the Natural Earth map data bundled with EzMaps.
+"""Download and prepare the Natural Earth map data bundled with PyMappr.
 
 Run once before starting the app from source, and as part of every packaged
 build. All data is public domain (naturalearthdata.com). Downloads are cached
@@ -7,7 +7,7 @@ in data/downloads/ so re-runs are cheap; use --force to rebuild outputs.
 Produces:
     data/shapes/<layer>/<layer>.shp (+ .shx/.dbf/.prj)   vector layers
     data/basemap/ne1_world.jpg                            "Satellite" basemap
-    data/icon/ezmaps.ico                                  application icon
+    data/icon/pymappr.ico                                  application icon
 """
 
 from __future__ import annotations
@@ -123,7 +123,7 @@ def fetch_basemap(force: bool) -> None:
 
 def make_icon(force: bool) -> None:
     """Draw a simple globe-with-pin application icon."""
-    ico_path = DATA_DIR / "icon" / "ezmaps.ico"
+    ico_path = DATA_DIR / "icon" / "pymappr.ico"
     if ico_path.exists() and not force:
         print(f"  ready    {ico_path.name}")
         return

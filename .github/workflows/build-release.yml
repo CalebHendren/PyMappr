@@ -46,18 +46,18 @@ jobs:
       - name: Read version
         id: version
         run: |
-          $v = python -c "import ezmaps; print(ezmaps.__version__)"
+          $v = python -c "import pymappr; print(pymappr.__version__)"
           "version=$v" >> $env:GITHUB_OUTPUT
 
       - name: Build executable (PyInstaller)
-        run: python -m PyInstaller packaging/ezmaps.spec --noconfirm
+        run: python -m PyInstaller packaging/pymappr.spec --noconfirm
 
       - name: Smoke-test executable
         run: |
-          if (-not (Test-Path "dist/EzMaps/EzMaps.exe")) {
-            throw "EzMaps.exe was not produced"
+          if (-not (Test-Path "dist/PyMappr/PyMappr.exe")) {
+            throw "PyMappr.exe was not produced"
           }
-          if (-not (Test-Path "dist/EzMaps/_internal/data/shapes")) {
+          if (-not (Test-Path "dist/PyMappr/_internal/data/shapes")) {
             throw "bundled map data missing"
           }
 
@@ -71,7 +71,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: windows-installer
-          path: dist/installer/EzMaps-Setup-*.exe
+          path: dist/installer/PyMappr-Setup-*.exe
           if-no-files-found: error
 
   build-macos:
@@ -103,28 +103,28 @@ jobs:
       - name: Read version
         id: version
         run: |
-          v=$(python -c "import ezmaps; print(ezmaps.__version__)")
+          v=$(python -c "import pymappr; print(pymappr.__version__)")
           echo "version=$v" >> "$GITHUB_OUTPUT"
 
       - name: Build app bundle (PyInstaller)
-        run: python -m PyInstaller packaging/ezmaps.spec --noconfirm
+        run: python -m PyInstaller packaging/pymappr.spec --noconfirm
 
       - name: Smoke-test app bundle
         run: |
-          test -d dist/EzMaps.app || { echo "EzMaps.app missing"; exit 1; }
-          test -e dist/EzMaps.app/Contents/MacOS/EzMaps || exit 1
+          test -d dist/PyMappr.app || { echo "PyMappr.app missing"; exit 1; }
+          test -e dist/PyMappr.app/Contents/MacOS/PyMappr || exit 1
 
       - name: Build DMG
         run: |
-          hdiutil create -volname EzMaps \
-            -srcfolder dist/EzMaps.app -ov -format UDZO \
-            "dist/EzMaps-${{ steps.version.outputs.version }}-macOS.dmg"
+          hdiutil create -volname PyMappr \
+            -srcfolder dist/PyMappr.app -ov -format UDZO \
+            "dist/PyMappr-${{ steps.version.outputs.version }}-macOS.dmg"
 
       - name: Upload DMG artifact
         uses: actions/upload-artifact@v4
         with:
           name: macos-dmg
-          path: dist/EzMaps-*-macOS.dmg
+          path: dist/PyMappr-*-macOS.dmg
           if-no-files-found: error
 
   build-ubuntu:
@@ -154,12 +154,12 @@ jobs:
         run: python -m pytest tests/ -q
 
       - name: Build executable (PyInstaller)
-        run: python -m PyInstaller packaging/ezmaps.spec --noconfirm
+        run: python -m PyInstaller packaging/pymappr.spec --noconfirm
 
       - name: Smoke-test executable
         run: |
-          test -x dist/EzMaps/EzMaps || { echo "EzMaps binary missing"; exit 1; }
-          test -d dist/EzMaps/_internal/data/shapes || exit 1
+          test -x dist/PyMappr/PyMappr || { echo "PyMappr binary missing"; exit 1; }
+          test -d dist/PyMappr/_internal/data/shapes || exit 1
 
       - name: Package tarball and .deb
         run: bash packaging/build_linux.sh ubuntu --deb
@@ -169,8 +169,8 @@ jobs:
         with:
           name: linux-ubuntu
           path: |
-            dist/EzMaps-*-linux-ubuntu-*.tar.gz
-            dist/ezmaps_*_amd64.deb
+            dist/PyMappr-*-linux-ubuntu-*.tar.gz
+            dist/pymappr_*_amd64.deb
           if-no-files-found: error
 
   build-arch:
@@ -201,32 +201,32 @@ jobs:
         run: .venv/bin/python -m pytest tests/ -q
 
       - name: Build executable (PyInstaller)
-        run: .venv/bin/python -m PyInstaller packaging/ezmaps.spec --noconfirm
+        run: .venv/bin/python -m PyInstaller packaging/pymappr.spec --noconfirm
 
       - name: Smoke-test executable
         run: |
-          test -x dist/EzMaps/EzMaps || { echo "EzMaps binary missing"; exit 1; }
-          test -d dist/EzMaps/_internal/data/shapes || exit 1
+          test -x dist/PyMappr/PyMappr || { echo "PyMappr binary missing"; exit 1; }
+          test -d dist/PyMappr/_internal/data/shapes || exit 1
 
       - name: Package tarball
         run: bash packaging/build_linux.sh arch
 
       - name: Build Arch package (makepkg)
         run: |
-          version=$(sed -n 's/^__version__ = "\(.*\)"/\1/p' ezmaps/__init__.py)
+          version=$(sed -n 's/^__version__ = "\(.*\)"/\1/p' pymappr/__init__.py)
           sed -i "s/^pkgver=.*/pkgver=$version/" packaging/arch/PKGBUILD
           useradd -m builder
           chown -R builder:builder .
           su builder -c "cd packaging/arch && makepkg --noconfirm"
-          cp packaging/arch/ezmaps-*.pkg.tar.zst dist/
+          cp packaging/arch/pymappr-*.pkg.tar.zst dist/
 
       - name: Upload Arch artifacts
         uses: actions/upload-artifact@v4
         with:
           name: linux-arch
           path: |
-            dist/EzMaps-*-linux-arch-*.tar.gz
-            dist/ezmaps-*.pkg.tar.zst
+            dist/PyMappr-*-linux-arch-*.tar.gz
+            dist/pymappr-*.pkg.tar.zst
           if-no-files-found: error
 
   build-fedora:
@@ -257,12 +257,12 @@ jobs:
         run: .venv/bin/python -m pytest tests/ -q
 
       - name: Build executable (PyInstaller)
-        run: .venv/bin/python -m PyInstaller packaging/ezmaps.spec --noconfirm
+        run: .venv/bin/python -m PyInstaller packaging/pymappr.spec --noconfirm
 
       - name: Smoke-test executable
         run: |
-          test -x dist/EzMaps/EzMaps || { echo "EzMaps binary missing"; exit 1; }
-          test -d dist/EzMaps/_internal/data/shapes || exit 1
+          test -x dist/PyMappr/PyMappr || { echo "PyMappr binary missing"; exit 1; }
+          test -d dist/PyMappr/_internal/data/shapes || exit 1
 
       - name: Package tarball
         run: bash packaging/build_linux.sh fedora
@@ -275,8 +275,8 @@ jobs:
         with:
           name: linux-fedora
           path: |
-            dist/EzMaps-*-linux-fedora-*.tar.gz
-            dist/ezmaps-*.rpm
+            dist/PyMappr-*-linux-fedora-*.tar.gz
+            dist/pymappr-*.rpm
           if-no-files-found: error
 
   release:
@@ -289,7 +289,7 @@ jobs:
       - name: Read version
         id: version
         run: |
-          v=$(sed -n 's/^__version__ = "\(.*\)"/\1/p' ezmaps/__init__.py)
+          v=$(sed -n 's/^__version__ = "\(.*\)"/\1/p' pymappr/__init__.py)
           echo "version=$v" >> "$GITHUB_OUTPUT"
 
       - name: Download all build artifacts
@@ -301,15 +301,15 @@ jobs:
       - name: Archive the source code
         run: |
           v=${{ steps.version.outputs.version }}
-          git archive --format=zip --prefix="EzMaps-$v/" \
-            -o "release-assets/EzMaps-$v-source.zip" HEAD
-          git archive --format=tar.gz --prefix="EzMaps-$v/" \
-            -o "release-assets/EzMaps-$v-source.tar.gz" HEAD
+          git archive --format=zip --prefix="PyMappr-$v/" \
+            -o "release-assets/PyMappr-$v-source.zip" HEAD
+          git archive --format=tar.gz --prefix="PyMappr-$v/" \
+            -o "release-assets/PyMappr-$v-source.tar.gz" HEAD
 
       - name: Create or update release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || format('v{0}', steps.version.outputs.version) }}
-          name: EzMaps ${{ steps.version.outputs.version }}
+          name: PyMappr ${{ steps.version.outputs.version }}
           files: release-assets/**
           fail_on_unmatched_files: true
