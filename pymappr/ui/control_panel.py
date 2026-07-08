@@ -16,7 +16,7 @@ PANEL_WIDTH = 300
 
 GRATICULE_CHOICES = {"Off": None, "1\N{DEGREE SIGN}": 1.0,
                      "5\N{DEGREE SIGN}": 5.0, "10\N{DEGREE SIGN}": 10.0}
-PATREON_URL = "https://www.patreon.com/cw/CalebHendren"
+KOFI_URL = "https://ko-fi.com/calebhendren"
 LEGEND_LOCATIONS = ["best", "upper right", "upper left", "lower left",
                     "lower right", "center right"]
 DPI_CHOICES = ["100", "150", "200", "300"]
@@ -270,13 +270,13 @@ class ControlPanel(ttk.Frame):
         sec = self._section("Support Me")
         ttk.Label(sec, text="Enjoying PyMappr? Support development:",
                   wraplength=PANEL_WIDTH - 40).pack(anchor="w")
-        ttk.Button(sec, text="\N{BLACK HEART SUIT} Support on Patreon",
-                   command=self._open_patreon).pack(fill="x", pady=2)
+        ttk.Button(sec, text="\N{BLACK HEART SUIT} Support on Ko-fi",
+                   command=self._open_kofi).pack(fill="x", pady=2)
 
-    def _open_patreon(self) -> None:
+    def _open_kofi(self) -> None:
         import webbrowser
 
-        webbrowser.open(PATREON_URL)
+        webbrowser.open(KOFI_URL)
 
     # -------------------------------------------------------------- helpers
 
