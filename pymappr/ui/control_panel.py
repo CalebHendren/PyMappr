@@ -192,7 +192,7 @@ class ControlPanel(ttk.Frame):
         ttk.Radiobutton(sec, text="Simple (white with borders)",
                         variable=self.basemap_var, value="simple",
                         command=self.app.on_basemap).pack(anchor="w")
-        ttk.Radiobutton(sec, text="Satellite (full color)",
+        ttk.Radiobutton(sec, text="Satellite (full color, slower)",
                         variable=self.basemap_var, value="satellite",
                         command=self.app.on_basemap).pack(anchor="w")
 
@@ -205,8 +205,6 @@ class ControlPanel(ttk.Frame):
                             command=lambda k=key: self.app.on_layer(k)).pack(
                 anchor="w")
             self.layer_vars[key] = var
-        ttk.Label(sec, text="(Countries off keeps continent outlines)",
-                  foreground="#666666").pack(anchor="w")
 
         ttk.Label(sec, text="Line thickness:").pack(anchor="w", pady=(6, 0))
         self.line_width_var = tk.DoubleVar(value=1.0)

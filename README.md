@@ -4,6 +4,11 @@ Simple desktop mapping software focused on high-quality point-distribution
 maps. Load point data from a CSV, style it, explore Natural Earth base layers
 in real time in several map projections, and export the result as a PNG.
 
+PyMappr is essentially a remake of
+[SimpleMappr](https://www.simplemappr.net/) in Python: the same
+"CSV of localities in, publication-ready point map out" workflow, but as an
+offline desktop application.
+
 ![PyMappr](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-blue)
 
 ![PyMappr main window with grouped points and a legend](docs/images/app_points.png)
@@ -19,13 +24,15 @@ in real time in several map projections, and export the result as a PNG.
   `Name 1, Name 2, Name 3, ...` numbering.
 - **Coordinates in decimal degrees or DMS**: `-97.7431`, `97°44'35"W`,
   `97 44 35 W`, `97d 44m 35s W`, `37°46.493'N`, and more.
-- **Real-time map view** - pan, zoom, and toggle layers live. Panning east or
-  west **loops around the globe** seamlessly.
+- **Real-time map view** - pan, zoom, and toggle layers live. Zoom with the
+  **scroll wheel** (about the cursor), the **Zoom in / Zoom out** buttons in
+  the toolbar, `Ctrl+=` / `Ctrl+-`, or the toolbar's rubber-band zoom.
+  Panning east or west **loops around the globe** seamlessly.
 - **Map projections**: Equirectangular (default), Mercator, Robinson,
   Mollweide, Natural Earth, and Winkel Tripel - every layer, label, point,
   and the satellite basemap is reprojected live.
 - **Basemaps**: *Simple* (white with black borders) or *Satellite*
-  (full-color Natural Earth shaded relief, fully offline).
+  (full color, slower - Natural Earth shaded relief, fully offline).
 - **Layer toggles**: Countries, States/Provinces, US Counties,
   Lakes (outlines), Lakes fill (greyscale or blue), Rivers,
   Oceans (greyscale or blue), Roads. Switching Countries off removes the
@@ -33,14 +40,18 @@ in real time in several map projections, and export the result as a PNG.
 - **Line thickness** control for all border/line layers.
 - **Label toggles**: Countries, States/Provinces, US Counties, Lakes, Rivers.
   Every country in view is labelled even fully zoomed out; every state and
-  county in view is labelled once you zoom in to its level.
+  county in view is labelled once you zoom in to its level. Labels
+  **never overlap** - when two would collide, the less important one is
+  hidden until you zoom in - and any label can be **dragged with the mouse**
+  to fine-tune its position (right-click a dragged label to snap it back).
 - **Continent presets**: limit the view to Africa, Antarctica, Asia, Europe,
   North America, Oceania, South America, or the World.
 - **Graticule** at 1°, 5°, or 10° with optional grid labels, drawn as
   projected curves in non-rectangular projections.
 - **Customizable legend**:
   - per-group color, symbol, and size - symbols include circle, square,
-    star, diamond, triangles, plus, X, pentagon, hexagon, octagon, and more
+    star, diamond, triangles, plus, X, pentagon, hexagon, octagon, and more,
+    each in a **solid and an open (outline-only) version**
   - *Group by* any name column, and *Color by* another: group by Animal and
     color by Family, and every feline species gets its own shape in one
     color while canines get their own shapes in another color
@@ -55,6 +66,8 @@ in real time in several map projections, and export the result as a PNG.
 - **Filter bar below the map**: pick a name column and tick the values to
   show - on the felines-and-canines dataset, filter by Family and untick
   Felines to see only the dogs. *All*/*None* buttons for quick toggling.
+  The legend follows the filter: only the values currently shown on the map
+  appear in it (their colors and symbols stay stable while you toggle).
 - **Save map as PNG** at 100-300 DPI.
 - **Update check**: at most once per day, on launch, PyMappr asks the GitHub
   releases API whether a newer version exists and offers to open the
@@ -183,7 +196,22 @@ and attaches all of them - plus source `.zip`/`.tar.gz` archives - to a
 GitHub release. It runs automatically when a pull request is merged into
 `main` (and for `v*` tags or manual dispatch).
 
-Locally:
+### Code signing
+
+The workflow signs the builds automatically when the corresponding
+repository secrets are configured; without them it still builds, just
+unsigned (so forks and pre-certificate setups keep working):
+
+| Platform | What is signed | Secrets |
+|----------|----------------|---------|
+| Windows  | `PyMappr.exe` and the installer (Authenticode, timestamped, verified with `signtool verify`) | `WINDOWS_CERT_BASE64` (base64 of the `.pfx`), `WINDOWS_CERT_PASSWORD` |
+| macOS    | `PyMappr.app` (hardened runtime) and the DMG, then notarized and stapled | `MACOS_CERT_BASE64` (base64 of the Developer ID `.p12`), `MACOS_CERT_PASSWORD`, `MACOS_SIGNING_IDENTITY`; notarization additionally needs `MACOS_NOTARY_APPLE_ID`, `MACOS_NOTARY_TEAM_ID`, `MACOS_NOTARY_PASSWORD` (an app-specific password) |
+| Linux    | Every release asset gets a detached GPG signature (`.asc`) | `GPG_PRIVATE_KEY` (ASCII-armored), `GPG_PASSPHRASE` |
+
+To base64-encode a certificate for a secret:
+`base64 -w0 cert.pfx` (Linux) or `base64 -i cert.p12 | pbcopy` (macOS).
+
+### Building locally
 
 - **Windows** (needs [Inno Setup 6](https://jrsoftware.org/isinfo.php) with
   `iscc` on PATH): `packaging\build_windows.bat`
