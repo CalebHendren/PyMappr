@@ -4,24 +4,6 @@ name: Build and release
 # Linux (Arch), and attaches them to a GitHub release. Runs automatically
 # whenever a pull request is merged into main (and for v* tags or manual
 # dispatch).
-#
-# Code signing is automatic but optional: each signing step only runs when
-# its secrets are configured, so the workflow still builds unsigned
-# artifacts on forks or before certificates are set up. Secrets used:
-#
-#   Windows (Authenticode via signtool):
-#     WINDOWS_CERT_BASE64    - base64 of the .pfx code-signing certificate
-#     WINDOWS_CERT_PASSWORD  - password for the .pfx
-#   macOS (codesign + notarization):
-#     MACOS_CERT_BASE64      - base64 of the Developer ID .p12 certificate
-#     MACOS_CERT_PASSWORD    - password for the .p12
-#     MACOS_SIGNING_IDENTITY - e.g. "Developer ID Application: Name (TEAMID)"
-#     MACOS_NOTARY_APPLE_ID / MACOS_NOTARY_TEAM_ID / MACOS_NOTARY_PASSWORD
-#                            - Apple ID, team ID, and app-specific password
-#                              for notarytool (optional; skipped if unset)
-#   Linux (GPG detached signatures, .asc next to every release asset):
-#     GPG_PRIVATE_KEY        - ASCII-armored private key
-#     GPG_PASSPHRASE         - its passphrase (optional if the key has none)
 
 on:
   pull_request:
@@ -38,10 +20,6 @@ jobs:
   build-windows:
     if: github.event_name != 'pull_request' || github.event.pull_request.merged == true
     runs-on: windows-latest
-    # The secrets context can't be used in step `if:` conditions, so lift the
-    # "is signing configured?" check into a job-level env var and gate on it.
-    env:
-      SIGN_WINDOWS: ${{ secrets.WINDOWS_CERT_BASE64 != '' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -83,57 +61,11 @@ jobs:
             throw "bundled map data missing"
           }
 
-      - name: Sign executable
-        if: env.SIGN_WINDOWS == 'true'
-        env:
-          WINDOWS_CERT_BASE64: ${{ secrets.WINDOWS_CERT_BASE64 }}
-          WINDOWS_CERT_PASSWORD: ${{ secrets.WINDOWS_CERT_PASSWORD }}
-        run: |
-          $cert = "$env:RUNNER_TEMP\codesign.pfx"
-          [IO.File]::WriteAllBytes($cert,
-            [Convert]::FromBase64String($env:WINDOWS_CERT_BASE64))
-          $signtool = Get-ChildItem `
-            "C:\Program Files (x86)\Windows Kits\10\bin" `
-            -Recurse -Filter signtool.exe |
-            Where-Object { $_.Directory.Name -eq "x64" } |
-            Select-Object -Last 1 -ExpandProperty FullName
-          & $signtool sign /f $cert /p $env:WINDOWS_CERT_PASSWORD `
-            /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 `
-            /d "PyMappr" dist\PyMappr\PyMappr.exe
-          if ($LASTEXITCODE -ne 0) { throw "signing PyMappr.exe failed" }
-          & $signtool verify /pa dist\PyMappr\PyMappr.exe
-          if ($LASTEXITCODE -ne 0) { throw "signature verification failed" }
-          Remove-Item $cert
-
       - name: Build installer (Inno Setup)
         run: |
           & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" `
             /DMyAppVersion=${{ steps.version.outputs.version }} `
             packaging\installer.iss
-
-      - name: Sign installer
-        if: env.SIGN_WINDOWS == 'true'
-        env:
-          WINDOWS_CERT_BASE64: ${{ secrets.WINDOWS_CERT_BASE64 }}
-          WINDOWS_CERT_PASSWORD: ${{ secrets.WINDOWS_CERT_PASSWORD }}
-        run: |
-          $cert = "$env:RUNNER_TEMP\codesign.pfx"
-          [IO.File]::WriteAllBytes($cert,
-            [Convert]::FromBase64String($env:WINDOWS_CERT_BASE64))
-          $signtool = Get-ChildItem `
-            "C:\Program Files (x86)\Windows Kits\10\bin" `
-            -Recurse -Filter signtool.exe |
-            Where-Object { $_.Directory.Name -eq "x64" } |
-            Select-Object -Last 1 -ExpandProperty FullName
-          $installer = Get-ChildItem dist\installer\PyMappr-Setup-*.exe |
-            Select-Object -First 1 -ExpandProperty FullName
-          & $signtool sign /f $cert /p $env:WINDOWS_CERT_PASSWORD `
-            /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 `
-            /d "PyMappr Setup" $installer
-          if ($LASTEXITCODE -ne 0) { throw "signing the installer failed" }
-          & $signtool verify /pa $installer
-          if ($LASTEXITCODE -ne 0) { throw "signature verification failed" }
-          Remove-Item $cert
 
       - name: Upload installer artifact
         uses: actions/upload-artifact@v4
@@ -145,9 +77,6 @@ jobs:
   build-macos:
     if: github.event_name != 'pull_request' || github.event.pull_request.merged == true
     runs-on: macos-latest
-    env:
-      SIGN_MACOS: ${{ secrets.MACOS_CERT_BASE64 != '' }}
-      NOTARIZE_MACOS: ${{ secrets.MACOS_NOTARY_APPLE_ID != '' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -185,62 +114,11 @@ jobs:
           test -d dist/PyMappr.app || { echo "PyMappr.app missing"; exit 1; }
           test -e dist/PyMappr.app/Contents/MacOS/PyMappr || exit 1
 
-      - name: Sign app bundle
-        if: env.SIGN_MACOS == 'true'
-        env:
-          MACOS_CERT_BASE64: ${{ secrets.MACOS_CERT_BASE64 }}
-          MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
-          MACOS_SIGNING_IDENTITY: ${{ secrets.MACOS_SIGNING_IDENTITY }}
-        run: |
-          # Import the Developer ID certificate into a throwaway keychain.
-          keychain="$RUNNER_TEMP/build.keychain"
-          keychain_password=$(openssl rand -base64 24)
-          echo "$MACOS_CERT_BASE64" | base64 --decode \
-            > "$RUNNER_TEMP/codesign.p12"
-          security create-keychain -p "$keychain_password" "$keychain"
-          security set-keychain-settings -lut 3600 "$keychain"
-          security unlock-keychain -p "$keychain_password" "$keychain"
-          security import "$RUNNER_TEMP/codesign.p12" -k "$keychain" \
-            -P "$MACOS_CERT_PASSWORD" -T /usr/bin/codesign
-          security set-key-partition-list -S apple-tool:,apple: \
-            -s -k "$keychain_password" "$keychain"
-          security list-keychains -d user -s "$keychain" login.keychain
-          rm "$RUNNER_TEMP/codesign.p12"
-
-          # Sign the bundle with the hardened runtime (required for
-          # notarization) and verify the result.
-          codesign --force --deep --options runtime --timestamp \
-            --sign "$MACOS_SIGNING_IDENTITY" dist/PyMappr.app
-          codesign --verify --deep --strict --verbose=2 dist/PyMappr.app
-
       - name: Build DMG
         run: |
           hdiutil create -volname PyMappr \
             -srcfolder dist/PyMappr.app -ov -format UDZO \
             "dist/PyMappr-${{ steps.version.outputs.version }}-macOS.dmg"
-
-      - name: Sign DMG
-        if: env.SIGN_MACOS == 'true'
-        env:
-          MACOS_SIGNING_IDENTITY: ${{ secrets.MACOS_SIGNING_IDENTITY }}
-        run: |
-          codesign --force --timestamp --sign "$MACOS_SIGNING_IDENTITY" \
-            dist/PyMappr-*-macOS.dmg
-
-      - name: Notarize and staple DMG
-        if: env.NOTARIZE_MACOS == 'true'
-        env:
-          MACOS_NOTARY_APPLE_ID: ${{ secrets.MACOS_NOTARY_APPLE_ID }}
-          MACOS_NOTARY_TEAM_ID: ${{ secrets.MACOS_NOTARY_TEAM_ID }}
-          MACOS_NOTARY_PASSWORD: ${{ secrets.MACOS_NOTARY_PASSWORD }}
-        run: |
-          dmg=$(ls dist/PyMappr-*-macOS.dmg)
-          xcrun notarytool submit "$dmg" \
-            --apple-id "$MACOS_NOTARY_APPLE_ID" \
-            --team-id "$MACOS_NOTARY_TEAM_ID" \
-            --password "$MACOS_NOTARY_PASSWORD" \
-            --wait
-          xcrun stapler staple "$dmg"
 
       - name: Upload DMG artifact
         uses: actions/upload-artifact@v4
@@ -405,8 +283,6 @@ jobs:
     needs: [build-windows, build-macos, build-ubuntu, build-arch, build-fedora]
     if: github.event_name != 'pull_request' || github.event.pull_request.merged == true
     runs-on: ubuntu-latest
-    env:
-      SIGN_GPG: ${{ secrets.GPG_PRIVATE_KEY != '' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -429,19 +305,6 @@ jobs:
             -o "release-assets/PyMappr-$v-source.zip" HEAD
           git archive --format=tar.gz --prefix="PyMappr-$v/" \
             -o "release-assets/PyMappr-$v-source.tar.gz" HEAD
-
-      - name: GPG-sign release assets
-        if: env.SIGN_GPG == 'true'
-        env:
-          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
-          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
-        run: |
-          echo "$GPG_PRIVATE_KEY" | gpg --batch --import
-          find release-assets -type f ! -name "*.asc" | while read -r f; do
-            gpg --batch --yes --pinentry-mode loopback \
-              --passphrase "$GPG_PASSPHRASE" \
-              --armor --detach-sign "$f"
-          done
 
       - name: Create or update release
         uses: softprops/action-gh-release@v2

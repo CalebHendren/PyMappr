@@ -196,22 +196,7 @@ and attaches all of them - plus source `.zip`/`.tar.gz` archives - to a
 GitHub release. It runs automatically when a pull request is merged into
 `main` (and for `v*` tags or manual dispatch).
 
-### Code signing
-
-The workflow signs the builds automatically when the corresponding
-repository secrets are configured; without them it still builds, just
-unsigned (so forks and pre-certificate setups keep working):
-
-| Platform | What is signed | Secrets |
-|----------|----------------|---------|
-| Windows  | `PyMappr.exe` and the installer (Authenticode, timestamped, verified with `signtool verify`) | `WINDOWS_CERT_BASE64` (base64 of the `.pfx`), `WINDOWS_CERT_PASSWORD` |
-| macOS    | `PyMappr.app` (hardened runtime) and the DMG, then notarized and stapled | `MACOS_CERT_BASE64` (base64 of the Developer ID `.p12`), `MACOS_CERT_PASSWORD`, `MACOS_SIGNING_IDENTITY`; notarization additionally needs `MACOS_NOTARY_APPLE_ID`, `MACOS_NOTARY_TEAM_ID`, `MACOS_NOTARY_PASSWORD` (an app-specific password) |
-| Linux    | Every release asset gets a detached GPG signature (`.asc`) | `GPG_PRIVATE_KEY` (ASCII-armored), `GPG_PASSPHRASE` |
-
-To base64-encode a certificate for a secret:
-`base64 -w0 cert.pfx` (Linux) or `base64 -i cert.p12 | pbcopy` (macOS).
-
-### Building locally
+Locally:
 
 - **Windows** (needs [Inno Setup 6](https://jrsoftware.org/isinfo.php) with
   `iscc` on PATH): `packaging\build_windows.bat`
