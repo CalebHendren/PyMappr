@@ -1,12 +1,12 @@
-# EzMaps
+# PyMappr
 
 Simple desktop mapping software focused on high-quality point-distribution
 maps. Load point data from a CSV, style it, explore Natural Earth base layers
 in real time in several map projections, and export the result as a PNG.
 
-![EzMaps](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-blue)
+![PyMappr](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-blue)
 
-![EzMaps main window with grouped points and a legend](docs/images/app_points.png)
+![PyMappr main window with grouped points and a legend](docs/images/app_points.png)
 
 ## Features
 
@@ -46,7 +46,14 @@ in real time in several map projections, and export the result as a PNG.
     color while canines get their own shapes in another color
   - *Vary symbols per group* to cycle shapes automatically
   - position, font size, column count, frame on/off, and a custom title
+- **Filter bar below the map**: pick a name column and tick the values to
+  show - on the felines-and-canines dataset, filter by Family and untick
+  Felines to see only the dogs. *All*/*None* buttons for quick toggling.
 - **Save map as PNG** at 100-300 DPI.
+- **Update check**: at most once per day, on launch, PyMappr asks the GitHub
+  releases API whether a newer version exists and offers to open the
+  releases page (silent when offline). *Help > Check for updates* runs the
+  same check on demand.
 
 ## Screenshots
 
@@ -123,17 +130,17 @@ To reproduce these renders: `python scripts/make_screenshots.py`
 
 Grab the latest build for your platform from the
 [releases page](../../releases). Releases are built automatically whenever a
-pull request is merged; each release also carries `EzMaps-<version>-source.zip`
-and `EzMaps-<version>-source.tar.gz` archives of the source code.
+pull request is merged; each release also carries `PyMappr-<version>-source.zip`
+and `PyMappr-<version>-source.tar.gz` archives of the source code.
 
 | Platform       | File                                     | Install |
 |----------------|------------------------------------------|---------|
-| Windows        | `EzMaps-Setup-<version>.exe`             | Run the installer (asks about a desktop shortcut) |
-| macOS          | `EzMaps-<version>-macOS.dmg`             | Open the DMG and drag EzMaps to Applications |
-| Linux (Ubuntu) | `ezmaps_<version>_amd64.deb`             | `sudo apt install ./ezmaps_<version>_amd64.deb`, then run `ezmaps` |
-| Linux (Fedora) | `ezmaps-<version>-1.<dist>.x86_64.rpm`   | `sudo dnf install ./ezmaps-<version>-*.x86_64.rpm`, then run `ezmaps` |
-| Linux (Arch)   | `ezmaps-<version>-1-x86_64.pkg.tar.zst`  | `sudo pacman -U ezmaps-<version>-1-x86_64.pkg.tar.zst`, then run `ezmaps` |
-| Any Linux      | `EzMaps-<version>-linux-<distro>-x86_64.tar.gz` | Extract and run `EzMaps/EzMaps` |
+| Windows        | `PyMappr-Setup-<version>.exe`             | Run the installer (asks about a desktop shortcut). Re-running it offers to uninstall; there is also a Start-menu *Uninstall PyMappr* shortcut |
+| macOS          | `PyMappr-<version>-macOS.dmg`             | Open the DMG and drag PyMappr to Applications |
+| Linux (Ubuntu) | `pymappr_<version>_amd64.deb`             | `sudo apt install ./pymappr_<version>_amd64.deb`, then run `pymappr` |
+| Linux (Fedora) | `pymappr-<version>-1.<dist>.x86_64.rpm`   | `sudo dnf install ./pymappr-<version>-*.x86_64.rpm`, then run `pymappr` |
+| Linux (Arch)   | `pymappr-<version>-1-x86_64.pkg.tar.zst`  | `sudo pacman -U pymappr-<version>-1-x86_64.pkg.tar.zst`, then run `pymappr` |
+| Any Linux      | `PyMappr-<version>-linux-<distro>-x86_64.tar.gz` | Extract and run `PyMappr/PyMappr` |
 
 ## Running from source
 
@@ -142,7 +149,7 @@ Requires Python 3.11+ with Tk support.
 ```bash
 pip install -r requirements.txt
 python scripts/fetch_data.py   # one-time download of Natural Earth data (~130 MB)
-python -m ezmaps
+python -m pymappr
 ```
 
 ## Building the packages
@@ -159,9 +166,9 @@ Locally:
 
 - **Windows** (needs [Inno Setup 6](https://jrsoftware.org/isinfo.php) with
   `iscc` on PATH): `packaging\build_windows.bat`
-- **macOS**: `pyinstaller packaging/ezmaps.spec` then create a DMG from
-  `dist/EzMaps.app`
-- **Linux**: `pyinstaller packaging/ezmaps.spec` then
+- **macOS**: `pyinstaller packaging/pymappr.spec` then create a DMG from
+  `dist/PyMappr.app`
+- **Linux**: `pyinstaller packaging/pymappr.spec` then
   `packaging/build_linux.sh ubuntu --deb` (Debian/Ubuntu),
   `packaging/build_rpm.sh` (Fedora), or
   `cd packaging/arch && makepkg` (Arch)
@@ -176,21 +183,23 @@ python scripts/make_screenshots.py # regenerate the README images
 
 Project layout:
 
-- `ezmaps/coords.py` - decimal/DMS coordinate parsing
-- `ezmaps/data_loader.py` - CSV reading and column mapping (N name columns)
-- `ezmaps/layers.py` - Natural Earth layer store (lazy loading, continents)
-- `ezmaps/projections.py` - map projections (pyproj)
-- `ezmaps/renderer.py` - matplotlib map rendering (layers, labels, graticule,
+- `pymappr/coords.py` - decimal/DMS coordinate parsing
+- `pymappr/data_loader.py` - CSV reading and column mapping (N name columns)
+- `pymappr/layers.py` - Natural Earth layer store (lazy loading, continents)
+- `pymappr/projections.py` - map projections (pyproj)
+- `pymappr/renderer.py` - matplotlib map rendering (layers, labels, graticule,
   projections, wrap-around panning, legend)
-- `ezmaps/styles.py` - point styles, marker symbols, group/color-by styling
-- `ezmaps/app.py`, `ezmaps/ui/` - Tkinter application
+- `pymappr/styles.py` - point styles, marker symbols, group/color-by styling
+- `pymappr/updates.py` - daily update check against the GitHub releases API
+- `pymappr/app.py`, `pymappr/ui/` - Tkinter application (control panel,
+  column mapper, legend editor, filter bar)
 - `scripts/fetch_data.py` - downloads and prepares the bundled map data
 - `packaging/` - PyInstaller spec, Inno Setup script, Linux/Fedora/Arch
   packaging
 
 ## Support Me
 
-If EzMaps is useful to you, you can support its development on Patreon:
+If PyMappr is useful to you, you can support its development on Patreon:
 
 [**patreon.com/cw/CalebHendren**](https://www.patreon.com/cw/CalebHendren)
 
@@ -199,12 +208,12 @@ There is also a *Support Me* section in the app's side panel and a
 
 ## Citation
 
-Citing EzMaps is not necessary, but it is welcome. If EzMaps was useful in
+Citing PyMappr is not necessary, but it is welcome. If PyMappr was useful in
 your work - a map in a paper, a poster, a blog post, anything - you can
 credit it like this:
 
-> Hendren, Caleb. *EzMaps* [computer software].
-> https://github.com/CalebHendren/EzMaps
+> Hendren, Caleb. *PyMappr* [computer software].
+> https://github.com/CalebHendren/PyMappr
 
 ## Data credits
 

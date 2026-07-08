@@ -21,10 +21,10 @@ from matplotlib.figure import Figure  # noqa: E402
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
-from ezmaps.data_loader import load_csv  # noqa: E402
-from ezmaps.layers import LayerStore  # noqa: E402
-from ezmaps.renderer import MapRenderer  # noqa: E402
-from ezmaps.styles import default_styles, group_points  # noqa: E402
+from pymappr.data_loader import load_csv  # noqa: E402
+from pymappr.layers import LayerStore  # noqa: E402
+from pymappr.renderer import MapRenderer  # noqa: E402
+from pymappr.styles import default_styles, group_points  # noqa: E402
 
 OUT_DIR = REPO_ROOT / "docs" / "images"
 DPI = 110

@@ -9,8 +9,8 @@ from __future__ import annotations
 import tkinter as tk
 from tkinter import ttk
 
-from ezmaps.layers import CONTINENT_EXTENTS
-from ezmaps.projections import PROJECTIONS
+from pymappr.layers import CONTINENT_EXTENTS
+from pymappr.projections import PROJECTIONS
 
 PANEL_WIDTH = 300
 
@@ -252,7 +252,7 @@ class ControlPanel(ttk.Frame):
 
     def _build_support_section(self) -> None:
         sec = self._section("Support Me")
-        ttk.Label(sec, text="Enjoying EzMaps? Support development:",
+        ttk.Label(sec, text="Enjoying PyMappr? Support development:",
                   wraplength=PANEL_WIDTH - 40).pack(anchor="w")
         ttk.Button(sec, text="\N{BLACK HEART SUIT} Support on Patreon",
                    command=self._open_patreon).pack(fill="x", pady=2)
