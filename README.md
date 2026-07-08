@@ -46,6 +46,12 @@ in real time in several map projections, and export the result as a PNG.
     color while canines get their own shapes in another color
   - *Vary symbols per group* to cycle shapes automatically
   - position, font size, column count, frame on/off, and a custom title
+- **Two-attribute styling for deep hierarchies**: *Color by* one column and
+  *Symbol by* another to encode two levels at once (e.g. color by Order,
+  symbol by Family). The legend switches to a compact **color key + symbol
+  key** - a handful of colors and shapes - instead of one row per
+  combination, so a 1500-point, 33-species dataset stays readable.
+- **Point opacity** slider to keep dense, overlapping point clouds legible.
 - **Filter bar below the map**: pick a name column and tick the values to
   show - on the felines-and-canines dataset, filter by Family and untick
   Felines to see only the dogs. *All*/*None* buttons for quick toggling.
@@ -98,6 +104,9 @@ Working examples in [`sample_data/`](sample_data):
   Animal + Place, for the grouped-styling test case below
 - [`dog_breeds.csv`](sample_data/dog_breeds.csv) - Species + Breed with the
   place of origin of ~90 dog breeds
+- [`insects.csv`](sample_data/insects.csv) - 1500 rows of a four-level
+  taxonomy (Order, Family, Genus, Species) for the two-attribute styling
+  test case below
 
 ## Test cases
 
@@ -122,6 +131,18 @@ shape in the feline color, while wolves, coyotes, and dingoes get their own
 shapes in the canine color:
 
 ![Felines and canines styled by family](docs/images/felines_canines_points.png)
+
+### Insects: a four-level taxonomy (Color by + Symbol by)
+
+[`sample_data/insects.csv`](sample_data/insects.csv) has 1500 records with
+an `Order, Family, Genus, Species` hierarchy - 3 orders, 7 families, 17
+genera, 33 species. Grouping by Species alone would make a 33-row legend.
+Instead, set *Color by* to Order and *Symbol by* to Family: color encodes
+the order, shape encodes the family, and the legend collapses to a compact
+color key (3 colors) plus symbol key (7 shapes) that decodes every point.
+Turning the point opacity down keeps the overlapping cloud readable:
+
+![Insects colored by order, shaped by family](docs/images/insects_points.png)
 
 To reproduce these renders: `python scripts/make_screenshots.py`
 (writes to `docs/images/`).

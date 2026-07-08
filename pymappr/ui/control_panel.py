@@ -105,10 +105,28 @@ class ControlPanel(ttk.Frame):
             sec, "Color by:", self.color_by_var, ["None"],
             self.app.on_style_scheme, width=18)
 
+        # Symbol by: encode a second column as marker shape. Combined with
+        # Color by this styles two levels of a hierarchy at once (e.g. color
+        # by Order, symbol by Family) and switches the legend to a compact
+        # color + symbol key instead of one row per group.
+        self.symbol_by_var = tk.StringVar(value="None")
+        self.symbol_by_box = self._combo_row(
+            sec, "Symbol by:", self.symbol_by_var, ["None"],
+            self.app.on_style_scheme, width=18)
+        ttk.Label(sec, text="(Symbol by = compact color/symbol legend)",
+                  foreground="#666666").pack(anchor="w")
+
         self.vary_symbols_var = tk.BooleanVar(value=False)
         ttk.Checkbutton(sec, text="Vary symbols per group",
                         variable=self.vary_symbols_var,
                         command=self.app.on_style_scheme).pack(anchor="w")
+
+        ttk.Label(sec, text="Point opacity:").pack(anchor="w", pady=(6, 0))
+        self.point_alpha_var = tk.DoubleVar(value=1.0)
+        tk.Scale(sec, from_=0.1, to=1.0, orient="horizontal",
+                 variable=self.point_alpha_var, showvalue=True,
+                 resolution=0.05,
+                 command=lambda _v: self.app.on_point_alpha()).pack(fill="x")
 
     def _build_legend_section(self) -> None:
         sec = self._section("Legend")
@@ -302,6 +320,8 @@ class ControlPanel(ttk.Frame):
         self.group_by_var.set(selected)
         self.color_by_box.configure(values=choices)
         self.color_by_var.set("None")
+        self.symbol_by_box.configure(values=choices)
+        self.symbol_by_var.set("None")
 
     def set_file_info(self, text: str) -> None:
         self.file_label.config(text=text, foreground="#333333")
