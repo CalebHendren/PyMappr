@@ -159,5 +159,5 @@ class LayerStore:
         return self._basemap
 
     def icon_path(self) -> Path | None:
-        path = self.data_dir / "icon" / "ezmaps.ico"
+        path = self.data_dir / "icon" / "pymappr.ico"
         return path if path.exists() else None
