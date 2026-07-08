@@ -38,6 +38,10 @@ jobs:
   build-windows:
     if: github.event_name != 'pull_request' || github.event.pull_request.merged == true
     runs-on: windows-latest
+    # The secrets context can't be used in step `if:` conditions, so lift the
+    # "is signing configured?" check into a job-level env var and gate on it.
+    env:
+      SIGN_WINDOWS: ${{ secrets.WINDOWS_CERT_BASE64 != '' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -80,7 +84,7 @@ jobs:
           }
 
       - name: Sign executable
-        if: ${{ secrets.WINDOWS_CERT_BASE64 != '' }}
+        if: env.SIGN_WINDOWS == 'true'
         env:
           WINDOWS_CERT_BASE64: ${{ secrets.WINDOWS_CERT_BASE64 }}
           WINDOWS_CERT_PASSWORD: ${{ secrets.WINDOWS_CERT_PASSWORD }}
@@ -108,7 +112,7 @@ jobs:
             packaging\installer.iss
 
       - name: Sign installer
-        if: ${{ secrets.WINDOWS_CERT_BASE64 != '' }}
+        if: env.SIGN_WINDOWS == 'true'
         env:
           WINDOWS_CERT_BASE64: ${{ secrets.WINDOWS_CERT_BASE64 }}
           WINDOWS_CERT_PASSWORD: ${{ secrets.WINDOWS_CERT_PASSWORD }}
@@ -141,6 +145,9 @@ jobs:
   build-macos:
     if: github.event_name != 'pull_request' || github.event.pull_request.merged == true
     runs-on: macos-latest
+    env:
+      SIGN_MACOS: ${{ secrets.MACOS_CERT_BASE64 != '' }}
+      NOTARIZE_MACOS: ${{ secrets.MACOS_NOTARY_APPLE_ID != '' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -179,7 +186,7 @@ jobs:
           test -e dist/PyMappr.app/Contents/MacOS/PyMappr || exit 1
 
       - name: Sign app bundle
-        if: ${{ secrets.MACOS_CERT_BASE64 != '' }}
+        if: env.SIGN_MACOS == 'true'
         env:
           MACOS_CERT_BASE64: ${{ secrets.MACOS_CERT_BASE64 }}
           MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
@@ -213,7 +220,7 @@ jobs:
             "dist/PyMappr-${{ steps.version.outputs.version }}-macOS.dmg"
 
       - name: Sign DMG
-        if: ${{ secrets.MACOS_CERT_BASE64 != '' }}
+        if: env.SIGN_MACOS == 'true'
         env:
           MACOS_SIGNING_IDENTITY: ${{ secrets.MACOS_SIGNING_IDENTITY }}
         run: |
@@ -221,7 +228,7 @@ jobs:
             dist/PyMappr-*-macOS.dmg
 
       - name: Notarize and staple DMG
-        if: ${{ secrets.MACOS_NOTARY_APPLE_ID != '' }}
+        if: env.NOTARIZE_MACOS == 'true'
         env:
           MACOS_NOTARY_APPLE_ID: ${{ secrets.MACOS_NOTARY_APPLE_ID }}
           MACOS_NOTARY_TEAM_ID: ${{ secrets.MACOS_NOTARY_TEAM_ID }}
@@ -398,6 +405,8 @@ jobs:
     needs: [build-windows, build-macos, build-ubuntu, build-arch, build-fedora]
     if: github.event_name != 'pull_request' || github.event.pull_request.merged == true
     runs-on: ubuntu-latest
+    env:
+      SIGN_GPG: ${{ secrets.GPG_PRIVATE_KEY != '' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -422,7 +431,7 @@ jobs:
             -o "release-assets/PyMappr-$v-source.tar.gz" HEAD
 
       - name: GPG-sign release assets
-        if: ${{ secrets.GPG_PRIVATE_KEY != '' }}
+        if: env.SIGN_GPG == 'true'
         env:
           GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
           GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
