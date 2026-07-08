@@ -1,4 +1,4 @@
-"""Matplotlib map rendering for EzMaps.
+"""Matplotlib map rendering for PyMappr.
 
 The renderer owns one Figure/Axes pair. Every map layer becomes a small set
 of matplotlib artists, created lazily the first time it is switched on and
@@ -12,7 +12,7 @@ Two cross-cutting features shape the implementation:
   view is re-centered whenever a pan crosses the antimeridian. Panning east
   or west therefore loops around the globe seamlessly.
 * **Projections** - all drawing goes through a `Projection` (see
-  ``ezmaps.projections``). The default Equirectangular projection is the
+  ``pymappr.projections``). The default Equirectangular projection is the
   identity; the others reproject vectors, points, labels, and the basemap.
 """
 
@@ -27,9 +27,9 @@ from matplotlib.collections import LineCollection
 from matplotlib.lines import Line2D
 from matplotlib.ticker import AutoLocator, FuncFormatter, MultipleLocator
 
-from ezmaps.layers import CONTINENT_EXTENTS, LAYER_SPECS, LayerStore
-from ezmaps.projections import get_projection
-from ezmaps.styles import PointStyle
+from pymappr.layers import CONTINENT_EXTENTS, LAYER_SPECS, LayerStore
+from pymappr.projections import get_projection
+from pymappr.styles import PointStyle
 
 __all__ = ["MapRenderer"]
 
