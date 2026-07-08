@@ -167,6 +167,11 @@ Grab the latest build for your platform from the
 pull request is merged; each release also carries `PyMappr-<version>-source.zip`
 and `PyMappr-<version>-source.tar.gz` archives of the source code.
 
+> You are free to redistribute PyMappr and its source code however you please.
+> That said, the [Releases tab](../../releases) of this repository is the only
+> official place to download this software - builds obtained anywhere else are
+> unofficial and unsupported.
+
 | Platform       | File                                     | Install |
 |----------------|------------------------------------------|---------|
 | Windows        | `PyMappr-Setup-<version>.exe`             | Run the installer (asks about a desktop shortcut). Re-running it offers to uninstall; there is also a Start-menu *Uninstall PyMappr* shortcut |
@@ -233,12 +238,12 @@ Project layout:
 
 ## Support Me
 
-If PyMappr is useful to you, you can support its development on Patreon:
+If PyMappr is useful to you, you can support its development on Ko-fi:
 
-[**patreon.com/cw/CalebHendren**](https://www.patreon.com/cw/CalebHendren)
+[**ko-fi.com/calebhendren**](https://ko-fi.com/calebhendren)
 
 There is also a *Support Me* section in the app's side panel and a
-*Support me on Patreon* entry in the Help menu.
+*Support me on Ko-fi* entry in the Help menu.
 
 ## Citation
 
