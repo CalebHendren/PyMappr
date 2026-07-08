@@ -4,7 +4,7 @@
 pkgname=ezmaps
 pkgver=1.0.0
 pkgrel=1
-pkgdesc="Simple desktop mapping software: plot CSV points, heatmaps, PNG export"
+pkgdesc="Simple desktop mapping software: plot CSV points on offline basemaps, PNG export"
 arch=('x86_64')
 url="https://github.com/CalebHendren/EzMaps"
 license=('MIT')

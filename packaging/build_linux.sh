@@ -49,8 +49,8 @@ Priority: optional
 Architecture: amd64
 Maintainer: Caleb Hendren <calebahendren@gmail.com>
 Description: Simple desktop mapping software
- Plot CSV point data on offline Natural Earth basemaps, build heatmaps,
- and export the result as a PNG.
+ Plot CSV point data on offline Natural Earth basemaps in multiple map
+ projections, and export the result as a PNG.
 EOF
 
     deb="dist/ezmaps_${VERSION}_amd64.deb"
