@@ -2,7 +2,7 @@ import textwrap
 
 import pytest
 
-from ezmaps.data_loader import (ColumnMapping, build_dataset, guess_mapping,
+from pymappr.data_loader import (ColumnMapping, build_dataset, guess_mapping,
                                 load_csv, read_csv)
 
 

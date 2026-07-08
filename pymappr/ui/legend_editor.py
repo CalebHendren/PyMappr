@@ -8,7 +8,7 @@ from __future__ import annotations
 import tkinter as tk
 from tkinter import colorchooser, ttk
 
-from ezmaps.styles import MARKERS, PointStyle
+from pymappr.styles import MARKERS, PointStyle
 
 
 class LegendEditorDialog(tk.Toplevel):

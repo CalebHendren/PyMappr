@@ -3,7 +3,7 @@
 import matplotlib.markers
 import pandas as pd
 
-from ezmaps.styles import (DEFAULT_PALETTE, MARKER_CYCLE, MARKERS,
+from pymappr.styles import (DEFAULT_PALETTE, MARKER_CYCLE, MARKERS,
                            default_styles, group_points)
 
 
