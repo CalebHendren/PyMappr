@@ -3,7 +3,7 @@
 Usage: python scripts/make_screenshots.py
 
 Exercises the same renderer the app uses, on the bundled sample datasets:
-US cities, Wyoming cities (four name columns), and the dog-breed diversity
+US cities, Wyoming cities (four name columns), and the felines & canines
 dataset. Requires the map data (python scripts/fetch_data.py).
 """
 
@@ -34,9 +34,13 @@ def new_renderer(store: LayerStore) -> MapRenderer:
     return MapRenderer(Figure(figsize=(10, 6.5)), store)
 
 
-def point_groups_for(dataset, key: str):
+def point_groups_for(dataset, key: str, color_by: str | None = None):
     groups = group_points(dataset.frame, key)
-    styles = default_styles([label for label, _ in groups])
+    color_keys = None
+    if color_by is not None:
+        color_keys = [str(sub[color_by].iloc[0]) for _label, sub in groups]
+    styles = default_styles([label for label, _ in groups],
+                            color_keys=color_keys)
     return [(label, styles[label], sub["lon"].to_numpy(),
              sub["lat"].to_numpy()) for label, sub in groups]
 
@@ -57,9 +61,9 @@ def main() -> int:
     sample = REPO_ROOT / "sample_data"
     us = load_csv(str(sample / "us_cities.csv"))
     wyoming = load_csv(str(sample / "wyoming_cities.csv"))
-    dogs = load_csv(str(sample / "dog_breeds.csv"))
+    animals = load_csv(str(sample / "felines_and_canines.csv"))
 
-    # 1. Satellite world basemap with country labels.
+    # 1. Satellite world basemap with every country labelled.
     r = new_renderer(store)
     r.set_basemap("satellite")
     r.set_layer("countries", True)
@@ -85,38 +89,33 @@ def main() -> int:
     r.set_legend(True, title=wyoming.name_labels[2], location="lower left")
     save(r, "wyoming_points.png")
 
-    # 4. Wyoming heatmap: bandwidth + intensity + points on top.
-    r = new_renderer(store)
-    r.set_extent((-112.5, -103.5, 40.4, 45.6))
-    for key in ("countries", "states", "counties"):
-        r.set_layer(key, True)
-    r.set_point_groups(point_groups_for(wyoming, "name4"))
-    r.set_heatmap(True, radius=18, blur=4, intensity=1.6, cmap="hot",
-                  opacity=0.8, show_points=True)
-    r.set_legend(False)
-    save(r, "wyoming_heatmap.png")
-
-    # 5. Dog-breed diversity heatmap of the world, with bloom.
+    # 4. Felines & canines: color by family (Name 1), shape per animal
+    #    (Name 2) - cats share one color with a shape per species, dogs
+    #    share another color.
     r = new_renderer(store)
     r.set_extent("World")
     r.set_layer("countries", True)
-    r.set_ocean("grey")
-    r.set_point_groups(point_groups_for(dogs, "name1"))
-    r.set_heatmap(True, radius=14, blur=3, intensity=1.8, cmap="plasma",
-                  opacity=0.85, bloom=True, show_points=True)
-    r.set_legend(False)
-    save(r, "dogs_heatmap.png")
-
-    # 6. Classified (5-band) heatmap with a threshold, Europe detail.
-    r = new_renderer(store)
-    r.set_extent((-15, 45, 34, 62))
-    r.set_layer("countries", True)
     r.set_ocean("blue")
-    r.set_point_groups(point_groups_for(dogs, "name1"))
-    r.set_heatmap(True, radius=20, intensity=1.5, threshold=0.15,
-                  levels=5, cmap="viridis", opacity=0.75)
-    r.set_legend(False)
-    save(r, "heatmap_classified.png")
+    r.set_point_groups(point_groups_for(animals, "name2", color_by="name1"))
+    r.set_legend(True, title=animals.name_labels[1], location="lower left",
+                 fontsize=7, columns=2)
+    save(r, "felines_canines_points.png")
+
+    # 5. Robinson projection: world map with graticule and country labels.
+    r = new_renderer(store)
+    r.set_layer("countries", True)
+    r.set_projection("Robinson")
+    r.set_graticule(10)
+    r.set_labels("countries", True)
+    save(r, "robinson_world.png")
+
+    # 6. Countries layer off: political borders removed, continent
+    #    outlines kept.
+    r = new_renderer(store)
+    r.set_layer("countries", True)
+    r.set_layer("countries", False)
+    r.set_ocean("blue")
+    save(r, "continent_outlines.png")
 
     return 0
 
