@@ -1,8 +1,10 @@
-"""EzMaps main window: menu, matplotlib canvas, toolbar, control panel."""
+"""PyMappr main window: menu, matplotlib canvas, toolbar, control panel."""
 
 from __future__ import annotations
 
+import threading
 import tkinter as tk
+import webbrowser
 from tkinter import filedialog, messagebox, ttk
 
 import matplotlib
@@ -13,27 +15,30 @@ from matplotlib.backends.backend_tkagg import (FigureCanvasTkAgg,  # noqa: E402
                                                NavigationToolbar2Tk)
 from matplotlib.figure import Figure  # noqa: E402
 
-from ezmaps import __version__  # noqa: E402
-from ezmaps.data_loader import (PointDataset, build_dataset,  # noqa: E402
+from pymappr import __version__, updates  # noqa: E402
+from pymappr.data_loader import (PointDataset, build_dataset,  # noqa: E402
                                 guess_mapping, read_csv)
-from ezmaps.layers import LayerStore  # noqa: E402
-from ezmaps.renderer import MapRenderer  # noqa: E402
-from ezmaps.styles import PointStyle, default_styles, group_points  # noqa: E402
-from ezmaps.ui.column_mapper import ColumnMapperDialog  # noqa: E402
-from ezmaps.ui.control_panel import ControlPanel  # noqa: E402
-from ezmaps.ui.legend_editor import LegendEditorDialog  # noqa: E402
+from pymappr.layers import LayerStore  # noqa: E402
+from pymappr.renderer import MapRenderer  # noqa: E402
+from pymappr.styles import (NEUTRAL_MARKER_COLOR, PointStyle,  # noqa: E402
+                            attribute_style_maps, default_styles,
+                            group_points, style_by_attributes)
+from pymappr.ui.column_mapper import ColumnMapperDialog  # noqa: E402
+from pymappr.ui.control_panel import ControlPanel  # noqa: E402
+from pymappr.ui.filter_bar import FilterBar  # noqa: E402
+from pymappr.ui.legend_editor import LegendEditorDialog  # noqa: E402
 
 MAX_SKIPPED_SHOWN = 12
 
 
-class EzMapsApp:
+class PyMapprApp:
     def __init__(self, root: tk.Tk, store: LayerStore):
         self.root = root
         self.store = store
         self.dataset: PointDataset | None = None
         self.styles: dict[str, PointStyle] = {}
 
-        root.title("EzMaps")
+        root.title("PyMappr")
         root.geometry("1280x800")
         root.minsize(980, 640)
         icon = store.icon_path()
@@ -66,9 +71,15 @@ class EzMapsApp:
                                 anchor="w", padding=(6, 2))
         self.status.pack(side="bottom", fill="x")
 
+        self.filter_bar = FilterBar(map_frame, self.on_filter)
+        self.filter_bar.pack(side="bottom", fill="x")
+
         # Defaults: simple basemap with country borders.
         self.renderer.set_layer("countries", True)
         self.canvas.draw()
+
+        # Once-a-day update check, off the UI thread and after startup.
+        root.after(2000, self._auto_update_check)
 
     # ----------------------------------------------------------------- menu
 
@@ -86,7 +97,10 @@ class EzMapsApp:
         menubar.add_cascade(label="File", menu=file_menu)
 
         help_menu = tk.Menu(menubar, tearoff=0)
-        help_menu.add_command(label="About EzMaps", command=self._about)
+        help_menu.add_command(label="About PyMappr", command=self._about)
+        help_menu.add_command(label="Check for updates"
+                              "\N{HORIZONTAL ELLIPSIS}",
+                              command=self.on_check_updates)
         help_menu.add_separator()
         help_menu.add_command(label="Support me on Patreon",
                               command=self._open_patreon)
@@ -97,18 +111,59 @@ class EzMapsApp:
 
     def _about(self) -> None:
         messagebox.showinfo(
-            "About EzMaps",
-            f"EzMaps {__version__}\n\n"
+            "About PyMappr",
+            f"PyMappr {__version__}\n\n"
             "Simple mapping software: plot CSV point data on a world map.\n\n"
             "Map data \N{COPYRIGHT SIGN} Natural Earth (public domain),\n"
             "naturalearthdata.com",
             parent=self.root)
 
     def _open_patreon(self) -> None:
-        import webbrowser
-
-        from ezmaps.ui.control_panel import PATREON_URL
+        from pymappr.ui.control_panel import PATREON_URL
         webbrowser.open(PATREON_URL)
+
+    # -------------------------------------------------------------- updates
+
+    def _auto_update_check(self) -> None:
+        updates.check_daily_async(
+            lambda version: self.root.after(0, self._offer_update, version))
+
+    def on_check_updates(self) -> None:
+        """Manual check from the Help menu: always reports a result."""
+        self.set_status("Checking for updates\N{HORIZONTAL ELLIPSIS}")
+
+        def worker() -> None:
+            try:
+                newer = updates.check_now()
+            except Exception as exc:  # noqa: BLE001 - report any failure
+                self.root.after(0, self._update_check_failed, str(exc))
+                return
+            self.root.after(0, self._update_check_done, newer)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _update_check_done(self, newer: str | None) -> None:
+        self.set_status("Ready.")
+        if newer:
+            self._offer_update(newer)
+        else:
+            messagebox.showinfo(
+                "Check for updates",
+                f"PyMappr {__version__} is up to date.", parent=self.root)
+
+    def _update_check_failed(self, error: str) -> None:
+        self.set_status("Ready.")
+        messagebox.showwarning(
+            "Check for updates",
+            f"Could not check for updates:\n{error}", parent=self.root)
+
+    def _offer_update(self, version: str) -> None:
+        if messagebox.askyesno(
+                "Update available",
+                f"PyMappr {version} is available (you have {__version__})."
+                "\n\nOpen the releases page to download it?",
+                parent=self.root):
+            webbrowser.open(updates.RELEASES_URL)
 
     def set_status(self, text: str) -> None:
         self.status.config(text=text)
@@ -165,6 +220,8 @@ class EzMapsApp:
         short = path.replace("\\", "/").rsplit("/", 1)[-1]
         self.panel.set_file_info(f"{short}: {len(dataset)} points")
         self._update_group_choices()
+        self.filter_bar.set_dataset(dataset.frame, dataset.name_labels,
+                                    dataset.name_keys)
         self.styles = {}
         self._push_points()
         self._zoom_to_data()
@@ -186,9 +243,24 @@ class EzMapsApp:
         value = self.panel.color_by_var.get()
         return getattr(self, "_group_choice_keys", {}).get(value)
 
+    def _symbol_by_key(self) -> str | None:
+        value = self.panel.symbol_by_var.get()
+        return getattr(self, "_group_choice_keys", {}).get(value)
+
+    def _label_for_key(self, key: str | None) -> str | None:
+        if key is None or self.dataset is None:
+            return None
+        labels = dict(zip(self.dataset.name_keys, self.dataset.name_labels))
+        return labels.get(key)
+
     def _push_points(self) -> None:
         if self.dataset is None:
             return
+        if self._symbol_by_key() is not None:
+            self._push_points_by_attributes()
+            return
+        # Styles come from the full, unfiltered grouping so each group's
+        # color/symbol stays put while filter values are toggled.
         groups = group_points(self.dataset.frame, self._group_by_key())
         labels = [label for label, _ in groups]
         color_by = self._color_by_key()
@@ -202,13 +274,70 @@ class EzMapsApp:
                                vary_symbols=self.panel.vary_symbols_var.get())
         # Keep customized styles for groups that still exist.
         self.styles = {lb: self.styles.get(lb, fresh[lb]) for lb in labels}
+        shown = group_points(self._filtered_frame(), self._group_by_key())
+        self.renderer.set_structured_legend(None)
         self.renderer.set_point_groups([
-            (label, self.styles[label], sub["lon"].to_numpy(),
-             sub["lat"].to_numpy())
-            for label, sub in groups
+            (label, self.styles.get(label, fresh.get(label, PointStyle())),
+             sub["lon"].to_numpy(), sub["lat"].to_numpy())
+            for label, sub in shown
         ])
         self._apply_legend(redraw=False)
         self.renderer.redraw()
+
+    def _push_points_by_attributes(self) -> None:
+        """Style points by a color column and a symbol column at once, with a
+        compact color/symbol key legend (used when Symbol by is set)."""
+        assert self.dataset is not None
+        color_key = self._color_by_key()
+        symbol_key = self._symbol_by_key()
+        # Maps come from the full dataset so colors, symbols, and the legend
+        # stay stable as the filter hides values.
+        color_map, symbol_map = attribute_style_maps(
+            self.dataset.frame, color_key, symbol_key)
+        groups = style_by_attributes(self._filtered_frame(), color_key,
+                                     symbol_key, color_map, symbol_map)
+        self.styles = {}
+        self.renderer.set_point_groups([
+            (label, style, sub["lon"].to_numpy(), sub["lat"].to_numpy())
+            for label, style, sub in groups
+        ])
+        sections = []
+        if color_map:
+            sections.append((self._label_for_key(color_key) or "Color", [
+                (value, PointStyle(color=color, marker="Circle"))
+                for value, color in color_map.items()
+            ]))
+        if symbol_map:
+            sections.append((self._label_for_key(symbol_key) or "Symbol", [
+                (value, PointStyle(color=NEUTRAL_MARKER_COLOR, marker=marker))
+                for value, marker in symbol_map.items()
+            ]))
+        self.renderer.set_structured_legend(sections)
+        self._apply_legend(redraw=False)
+        self.renderer.redraw()
+
+    def _filtered_frame(self):
+        """The dataset frame with the filter bar's selection applied."""
+        assert self.dataset is not None
+        frame = self.dataset.frame
+        selection = self.filter_bar.selection()
+        if selection is None:
+            return frame
+        key, allowed = selection
+        if key not in frame.columns:
+            return frame
+        return frame[frame[key].fillna("").isin(allowed)]
+
+    def on_filter(self) -> None:
+        if self.dataset is None:
+            return
+        self._push_points()
+        shown = len(self._filtered_frame())
+        total = len(self.dataset)
+        if shown == total:
+            self.set_status(f"Showing all {total} points.")
+        else:
+            self.set_status(f"Filter: showing {shown} of {total} points.")
 
     def _zoom_to_data(self) -> None:
         assert self.dataset is not None
@@ -234,17 +363,20 @@ class EzMapsApp:
         self.styles = {}
         self._push_points()
 
+    def on_point_alpha(self) -> None:
+        self.renderer.set_point_alpha(self.panel.point_alpha_var.get())
+        self.renderer.redraw()
+
     def on_legend_options(self) -> None:
         self._apply_legend()
 
     def _apply_legend(self, redraw: bool = True) -> None:
         title = self.panel.legend_title_var.get().strip() or None
-        if title is None and self.dataset is not None:
-            key = self._group_by_key()
-            if key is not None:
-                labels = dict(zip(self.dataset.name_keys,
-                                  self.dataset.name_labels))
-                title = labels.get(key)
+        # In two-attribute mode the legend's own sections name the columns,
+        # so don't add a redundant group-by title on top.
+        if (title is None and self.dataset is not None
+                and self._symbol_by_key() is None):
+            title = self._label_for_key(self._group_by_key())
         self.renderer.set_legend(
             self.panel.legend_show_var.get(), title,
             self.panel.legend_loc_var.get(),
@@ -255,9 +387,16 @@ class EzMapsApp:
             self.renderer.redraw()
 
     def on_edit_styles(self) -> None:
-        if not self.styles:
+        if self.dataset is None:
             messagebox.showinfo("No data", "Open a CSV first to customize "
                                 "its legend.", parent=self.root)
+            return
+        if not self.styles:
+            messagebox.showinfo(
+                "Not available", "Per-group styles can't be edited while "
+                "Symbol by is set (colors and symbols come from the chosen "
+                "columns). Set Symbol by to None to customize groups.",
+                parent=self.root)
             return
         LegendEditorDialog(self.root, self.styles, self._push_points)
 
@@ -359,9 +498,9 @@ def main() -> int:
     root = tk.Tk()
     if error:
         root.withdraw()
-        messagebox.showerror("EzMaps - missing map data", error)
+        messagebox.showerror("PyMappr - missing map data", error)
         return 1
-    EzMapsApp(root, store)
+    PyMapprApp(root, store)
     root.mainloop()
     return 0
 

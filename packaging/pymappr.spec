@@ -1,11 +1,11 @@
-# PyInstaller spec for EzMaps (Windows, macOS, and Linux).
+# PyInstaller spec for PyMappr (Windows, macOS, and Linux).
 #
-#   pyinstaller packaging/ezmaps.spec
+#   pyinstaller packaging/pymappr.spec
 #
 # Expects data/ to be populated first (python scripts/fetch_data.py).
-# Produces dist/EzMaps as a onedir bundle - fast startup and friendly to
+# Produces dist/PyMappr as a onedir bundle - fast startup and friendly to
 # the platform packaging scripts in this directory. On macOS it also
-# produces dist/EzMaps.app.
+# produces dist/PyMappr.app.
 
 import sys
 from pathlib import Path
@@ -15,9 +15,9 @@ from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 SPEC_DIR = Path(SPECPATH).resolve()
 REPO_ROOT = SPEC_DIR.parent
 DATA_DIR = REPO_ROOT / "data"
-ICON = DATA_DIR / "icon" / "ezmaps.ico"
+ICON = DATA_DIR / "icon" / "pymappr.ico"
 
-_init = (REPO_ROOT / "ezmaps" / "__init__.py").read_text(encoding="utf-8")
+_init = (REPO_ROOT / "pymappr" / "__init__.py").read_text(encoding="utf-8")
 VERSION = next(line.split('"')[1] for line in _init.splitlines()
                if line.startswith("__version__"))
 
@@ -55,17 +55,17 @@ except ImportError:
         ]
 
 a = Analysis(
-    [str(REPO_ROOT / "ezmaps" / "__main__.py")],
+    [str(REPO_ROOT / "pymappr" / "__main__.py")],
     pathex=[str(REPO_ROOT)],
     datas=datas,
     binaries=binaries,
     hiddenimports=[
-        "ezmaps.app",
+        "pymappr.app",
         "matplotlib.backends.backend_tkagg",
         *collect_submodules("pyogrio", filter=lambda name: ".tests" not in name),
     ],
     excludes=[
-        # Heavy optional deps pulled in by pandas/matplotlib that EzMaps
+        # Heavy optional deps pulled in by pandas/matplotlib that PyMappr
         # never uses - keeps the bundle smaller.
         "IPython", "jedi", "notebook", "pytest", "sphinx",
         "matplotlib.backends.backend_qt5agg", "PyQt5", "PyQt6", "PySide2",
@@ -80,7 +80,7 @@ exe = EXE(
     pyz,
     a.scripts,
     exclude_binaries=True,
-    name="EzMaps",
+    name="PyMappr",
     icon=str(ICON) if sys.platform == "win32" else None,
     console=False,
     upx=False,
@@ -90,14 +90,14 @@ coll = COLLECT(
     exe,
     a.binaries,
     a.datas,
-    name="EzMaps",
+    name="PyMappr",
     upx=False,
 )
 
 if sys.platform == "darwin":
     app = BUNDLE(
         coll,
-        name="EzMaps.app",
-        bundle_identifier="com.calebhendren.ezmaps",
+        name="PyMappr.app",
+        bundle_identifier="com.calebhendren.pymappr",
         version=VERSION,
     )
