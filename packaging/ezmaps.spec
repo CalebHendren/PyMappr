@@ -62,7 +62,6 @@ a = Analysis(
     hiddenimports=[
         "ezmaps.app",
         "matplotlib.backends.backend_tkagg",
-        "scipy.ndimage",
         *collect_submodules("pyogrio", filter=lambda name: ".tests" not in name),
     ],
     excludes=[
