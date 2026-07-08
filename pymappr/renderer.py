@@ -146,10 +146,22 @@ class MapRenderer:
         self._warp_cache: dict[str, tuple[np.ndarray, tuple]] = {}
         self._in_wrap = False
 
+        # Manual label placement: (layer key, label text) -> (dx, dy) offset
+        # in map coordinates, set by dragging a label with the mouse.
+        self._label_offsets: dict[tuple[str, str], tuple[float, float]] = {}
+        self._label_drag: dict | None = None
+
         self.set_extent("World")
         self._apply_graticule()
         self.ax.callbacks.connect("xlim_changed", self._on_limits_changed)
         self.ax.callbacks.connect("ylim_changed", self._on_limits_changed)
+        if self.fig.canvas is not None:
+            self.fig.canvas.mpl_connect("button_press_event",
+                                        self._on_label_press)
+            self.fig.canvas.mpl_connect("motion_notify_event",
+                                        self._on_label_motion)
+            self.fig.canvas.mpl_connect("button_release_event",
+                                        self._on_label_release)
 
     # ------------------------------------------------------------------ view
 
@@ -197,6 +209,25 @@ class MapRenderer:
         self.ax.set_xlim(x0, x1)
         self.ax.set_ylim(y0, y1)
 
+    def zoom(self, factor: float, center: tuple[float, float] | None = None) -> None:
+        """Zoom the view by *factor* (>1 zooms in), keeping *center* (map
+        coordinates, e.g. the cursor position) fixed; without a center the
+        view zooms about its middle."""
+        x0, x1 = self.ax.get_xlim()
+        y0, y1 = self.ax.get_ylim()
+        width = x1 - x0
+        world_w = self.proj.world_width
+        # Keep the zoom inside sane bounds: no further out than ~1.5
+        # world-widths, no further in than a millionth of the world.
+        factor = max(factor, width / (world_w * 1.5))
+        factor = min(factor, width / (world_w * 1e-6))
+        if abs(factor - 1.0) < 1e-9:
+            return
+        cx = center[0] if center is not None else (x0 + x1) / 2
+        cy = center[1] if center is not None else (y0 + y1) / 2
+        self.ax.set_xlim(cx - (cx - x0) / factor, cx + (x1 - cx) / factor)
+        self.ax.set_ylim(cy - (cy - y0) / factor, cy + (y1 - cy) / factor)
+
     def _zoom_level(self) -> float:
         x0, x1 = self.ax.get_xlim()
         width = max(abs(x1 - x0), 1e-9)
@@ -235,6 +266,9 @@ class MapRenderer:
         if name == self.proj.name:
             return
         self.proj = get_projection(name)
+        # Manual label offsets are in map coordinates, which just changed
+        # scale/shape entirely - start fresh in the new projection.
+        self._label_offsets.clear()
         self._clear_artists()
         self._rebuild_scene()
 
@@ -436,6 +470,12 @@ class MapRenderer:
         # Slightly smaller fonts when zoomed far out, so a fully labelled
         # world map stays readable.
         font_scale = float(np.clip(0.78 + 0.06 * zoom, 0.78, 1.15))
+        # Pixel-space rectangles of labels placed so far (all layers
+        # together): a new label that would overlap one is skipped. Labels
+        # the user has dragged are always drawn.
+        placed_rects: list[tuple[float, float, float, float]] = []
+        to_pixels = self.ax.transData
+        px_per_pt = self.fig.dpi / 72.0
         for key in LABEL_STYLES:
             for text in self._label_texts.get(key, []):
                 text.remove()
@@ -466,11 +506,89 @@ class MapRenderer:
 
             eligible = pd.concat(candidates).nsmallest(cap, "min_label")
             for row in eligible.itertuples():
-                texts.append(self.ax.text(
-                    row.px, row.py, row.text, ha="center", va="center",
+                offset = self._label_offsets.get((key, row.text))
+                lx = row.px + (offset[0] if offset else 0.0)
+                ly = row.py + (offset[1] if offset else 0.0)
+                rect = self._estimate_rect(to_pixels, lx, ly, row.text,
+                                           font["fontsize"] * px_per_pt)
+                if offset is None and self._overlaps_any(rect, placed_rects):
+                    continue
+                placed_rects.append(rect)
+                text = self.ax.text(
+                    lx, ly, row.text, ha="center", va="center",
                     zorder=Z_LABELS, clip_on=True,
-                    path_effects=_LABEL_HALO, **font))
+                    path_effects=_LABEL_HALO, picker=True, **font)
+                text._pym_key = (key, row.text)
+                text._pym_base = (row.px, row.py)
+                texts.append(text)
             self._label_texts[key] = texts
+
+    @staticmethod
+    def _estimate_rect(to_pixels, x: float, y: float, text: str,
+                       fontsize_px: float) -> tuple[float, float, float, float]:
+        """Rough pixel bounding box of a centered label, cheap enough to run
+        for every candidate without a canvas draw."""
+        sx, sy = to_pixels.transform((x, y))
+        half_w = (len(text) * 0.31 + 0.3) * fontsize_px
+        half_h = 0.72 * fontsize_px
+        return (sx - half_w, sy - half_h, sx + half_w, sy + half_h)
+
+    @staticmethod
+    def _overlaps_any(rect, rects) -> bool:
+        ax0, ay0, ax1, ay1 = rect
+        for bx0, by0, bx1, by1 in rects:
+            if ax0 < bx1 and ax1 > bx0 and ay0 < by1 and ay1 > by0:
+                return True
+        return False
+
+    # Dragging a label with the left mouse button moves it and remembers the
+    # offset (per layer + label text) across pans, zooms, and layer toggles;
+    # a right-click on a label snaps it back to its computed position.
+
+    def _toolbar_busy(self) -> bool:
+        toolbar = getattr(self.fig.canvas, "toolbar", None)
+        return bool(toolbar is not None and toolbar.mode)
+
+    def _label_under(self, event):
+        for texts in self._label_texts.values():
+            for text in texts:
+                contains, _info = text.contains(event)
+                if contains:
+                    return text
+        return None
+
+    def _on_label_press(self, event) -> None:
+        if event.inaxes is not self.ax or self._toolbar_busy():
+            return
+        text = self._label_under(event)
+        if text is None:
+            return
+        if event.button == 3:  # right-click: reset to automatic position
+            self._label_offsets.pop(text._pym_key, None)
+            self._refresh_labels()
+            self.redraw()
+            return
+        if event.button == 1:
+            tx, ty = text.get_position()
+            self._label_drag = {"text": text,
+                                "grab": (tx - event.xdata, ty - event.ydata)}
+
+    def _on_label_motion(self, event) -> None:
+        if self._label_drag is None or event.inaxes is not self.ax:
+            return
+        gx, gy = self._label_drag["grab"]
+        self._label_drag["text"].set_position((event.xdata + gx,
+                                               event.ydata + gy))
+        self.redraw()
+
+    def _on_label_release(self, event) -> None:
+        if self._label_drag is None:
+            return
+        text = self._label_drag["text"]
+        self._label_drag = None
+        tx, ty = text.get_position()
+        bx, by = text._pym_base
+        self._label_offsets[text._pym_key] = (tx - bx, ty - by)
 
     # ------------------------------------------------------------ graticule
 
@@ -575,18 +693,27 @@ class MapRenderer:
                     xs, ys = self.proj.forward(lons, lats)
                     xs = np.concatenate([xs + off for off in offsets])
                     ys = np.tile(ys, len(offsets))
+                    if style.is_open:  # outline-only marker
+                        face, edge, lw = "none", style.color, 1.2
+                    else:
+                        face, edge, lw = style.color, "white", 0.5
                     self._point_artists.append(self.ax.scatter(
-                        xs, ys, s=style.size, c=style.color,
+                        xs, ys, s=style.size, c=face,
                         marker=style.mpl_marker, zorder=Z_POINTS,
-                        edgecolors="white", linewidths=0.5,
+                        edgecolors=edge, linewidths=lw,
                         alpha=self._point_alpha, label=label))
         self._update_legend()
 
     def _legend_handle(self, style: PointStyle, size: float | None = None):
         area = style.size if size is None else size
+        if style.is_open:
+            face, edge, edge_w = "none", style.color, 1.2
+        else:
+            face, edge, edge_w = style.color, "white", 0.5
         return Line2D([], [], linestyle="", marker=style.mpl_marker,
-                      markersize=max(np.sqrt(area), 2), color=style.color,
-                      markeredgecolor="white", markeredgewidth=0.5)
+                      markersize=max(np.sqrt(area), 2),
+                      markerfacecolor=face, color=style.color,
+                      markeredgecolor=edge, markeredgewidth=edge_w)
 
     def _update_legend(self) -> None:
         legend = self.ax.get_legend()
