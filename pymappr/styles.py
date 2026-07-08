@@ -7,7 +7,12 @@ from dataclasses import dataclass
 import pandas as pd
 
 __all__ = ["PointStyle", "MARKERS", "DEFAULT_PALETTE", "group_points",
-           "default_styles"]
+           "default_styles", "attribute_style_maps", "style_by_attributes",
+           "NEUTRAL_MARKER_COLOR"]
+
+# Marker color used in the legend's "symbol" key, where shape (not color)
+# carries the meaning.
+NEUTRAL_MARKER_COLOR = "#555555"
 
 # Display name -> matplotlib marker.
 MARKERS = {
@@ -104,3 +109,57 @@ def default_styles(labels: list[str],
             color=DEFAULT_PALETTE[color_idx % len(DEFAULT_PALETTE)],
             marker=MARKER_CYCLE[shape_idx % len(MARKER_CYCLE)])
     return styles
+
+
+def attribute_style_maps(frame: pd.DataFrame, color_key: str | None,
+                         symbol_key: str | None):
+    """Value -> color and value -> marker maps for two-attribute styling.
+
+    Colors are assigned to the *color_key* column's values (round-robin
+    through the palette) and markers to the *symbol_key* column's values,
+    both ordered by first appearance. Deriving these from the full dataset
+    keeps the legend and colors stable while points are filtered. Either
+    key may be None, giving an empty map for that channel.
+    """
+    color_map: dict[str, str] = {}
+    if color_key and color_key in frame.columns:
+        for value in dict.fromkeys(frame[color_key].fillna("")):
+            color_map[value] = DEFAULT_PALETTE[len(color_map)
+                                               % len(DEFAULT_PALETTE)]
+    symbol_map: dict[str, str] = {}
+    if symbol_key and symbol_key in frame.columns:
+        for value in dict.fromkeys(frame[symbol_key].fillna("")):
+            symbol_map[value] = MARKER_CYCLE[len(symbol_map)
+                                             % len(MARKER_CYCLE)]
+    return color_map, symbol_map
+
+
+def style_by_attributes(frame: pd.DataFrame, color_key: str | None,
+                        symbol_key: str | None,
+                        color_map: dict[str, str],
+                        symbol_map: dict[str, str]):
+    """Split *frame* into render groups by (color value, symbol value).
+
+    Returns ``(label, PointStyle, sub_frame)`` for each distinct
+    combination present, colored/marked from *color_map*/*symbol_map*. One
+    scatter call per combination keeps rendering fast even with hundreds of
+    species, while the legend is built separately from the two maps so it
+    stays compact.
+    """
+    if frame.empty:
+        return []
+    ckey = color_key if (color_key and color_key in frame.columns) else None
+    skey = symbol_key if (symbol_key and symbol_key in frame.columns) else None
+    blank = pd.Series([""] * len(frame), index=frame.index)
+    cvals = frame[ckey].fillna("") if ckey else blank
+    svals = frame[skey].fillna("") if skey else blank
+    default_color = (next(iter(color_map.values()), None)
+                     or DEFAULT_PALETTE[0])
+    groups = []
+    for cval, sval in dict.fromkeys(zip(cvals, svals)):
+        sub = frame[(cvals == cval) & (svals == sval)]
+        label = " / ".join(p for p in (cval, sval) if p) or "All points"
+        style = PointStyle(color=color_map.get(cval, default_color),
+                           marker=symbol_map.get(sval, "Circle"))
+        groups.append((label, style, sub))
+    return groups

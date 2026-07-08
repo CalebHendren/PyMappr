@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 
 import pandas as pd
 
-from ezmaps.coords import CoordinateError, parse_latitude, parse_longitude
+from pymappr.coords import CoordinateError, parse_latitude, parse_longitude
 
 __all__ = ["ColumnMapping", "PointDataset", "read_csv", "guess_mapping",
            "build_dataset", "load_csv"]

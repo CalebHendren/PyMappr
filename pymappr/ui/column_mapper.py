@@ -13,7 +13,7 @@ from tkinter import ttk
 
 import pandas as pd
 
-from ezmaps.data_loader import ColumnMapping
+from pymappr.data_loader import ColumnMapping
 
 _UNSET = "(choose\N{HORIZONTAL ELLIPSIS})"
 PREVIEW_ROWS = 8
