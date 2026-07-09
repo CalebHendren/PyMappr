@@ -29,15 +29,55 @@ MIRRORS = [
     "https://naciscdn.org/naturalearth/{scale}/{category}/{name}.zip",
 ]
 
-# (scale, category, archive name)
+# (scale, category, archive name[, probe shapefile]) - the probe is the
+# shapefile checked to decide whether the layer is already extracted; it
+# defaults to "<archive name>.shp" and only multi-shapefile archives (parks,
+# bathymetry) need to name one member explicitly.
 VECTOR_LAYERS = [
+    # Core political layers, in three resolutions for zoom-dependent detail.
+    ("110m", "cultural", "ne_110m_admin_0_countries"),
     ("50m", "cultural", "ne_50m_admin_0_countries"),
+    ("10m", "cultural", "ne_10m_admin_0_countries"),
     ("10m", "cultural", "ne_10m_admin_1_states_provinces"),
     ("10m", "cultural", "ne_10m_admin_2_counties"),
-    ("50m", "physical", "ne_50m_lakes"),
-    ("10m", "physical", "ne_10m_rivers_lake_centerlines"),
-    ("50m", "physical", "ne_50m_ocean"),
+    # Alternate admin-0 views: sovereignty, map units, subunits.
+    ("50m", "cultural", "ne_50m_admin_0_sovereignty"),
+    ("50m", "cultural", "ne_50m_admin_0_map_units"),
+    ("50m", "cultural", "ne_50m_admin_0_map_subunits"),
+    # Boundary detail: disputed areas/lines and 200-nm maritime indicators.
+    ("10m", "cultural", "ne_10m_admin_0_disputed_areas"),
+    ("10m", "cultural", "ne_10m_admin_0_boundary_lines_disputed_areas"),
+    ("10m", "cultural", "ne_10m_admin_0_boundary_lines_maritime_indicator"),
+    # Cultural point/polygon layers.
+    ("10m", "cultural", "ne_10m_populated_places_simple"),
+    ("10m", "cultural", "ne_10m_urban_areas"),
+    ("10m", "cultural", "ne_10m_airports"),
+    ("10m", "cultural", "ne_10m_ports"),
+    ("10m", "cultural", "ne_10m_parks_and_protected_lands",
+     "ne_10m_parks_and_protected_lands_area.shp"),
+    ("10m", "cultural", "ne_10m_time_zones"),
     ("10m", "cultural", "ne_10m_roads"),
+    # Water, in three resolutions where useful.
+    ("110m", "physical", "ne_110m_lakes"),
+    ("50m", "physical", "ne_50m_lakes"),
+    ("10m", "physical", "ne_10m_lakes"),
+    ("110m", "physical", "ne_110m_rivers_lake_centerlines"),
+    ("50m", "physical", "ne_50m_rivers_lake_centerlines"),
+    ("10m", "physical", "ne_10m_rivers_lake_centerlines"),
+    ("110m", "physical", "ne_110m_ocean"),
+    ("50m", "physical", "ne_50m_ocean"),
+    ("10m", "physical", "ne_10m_ocean"),
+    ("110m", "physical", "ne_110m_land"),
+    ("50m", "physical", "ne_50m_land"),
+    ("10m", "physical", "ne_10m_land"),
+    # Physical features.
+    ("10m", "physical", "ne_10m_glaciated_areas"),
+    ("50m", "physical", "ne_50m_antarctic_ice_shelves_polys"),
+    ("10m", "physical", "ne_10m_bathymetry_all",
+     "ne_10m_bathymetry_L_0.shp"),
+    ("10m", "physical", "ne_10m_reefs"),
+    ("10m", "physical", "ne_10m_playas"),
+    ("10m", "physical", "ne_10m_geography_regions_polys"),
 ]
 
 RASTER = ("50m", "raster", "NE1_50M_SR_W")
@@ -79,9 +119,10 @@ def download(scale: str, category: str, name: str, dest: Path,
 
 
 def fetch_vectors(force: bool) -> None:
-    for scale, category, name in VECTOR_LAYERS:
+    for scale, category, name, *probe in VECTOR_LAYERS:
+        probe_shp = probe[0] if probe else f"{name}.shp"
         out_dir = DATA_DIR / "shapes" / name
-        if (out_dir / f"{name}.shp").exists() and not force:
+        if (out_dir / probe_shp).exists() and not force:
             print(f"  ready    {name}")
             continue
         zip_path = download(scale, category, name,
