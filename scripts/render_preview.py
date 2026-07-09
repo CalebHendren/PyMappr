@@ -108,6 +108,60 @@ def main() -> int:
     r.set_labels("countries", True)
     r.save_png(out_dir / "7_robinson_world.png")
 
+    # 8. Physical world: bathymetry, glaciers, ice shelves, deserts,
+    #    playas, reefs, plus the compass.
+    r = new_renderer(store)
+    r.set_layer("countries", True)
+    r.set_bathymetry(True)
+    for key in ("land", "glaciers", "ice_shelves", "deserts", "playas"):
+        r.set_fill_layer(key, True)
+    r.set_layer("reefs", True)
+    r.set_compass(True)
+    r.save_png(out_dir / "8_physical_world.png")
+
+    # 9. Cities with scale-dependent labels, airports, and ports (Europe,
+    #    zoomed enough that the 10m coastline is selected automatically).
+    r = new_renderer(store)
+    r.set_extent((-12, 32, 35, 62))
+    r.set_layer("countries", True)
+    r.set_ocean("blue")
+    for key in ("cities", "airports", "ports"):
+        r.set_point_layer(key, True)
+    r.set_labels("cities", True)
+    r.save_png(out_dir / "9_cities_europe.png")
+
+    # 10. Boundary detail: disputed areas/lines, maritime boundaries, EEZ,
+    #     dependencies, urban areas.
+    r = new_renderer(store)
+    r.set_extent((40, 110, -5, 45))
+    r.set_layer("countries", True)
+    r.set_fill_layer("disputed", True)
+    r.set_fill_layer("urban", True)
+    r.set_layer("disputed_lines", True)
+    r.set_layer("maritime", True)
+    r.set_layer("eez", True)
+    r.set_layer("dependencies", True)
+    r.set_ocean("blue")
+    r.save_png(out_dir / "10_boundaries_asia.png")
+
+    # 11. Time zones with capitals only.
+    r = new_renderer(store)
+    r.set_layer("countries", True)
+    r.set_layer("timezones", True)
+    r.set_labels("timezones", True)
+    r.set_point_layer("cities", True)
+    r.set_capitals_only(True)
+    r.save_png(out_dir / "11_timezones_capitals.png")
+
+    # 12. Alternate admin-0 views + parks, sovereign states vs map units.
+    r = new_renderer(store)
+    r.set_extent((-130, -60, 20, 55))
+    r.set_layer("sovereignty", True)
+    r.set_layer("states", True)
+    r.set_fill_layer("parks", True)
+    r.set_labels("countries", True)
+    r.save_png(out_dir / "12_sovereignty_parks.png")
+
     print("previews written to", out_dir)
     return 0
 
