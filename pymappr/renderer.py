@@ -5,7 +5,7 @@ of matplotlib artists, created lazily the first time it is switched on and
 then toggled with ``set_visible`` - this keeps interaction real-time instead
 of re-plotting shapefiles on every change.
 
-Two cross-cutting features shape the implementation:
+Three cross-cutting features shape the implementation:
 
 * **Wrap-around panning** - every layer is drawn three times, at horizontal
   offsets of one world-width left and right of the primary copy, and the
@@ -14,6 +14,12 @@ Two cross-cutting features shape the implementation:
 * **Projections** - all drawing goes through a `Projection` (see
   ``pymappr.projections``). The default Equirectangular projection is the
   identity; the others reproject vectors, points, labels, and the basemap.
+* **Zoom-dependent detail** - multi-resolution layers (countries, lakes,
+  rivers, ocean, land) are drawn from the Natural Earth resolution matching
+  the current zoom, with one artist set per resolution so crossing a zoom
+  threshold only toggles visibility after the first build. City, airport,
+  and port markers/labels are culled per feature by Natural Earth's curated
+  ``min_zoom``/``scalerank``, so places fade in as the user zooms.
 """
 
 from __future__ import annotations
@@ -27,25 +33,39 @@ from matplotlib.collections import LineCollection
 from matplotlib.lines import Line2D
 from matplotlib.ticker import AutoLocator, FuncFormatter, MultipleLocator
 
-from pymappr.layers import CONTINENT_EXTENTS, LAYER_SPECS, LayerStore
+from pymappr.layers import (BATHYMETRY_STEPS, CONTINENT_EXTENTS, LAYER_SPECS,
+                            LayerStore)
 from pymappr.projections import get_projection
 from pymappr.styles import PointStyle
 
 __all__ = ["MapRenderer"]
 
-# Vector line layers: layer key -> (source layer, edge color, width, zorder).
+# Vector line layers:
+# layer key -> (source layer, edge color, width, zorder, linestyle).
 # "continents" is the countries layer dissolved by continent; it stands in
 # for the countries layer when political borders are switched off.
 LINE_LAYERS = {
-    "countries": ("countries", "#000000", 0.8, 1.6),
-    "continents": ("continents", "#000000", 0.8, 1.55),
-    "states": ("states", "#5a5a5a", 0.5, 1.5),
-    "counties": ("counties", "#8a8a8a", 0.35, 1.4),
-    "lakes_outline": ("lakes", "#2d5f8a", 0.6, 1.2),
-    "rivers": ("rivers", "#4a90c4", 0.5, 1.0),
-    "roads": ("roads", "#b0693c", 0.35, 1.1),
+    "countries": ("countries", "#000000", 0.8, 1.6, "solid"),
+    "continents": ("continents", "#000000", 0.8, 1.55, "solid"),
+    "sovereignty": ("sovereignty", "#5b2d8b", 0.9, 1.58, "solid"),
+    "map_units": ("map_units", "#2d6b8b", 0.6, 1.57, "solid"),
+    "subunits": ("subunits", "#8b6b2d", 0.5, 1.56, "solid"),
+    "dependencies": ("dependencies", "#c2571a", 0.9, 1.62, "solid"),
+    "disputed_lines": ("disputed_lines", "#c0392b", 0.9, 1.65, (0, (4, 2))),
+    "maritime": ("maritime", "#3b7bbf", 0.7, 1.3, (0, (5, 3))),
+    "eez": ("eez", "#1c5c99", 0.8, 1.31, (0, (1, 2))),
+    "timezones": ("timezones", "#8a5fbf", 0.6, 1.35, (0, (6, 3))),
+    "states": ("states", "#5a5a5a", 0.5, 1.5, "solid"),
+    "counties": ("counties", "#8a8a8a", 0.35, 1.4, "solid"),
+    "lakes_outline": ("lakes", "#2d5f8a", 0.6, 1.2, "solid"),
+    "rivers": ("rivers", "#4a90c4", 0.5, 1.0, "solid"),
+    "wadis": ("wadis", "#b3985c", 0.6, 1.0, (0, (3, 2))),
+    "reefs": ("reefs", "#25a08c", 0.7, 1.15, "solid"),
+    "regions": ("regions", "#a8763e", 0.5, 1.12, (0, (3, 3))),
+    "roads": ("roads", "#b0693c", 0.35, 1.1, "solid"),
 }
 
+# Mode fills (lakes/ocean support "none"/"grey"/"blue").
 FILL_COLORS = {
     ("lakes", "grey"): "#c9c9c9",
     ("lakes", "blue"): "#a6cae0",
@@ -53,17 +73,59 @@ FILL_COLORS = {
     ("ocean", "blue"): "#d4e6f4",
 }
 
-# Label layers: key -> (source layer, font kwargs, min zoom).
+# Simple on/off fill layers:
+# layer key -> (source, facecolor, edgecolor, edge width, alpha, zorder).
+FILL_LAYERS = {
+    "land": ("land", "#f0ece1", "none", 0.0, 1.0, 0.35),
+    "deserts": ("deserts", "#f3e6c0", "none", 0.0, 0.65, 0.52),
+    "playas": ("playas", "#efe7c3", "#d8c98a", 0.3, 1.0, 0.55),
+    "urban": ("urban", "#d95f4e", "none", 0.0, 0.55, 0.58),
+    "parks": ("parks", "#bfe3b4", "#4e9a51", 0.4, 0.85, 0.6),
+    "ice_shelves": ("ice_shelves", "#d8ecf7", "#a8cfe6", 0.3, 1.0, 0.61),
+    "glaciers": ("glaciers", "#e6f3fb", "#b9d9ec", 0.3, 1.0, 0.62),
+    "disputed": ("disputed", "#e8b4b8", "#b03a48", 0.5, 0.75, 0.66),
+}
+
+# Bathymetry: depth in meters -> fill color, shallow to deep. The polygons
+# nest, so drawing shallow-to-deep stacks darker blues into the trenches.
+BATHYMETRY_COLORS = {
+    0: "#e3f2fa", 200: "#d2e9f5", 1000: "#c0dff0", 2000: "#a8d1e8",
+    3000: "#8fc2e0", 4000: "#74b2d8", 5000: "#5a9fcd", 6000: "#4489bd",
+    7000: "#3273aa", 8000: "#245e94", 9000: "#194a7d", 10000: "#103862",
+}
+Z_BATHYMETRY = 0.32
+
+# Point-marker layers:
+# key -> (source, marker, size, facecolor, edgecolor, zoom bias).
+# A feature is shown once ``min_zoom <= zoom + bias`` (min_zoom falls back
+# to scalerank for layers without one), so markers fade in while zooming.
+POINT_LAYERS = {
+    "cities": ("cities", "o", 11.0, "#333333", "white", 2.0),
+    "capitals": ("capitals", "*", 60.0, "#b03a2e", "white", 99.0),
+    "airports": ("airports", "^", 18.0, "#4757a8", "white", 4.0),
+    "ports": ("ports", "v", 16.0, "#1f7a70", "white", 3.5),
+}
+Z_POINT_LAYERS = 2.45
+
+# Label layers: key -> (source, font kwargs, min zoom, feature bias).
 # Once the view is zoomed in at least to *min zoom* (zoom 0 = whole world,
-# +1 per 2x magnification), every feature inside the view is labelled, up to
+# +1 per 2x magnification), features inside the view are labelled, up to
 # the per-layer cap in LAYER_SPECS. Countries use min zoom 0 so every
-# country in view is labelled even fully zoomed out.
+# country in view is labelled even fully zoomed out. A non-None *feature
+# bias* additionally culls per feature: a label is eligible only once its
+# ``min_label`` (Natural Earth's curated zoom rank) is <= zoom + bias, so
+# e.g. city labels appear gradually, biggest cities first.
 LABEL_STYLES = {
-    "countries": ("countries", dict(fontsize=9, color="#1a1a1a", fontweight="bold"), 0.0),
-    "states": ("states", dict(fontsize=8, color="#3a3a3a"), 1.2),
-    "counties": ("counties", dict(fontsize=6.5, color="#4a4a4a"), 3.6),
-    "lakes": ("lakes", dict(fontsize=7.5, color="#14477a", fontstyle="italic"), 1.5),
-    "rivers": ("rivers", dict(fontsize=7, color="#14477a", fontstyle="italic"), 1.5),
+    "countries": ("countries", dict(fontsize=9, color="#1a1a1a", fontweight="bold"), 0.0, None),
+    "states": ("states", dict(fontsize=8, color="#3a3a3a"), 1.2, None),
+    "counties": ("counties", dict(fontsize=6.5, color="#4a4a4a"), 3.6, None),
+    "cities": ("cities", dict(fontsize=7.5, color="#222222"), 0.0, 2.0),
+    "airports": ("airports", dict(fontsize=6.5, color="#3a4c8c"), 2.0, 3.0),
+    "ports": ("ports", dict(fontsize=6.5, color="#14614f", fontstyle="italic"), 2.0, 3.0),
+    "lakes": ("lakes", dict(fontsize=7.5, color="#14477a", fontstyle="italic"), 1.5, None),
+    "rivers": ("rivers", dict(fontsize=7, color="#14477a", fontstyle="italic"), 1.5, None),
+    "regions": ("regions", dict(fontsize=8, color="#7a5230", fontstyle="italic"), 0.5, 3.0),
+    "timezones": ("timezones", dict(fontsize=8, color="#6a4a9c"), 0.0, None),
 }
 
 _LABEL_HALO = [patheffects.withStroke(linewidth=2.2, foreground="white", alpha=0.85)]
@@ -74,6 +136,7 @@ Z_LAKE_FILL = 0.5
 Z_GRID = 1.8
 Z_POINTS = 2.6
 Z_LABELS = 3.0
+Z_COMPASS = 4.0
 
 _MARGINS_WITH_TICKS = (0.055, 0.045, 0.99, 0.99)   # left, bottom, right, top
 _MARGINS_PLAIN = (0.01, 0.012, 0.99, 0.988)
@@ -117,6 +180,11 @@ class MapRenderer:
         # Desired state, kept independently of the artists so the whole
         # scene can be rebuilt when the projection changes.
         self._line_visible: set[str] = set()
+        self._fill_visible: set[str] = set()
+        self._point_layers_visible: set[str] = set()
+        self._bathymetry_visible = False
+        self._capitals_only = False
+        self._compass_visible = False
         self._lake_fill = "none"
         self._ocean_fill = "none"
         self._basemap = "simple"
@@ -140,11 +208,18 @@ class MapRenderer:
         self._legend_sections: list | None = None
         self._point_alpha = 1.0
 
+        # Artists are keyed "<layer>@<source directory>" so multi-resolution
+        # layers keep one artist set per resolution; _artist_res remembers
+        # which resolution is currently shown for each visible layer.
         self._artists: dict[str, list] = {}
+        self._artist_res: dict[str, str] = {}
+        self._point_layer_artists: dict[str, list] = {}
         self._label_texts: dict[str, list] = {}
         self._label_xy_cache: dict[tuple[str, str], tuple[np.ndarray, np.ndarray]] = {}
+        self._point_xy_cache: dict[tuple[str, str], tuple[np.ndarray, np.ndarray]] = {}
         self._warp_cache: dict[str, tuple[np.ndarray, tuple]] = {}
         self._in_wrap = False
+        self._in_limits_refresh = False
 
         # Manual label placement: (layer key, label text) -> (dx, dy) offset
         # in map coordinates, set by dragging a label with the mouse.
@@ -167,13 +242,22 @@ class MapRenderer:
 
     @contextmanager
     def _preserving_view(self):
-        """Adding artists (gdf.plot / imshow) must never move the camera."""
+        """Adding artists (gdf.plot / imshow) must never move the camera.
+
+        Restoring the (unchanged) limits still fires the limits callback;
+        suppress it, or a layer build triggered from that callback would
+        re-enter itself and leak a duplicate, untoggleable artist set."""
         xlim, ylim = self.ax.get_xlim(), self.ax.get_ylim()
         try:
             yield
         finally:
-            self.ax.set_xlim(xlim)
-            self.ax.set_ylim(ylim)
+            was_refreshing = self._in_limits_refresh
+            self._in_limits_refresh = True
+            try:
+                self.ax.set_xlim(xlim)
+                self.ax.set_ylim(ylim)
+            finally:
+                self._in_limits_refresh = was_refreshing
 
     def set_extent(self, extent) -> None:
         """*extent* is a continent name or a (lon0, lon1, lat0, lat1) tuple
@@ -234,8 +318,19 @@ class MapRenderer:
         return float(np.log2(self.proj.world_width / width))
 
     def _on_limits_changed(self, _ax) -> None:
-        self._wrap_view()
-        self._refresh_labels()
+        # Refreshing adds artists, and adding artists restores the axis
+        # limits, which re-fires this callback - don't recurse.
+        if self._in_limits_refresh:
+            return
+        self._in_limits_refresh = True
+        try:
+            self._wrap_view()
+            self._sync_resolutions()
+            self._sync_wrap_copies()
+            self._refresh_point_layers()
+            self._refresh_labels()
+        finally:
+            self._in_limits_refresh = False
 
     def _wrap_view(self) -> None:
         """Loop the view around the globe: when a pan carries the view
@@ -277,6 +372,11 @@ class MapRenderer:
             for artist in artists:
                 artist.remove()
         self._artists = {}
+        self._artist_res = {}
+        for artists in self._point_layer_artists.values():
+            for artist in artists:
+                artist.remove()
+        self._point_layer_artists = {}
         for texts in self._label_texts.values():
             for text in texts:
                 text.remove()
@@ -295,15 +395,21 @@ class MapRenderer:
         self.set_extent(self._extent_request)
         if self._basemap == "satellite":
             self.set_basemap("satellite")
-        for key in self._line_visible:
-            self._ensure_line_layer(key)
+        for key in list(self._line_visible):
+            self._show_line_layer(key)
         self._sync_continents()
+        for key in list(self._fill_visible):
+            self._show_fill_layer(key)
         if self._lake_fill != "none":
             self.set_lake_fill(self._lake_fill)
         if self._ocean_fill != "none":
             self.set_ocean(self._ocean_fill)
+        if self._bathymetry_visible:
+            self._show_bathymetry()
         self._apply_graticule()
+        self._apply_compass()
         self._rebuild_points()
+        self._refresh_point_layers()
         self._refresh_labels()
 
     def _offsets(self) -> tuple[float, ...]:
@@ -321,13 +427,16 @@ class MapRenderer:
                 artists = []
                 for off in self._offsets():
                     x0, x1, y0, y1 = extent
-                    artists.append(self.ax.imshow(
+                    artist = self.ax.imshow(
                         img, extent=(x0 + off, x1 + off, y0, y1),
                         origin="upper", interpolation="bilinear",
-                        zorder=Z_SATELLITE))
+                        zorder=Z_SATELLITE)
+                    artist._pym_offset = off
+                    artists.append(artist)
                 self._artists["satellite"] = artists
         for artist in self._artists.get("satellite", []):
             artist.set_visible(mode == "satellite")
+        self._sync_wrap_copies()
 
     def _warped_basemap(self) -> tuple[np.ndarray, tuple]:
         """The basemap image in the current projection, plus its extent."""
@@ -359,54 +468,151 @@ class MapRenderer:
             self._warp_cache[self.proj.name] = (warped, (wx0, wx1, wy0, wy1))
         return self._warp_cache[self.proj.name]
 
+    # ------------------------------------------------- multi-resolution core
+
+    def _source_directory(self, source: str) -> str:
+        """The Natural Earth directory the *source* layer should currently
+        be drawn from (multi-resolution layers follow the zoom level)."""
+        spec = LAYER_SPECS.get(source)
+        if spec is None:  # derived layers have one fixed resolution
+            return source
+        return spec.directory_for_zoom(self._zoom_level())
+
+    def _projected_frame(self, source: str):
+        return self.store.frame_projected(source, self.proj.crs,
+                                          self.proj.max_lat,
+                                          zoom=self._zoom_level())
+
+    def _sync_resolutions(self) -> None:
+        """Swap multi-resolution layers to the resolution matching the new
+        zoom. Building a resolution is a one-time cost; afterwards crossing
+        a threshold only flips artist visibility."""
+        for key in tuple(self._line_visible):
+            if self._artist_res.get(key) != self._source_directory(
+                    LINE_LAYERS[key][0]):
+                self._show_line_layer(key)
+        for key in tuple(self._fill_visible):
+            if self._artist_res.get(key) != self._source_directory(
+                    FILL_LAYERS[key][0]):
+                self._show_fill_layer(key)
+        for source, mode in (("lakes", self._lake_fill),
+                             ("ocean", self._ocean_fill)):
+            if (mode != "none" and self._artist_res.get(source + "_fill")
+                    != self._source_directory(source)):
+                self._show_mode_fill(source, mode)
+        if ("continents" in self._artist_res
+                and "countries" not in self._line_visible
+                and self._artist_res.get("continents")
+                != self._source_directory("continents")):
+            self._sync_continents()
+
+    def _show_variant(self, key: str, source: str, plot) -> None:
+        """Show *key* drawn from the current resolution of *source*, hiding
+        any other resolution's artists; *plot* builds the artists lazily."""
+        directory = self._source_directory(source)
+        artist_key = f"{key}@{directory}"
+        if artist_key not in self._artists:
+            self._artists[artist_key] = plot(directory)
+        for name, artists in self._artists.items():
+            if name.startswith(key + "@"):
+                visible = name == artist_key
+                for artist in artists:
+                    artist.set_visible(visible)
+        self._artist_res[key] = directory
+        self._sync_wrap_copies()
+
+    def _sync_wrap_copies(self) -> None:
+        """Hide the wrap-around world copies while the view stays inside
+        the primary world. Rendering skips them entirely then, which makes
+        panning/zooming with heavy 10m layers visible ~3x faster; the
+        copies reappear the moment the view crosses a world edge."""
+        x0, x1 = sorted(self.ax.get_xlim())
+        wx0, wx1 = self.proj.bounds[0], self.proj.bounds[1]
+        need = {-1.0: x0 < wx0, 1.0: x1 > wx1}
+        for artists in self._artists.values():
+            base_visible = None
+            for artist in artists:
+                if not getattr(artist, "_pym_offset", 0.0):
+                    base_visible = artist.get_visible()
+                    break
+            if base_visible is None:
+                continue
+            for artist in artists:
+                offset = getattr(artist, "_pym_offset", 0.0)
+                if offset:
+                    artist.set_visible(base_visible
+                                       and need[float(np.sign(offset))])
+
+    def _hide_layer(self, key: str) -> None:
+        for name, artists in self._artists.items():
+            if name.startswith(key + "@"):
+                for artist in artists:
+                    artist.set_visible(False)
+        self._artist_res.pop(key, None)
+
     # ---------------------------------------------------------- line layers
 
     def _plot_gdf_copies(self, gdf, zorder: float, **plot_kwargs) -> list:
-        """Plot a GeoDataFrame plus one wrapped copy either side."""
+        """Plot a GeoDataFrame plus one wrapped copy either side.
+
+        Only the primary copy pays the geometry-to-path conversion; the two
+        wrap-around copies are collections sharing the same Path objects,
+        shifted one world-width left/right, which makes switching big
+        layers on (roads, urban areas, bathymetry) about 3x faster."""
+        from matplotlib.collections import PathCollection
+
         artists = []
         with self._preserving_view():
+            before = len(self.ax.collections)
+            # aspect=None stops geopandas from forcing equal axes aspect,
+            # which would letterbox the map inside the canvas.
+            gdf.plot(ax=self.ax, zorder=zorder, aspect=None, **plot_kwargs)
+            base = self.ax.collections[before]
+            base._pym_offset = 0.0
+            artists.append(base)
             for off in self._offsets():
-                before = len(self.ax.collections)
-                # aspect=None stops geopandas from forcing equal axes aspect,
-                # which would letterbox the map inside the canvas.
-                gdf.plot(ax=self.ax, zorder=zorder, aspect=None, **plot_kwargs)
-                artist = self.ax.collections[before]
-                if off:
-                    artist.set_transform(mtransforms.Affine2D().translate(
-                        off, 0) + self.ax.transData)
-                artists.append(artist)
+                if not off:
+                    continue
+                copy = PathCollection(base.get_paths())
+                copy.update_from(base)
+                copy.set_zorder(zorder)
+                copy.set_transform(mtransforms.Affine2D().translate(
+                    off, 0) + self.ax.transData)
+                copy._pym_offset = off
+                self.ax.add_collection(copy, autolim=False)
+                artists.append(copy)
         return artists
 
-    def _ensure_line_layer(self, key: str) -> None:
-        if key in self._artists:
-            return
-        source, color, width, zorder = LINE_LAYERS[key]
-        gdf = self.store.frame_projected(source, self.proj.crs,
-                                         self.proj.max_lat)
-        self._artists[key] = self._plot_gdf_copies(
-            gdf, zorder, facecolor="none", edgecolor=color,
-            linewidth=width * self._line_scale)
+    def _show_line_layer(self, key: str) -> None:
+        source, color, width, zorder, linestyle = LINE_LAYERS[key]
+
+        def plot(_directory: str) -> list:
+            gdf = self._projected_frame(source)
+            return self._plot_gdf_copies(
+                gdf, zorder, facecolor="none", edgecolor=color,
+                linewidth=width * self._line_scale, linestyle=linestyle)
+
+        self._show_variant(key, source, plot)
 
     def set_layer(self, key: str, visible: bool) -> None:
-        """Toggle a line layer: countries, states, counties, lakes_outline,
-        rivers, roads. Switching countries off swaps in the continent
-        outlines so coastlines/continent borders stay visible."""
+        """Toggle a line layer (countries, states, disputed_lines, reefs,
+        ...). Switching countries off swaps in the continent outlines so
+        coastlines/continent borders stay visible."""
         if visible:
             self._line_visible.add(key)
-            self._ensure_line_layer(key)
+            self._show_line_layer(key)
         else:
             self._line_visible.discard(key)
-        for artist in self._artists.get(key, []):
-            artist.set_visible(visible)
+            self._hide_layer(key)
         if key == "countries":
             self._sync_continents()
 
     def _sync_continents(self) -> None:
         show = "countries" not in self._line_visible
         if show:
-            self._ensure_line_layer("continents")
-        for artist in self._artists.get("continents", []):
-            artist.set_visible(show)
+            self._show_line_layer("continents")
+        else:
+            self._hide_layer("continents")
 
     def layer_visible(self, key: str) -> bool:
         return key in self._line_visible
@@ -414,39 +620,175 @@ class MapRenderer:
     def set_line_width_scale(self, scale: float) -> None:
         """Scale the line width of every vector line layer (0.25 - 3)."""
         self._line_scale = max(float(scale), 0.05)
-        for key, (_source, _color, width, _z) in LINE_LAYERS.items():
-            for artist in self._artists.get(key, []):
-                artist.set_linewidth(width * self._line_scale)
+        for artist_key, artists in self._artists.items():
+            key = artist_key.split("@", 1)[0]
+            if key in LINE_LAYERS:
+                width = LINE_LAYERS[key][2]
+                for artist in artists:
+                    artist.set_linewidth(width * self._line_scale)
 
     # ---------------------------------------------------------- fill layers
 
     def set_lake_fill(self, mode: str) -> None:
         """``"none"``, ``"grey"`` or ``"blue"``."""
         self._lake_fill = mode
-        self._set_fill("lakes", Z_LAKE_FILL, mode)
+        if mode == "none":
+            self._hide_layer("lakes_fill")
+        else:
+            self._show_mode_fill("lakes", mode)
 
     def set_ocean(self, mode: str) -> None:
         """``"none"``, ``"grey"`` or ``"blue"``."""
         self._ocean_fill = mode
-        self._set_fill("ocean", Z_OCEAN, mode)
+        if mode == "none":
+            self._hide_layer("ocean_fill")
+        else:
+            self._show_mode_fill("ocean", mode)
 
-    def _set_fill(self, source: str, zorder: float, mode: str) -> None:
-        artist_key = source + "_fill"
-        if mode != "none":
-            if artist_key not in self._artists:
-                gdf = self.store.frame_projected(source, self.proj.crs,
-                                                 self.proj.max_lat)
-                self._artists[artist_key] = self._plot_gdf_copies(
-                    gdf, zorder, edgecolor="none")
-            for artist in self._artists[artist_key]:
-                artist.set_facecolor(FILL_COLORS[(source, mode)])
-        for artist in self._artists.get(artist_key, []):
-            artist.set_visible(mode != "none")
+    def _show_mode_fill(self, source: str, mode: str) -> None:
+        zorder = Z_LAKE_FILL if source == "lakes" else Z_OCEAN
+
+        def plot(_directory: str) -> list:
+            gdf = self._projected_frame(source)
+            return self._plot_gdf_copies(gdf, zorder, edgecolor="none")
+
+        key = source + "_fill"
+        self._show_variant(key, source, plot)
+        directory = self._artist_res[key]
+        for artist in self._artists[f"{key}@{directory}"]:
+            artist.set_facecolor(FILL_COLORS[(source, mode)])
+
+    def set_fill_layer(self, key: str, visible: bool) -> None:
+        """Toggle an on/off fill layer: land, glaciers, ice_shelves, urban,
+        parks, playas, deserts, disputed."""
+        if visible:
+            self._fill_visible.add(key)
+            self._show_fill_layer(key)
+        else:
+            self._fill_visible.discard(key)
+            self._hide_layer(key)
+
+    def _show_fill_layer(self, key: str) -> None:
+        source, face, edge, edge_w, alpha, zorder = FILL_LAYERS[key]
+
+        def plot(_directory: str) -> list:
+            gdf = self._projected_frame(source)
+            return self._plot_gdf_copies(
+                gdf, zorder, facecolor=face, edgecolor=edge,
+                linewidth=edge_w, alpha=alpha)
+
+        self._show_variant(key, source, plot)
+
+    # ------------------------------------------------------------ bathymetry
+
+    def set_bathymetry(self, visible: bool) -> None:
+        """Toggle the stacked ocean-depth polygons (10m bathymetry)."""
+        self._bathymetry_visible = visible
+        if visible:
+            self._show_bathymetry()
+        else:
+            self._hide_layer("bathymetry")
+
+    def _show_bathymetry(self) -> None:
+        def plot(_directory: str) -> list:
+            gdf = self.store.frame_projected("bathymetry", self.proj.crs,
+                                             self.proj.max_lat)
+            artists = []
+            for _letter, depth in BATHYMETRY_STEPS:
+                sub = gdf[gdf["depth"] == depth]
+                if not len(sub):
+                    continue
+                artists.extend(self._plot_gdf_copies(
+                    sub, Z_BATHYMETRY + depth * 1e-6, edgecolor="none",
+                    facecolor=BATHYMETRY_COLORS[depth]))
+            return artists
+
+        self._show_variant("bathymetry", "bathymetry", plot)
+
+    # ----------------------------------------------------- point-marker layers
+
+    def set_point_layer(self, key: str, visible: bool) -> None:
+        """Toggle a point-marker layer: cities, airports, ports. City
+        markers respect :meth:`set_capitals_only`."""
+        if visible:
+            self._point_layers_visible.add(key)
+        else:
+            self._point_layers_visible.discard(key)
+        self._refresh_point_layers()
+
+    def set_capitals_only(self, capitals_only: bool) -> None:
+        """Restrict the cities layer (markers and labels) to national
+        capitals."""
+        self._capitals_only = bool(capitals_only)
+        self._refresh_point_layers()
+        self._refresh_labels()
+
+    def _point_xy(self, source: str) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        cache_key = (source, self.proj.name)
+        if cache_key not in self._point_xy_cache:
+            features = self.store.point_features(source)
+            xs, ys = self.proj.forward(features["x"].to_numpy(),
+                                       features["y"].to_numpy())
+            self._point_xy_cache[cache_key] = (
+                np.asarray(xs, float), np.asarray(ys, float),
+                features["min_zoom"].to_numpy())
+        return self._point_xy_cache[cache_key]
+
+    def _refresh_point_layers(self) -> None:
+        """(Re)draw the visible point-marker layers for the current zoom;
+        features appear once their min_zoom/scalerank allows."""
+        zoom = self._zoom_level()
+        for artists in self._point_layer_artists.values():
+            for artist in artists:
+                artist.remove()
+        self._point_layer_artists = {}
+        for key in self._point_layers_visible:
+            layer = key
+            if key == "cities" and self._capitals_only:
+                layer = "capitals"
+            source, marker, size, face, edge, bias = POINT_LAYERS[layer]
+            xs, ys, min_zoom = self._point_xy(source)
+            show = min_zoom <= zoom + bias
+            if not show.any():
+                continue
+            offsets = self._offsets()
+            px = np.concatenate([xs[show] + off for off in offsets])
+            py = np.tile(ys[show], len(offsets))
+            with self._preserving_view():
+                artist = self.ax.scatter(
+                    px, py, s=size, c=face, marker=marker,
+                    edgecolors=edge, linewidths=0.5,
+                    zorder=Z_POINT_LAYERS)
+            self._point_layer_artists[key] = [artist]
+
+    # -------------------------------------------------------------- compass
+
+    def set_compass(self, visible: bool) -> None:
+        """Toggle a north arrow in the top-right corner of the map."""
+        self._compass_visible = visible
+        self._apply_compass()
+
+    def _apply_compass(self) -> None:
+        for artist in self._artists.pop("compass", []):
+            artist.remove()
+        if not self._compass_visible:
+            return
+        annotation = self.ax.annotate(
+            "N", xy=(0.975, 0.975), xytext=(0.975, 0.905),
+            xycoords="axes fraction", textcoords="axes fraction",
+            ha="center", va="center", fontsize=11, fontweight="bold",
+            color="#1a1a1a", path_effects=_LABEL_HALO, zorder=Z_COMPASS,
+            annotation_clip=False,
+            arrowprops=dict(arrowstyle="-|>,head_width=0.28,head_length=0.55",
+                            color="#1a1a1a", linewidth=1.4,
+                            shrinkA=6, shrinkB=0))
+        self._artists["compass"] = [annotation]
 
     # -------------------------------------------------------------- labels
 
     def set_labels(self, key: str, visible: bool) -> None:
-        """Toggle labels: countries, states, counties, lakes, rivers."""
+        """Toggle labels: countries, states, counties, cities, airports,
+        ports, lakes, rivers, regions, timezones."""
         if visible:
             self._label_visible.add(key)
         else:
@@ -482,14 +824,17 @@ class MapRenderer:
             self._label_texts[key] = []
             if key not in self._label_visible:
                 continue
-            source, font, min_zoom = LABEL_STYLES[key]
+            source, font, min_zoom, feature_bias = LABEL_STYLES[key]
             if zoom < min_zoom:
                 continue
+            if key == "cities" and self._capitals_only:
+                source = "capitals"
             points = self.store.label_points(source)
             xs, ys = self._label_xy(source)
             font = dict(font)
             font["fontsize"] = font["fontsize"] * font_scale
-            cap = LAYER_SPECS[source].label_cap
+            cap = LAYER_SPECS["cities" if source == "capitals"
+                              else source].label_cap
             texts = []
             # Consider the wrapped world copies so labels follow the view
             # across the antimeridian.
@@ -504,7 +849,15 @@ class MapRenderer:
                 candidates.append(sub)
             import pandas as pd
 
-            eligible = pd.concat(candidates).nsmallest(cap, "min_label")
+            eligible = pd.concat(candidates)
+            if feature_bias is not None:
+                # Per-feature zoom culling: a place is labelled only once
+                # Natural Earth's curated min_label rank allows it, so e.g.
+                # only the biggest cities are named when zoomed out.
+                eligible = eligible[eligible["min_label"] <= zoom + feature_bias]
+            eligible = eligible.nsmallest(cap, "min_label")
+            if key in POINT_LAYERS:  # label sits above the marker dot
+                font.setdefault("va", "bottom")
             for row in eligible.itertuples():
                 offset = self._label_offsets.get((key, row.text))
                 lx = row.px + (offset[0] if offset else 0.0)
@@ -514,10 +867,12 @@ class MapRenderer:
                 if offset is None and self._overlaps_any(rect, placed_rects):
                     continue
                 placed_rects.append(rect)
+                kwargs = dict(font)
+                va = kwargs.pop("va", "center")
                 text = self.ax.text(
-                    lx, ly, row.text, ha="center", va="center",
+                    lx, ly, row.text, ha="center", va=va,
                     zorder=Z_LABELS, clip_on=True,
-                    path_effects=_LABEL_HALO, picker=True, **font)
+                    path_effects=_LABEL_HALO, picker=True, **kwargs)
                 text._pym_key = (key, row.text)
                 text._pym_base = (row.px, row.py)
                 texts.append(text)
@@ -619,6 +974,7 @@ class MapRenderer:
             self.ax.grid(False)
             if on:
                 self._artists["graticule"] = self._projected_graticule()
+        self._sync_wrap_copies()
         self.ax.tick_params(labelbottom=labels_on, labelleft=labels_on,
                             bottom=labels_on, left=labels_on)
         left, bottom, right, top = (
@@ -648,6 +1004,7 @@ class MapRenderer:
                 if off:
                     col.set_transform(mtransforms.Affine2D().translate(
                         off, 0) + self.ax.transData)
+                col._pym_offset = off
                 self.ax.add_collection(col)
                 artists.append(col)
         return artists
