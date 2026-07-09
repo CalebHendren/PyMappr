@@ -33,12 +33,40 @@ offline desktop application.
   and the satellite basemap is reprojected live.
 - **Basemaps**: *Simple* (white with black borders) or *Satellite*
   (full color, slower - Natural Earth shaded relief, fully offline).
-- **Layer toggles**: Countries, States/Provinces, US Counties,
-  Lakes (outlines), Lakes fill (greyscale or blue), Rivers,
-  Oceans (greyscale or blue), Roads. Switching Countries off removes the
-  political borders but keeps the continent outlines.
+- **~30 Natural Earth layer toggles**, organized in a tabbed side panel:
+  - *Borders & areas*: Countries, States/Provinces, US Counties,
+    Sovereign states, Map units, Map subunits, Dependencies,
+    Disputed areas, Disputed boundaries, Time zones
+  - *Cities & places*: Populated places (city markers) with a
+    **Capitals only** filter
+  - *Water & marine*: Oceans (greyscale or blue), **Bathymetry** (stacked
+    ocean-depth shading), Lakes (outlines), Lakes fill (greyscale or
+    blue), Rivers, Wadis / intermittent rivers, Maritime boundaries,
+    EEZ / 200 nm limits, Reefs
+  - *Physical features*: Land polygons, Glaciers, Antarctic ice shelves,
+    Playas, Deserts, Geographic regions
+  - *Culture & infrastructure*: Urban areas, Airports, Ports,
+    Parks & protected areas (US), Roads
+
+  Switching Countries off removes the political borders but keeps the
+  continent outlines.
+- **Automatic scale-dependent detail**:
+  - Core layers (countries, lakes, rivers, oceans, land) switch between
+    the Natural Earth **110m / 50m / 10m** resolutions as you zoom, so the
+    world view stays fast and close-ups stay crisp. Each resolution is
+    built once and cached, so crossing a zoom threshold afterwards is
+    instant.
+  - City, airport, and port markers/labels **fade in as you zoom**,
+    biggest first, using Natural Earth's curated per-place ranks.
+- **Fast and responsive**: parsed layers are cached on disk (so later app
+  starts load them near-instantly), reprojected layers are cached per
+  projection, the most-used layers are pre-loaded in the background at
+  startup, and wrap-around world copies share geometry instead of being
+  rebuilt.
+- **Compass** (north arrow) toggle.
 - **Line thickness** control for all border/line layers.
-- **Label toggles**: Countries, States/Provinces, US Counties, Lakes, Rivers.
+- **Label toggles**: Countries, States/Provinces, US Counties, Major
+  cities, Airports, Ports, Lakes, Rivers, Geographic regions, Time zones.
   Every country in view is labelled even fully zoomed out; every state and
   county in view is labelled once you zoom in to its level. Labels
   **never overlap** - when two would collide, the less important one is
@@ -75,6 +103,31 @@ offline desktop application.
   same check on demand.
 
 ## Screenshots
+
+The Layers tab: bathymetry, land fill, glaciers, ice shelves, deserts, and
+the compass on a world view:
+
+![The Layers tab with physical layers](docs/images/app_layers.png)
+
+The physical layers rendered headlessly - bathymetry (stacked ocean-depth
+blues), glaciers, Antarctic ice shelves, deserts, playas, and reefs:
+
+![Physical world](docs/images/physical_world.png)
+
+Cities, airports, and ports over Europe - markers and labels appear as you
+zoom (biggest first), and the coastline has automatically switched to the
+10m resolution:
+
+![Cities, airports, and ports](docs/images/cities_europe.png)
+
+Boundary detail: disputed areas and boundaries, maritime boundaries,
+EEZ / 200 nm limits, and urban areas:
+
+![Disputed and maritime boundaries](docs/images/boundaries_asia.png)
+
+Time zones (labelled) with national capitals:
+
+![Time zones and capitals](docs/images/timezones_capitals.png)
 
 Every country labelled on the offline satellite basemap:
 
@@ -158,7 +211,8 @@ Turning the point opacity down keeps the overlapping cloud readable:
 ![Insects colored by order, shaped by family](docs/images/insects_points.png)
 
 To reproduce these renders: `python scripts/make_screenshots.py`
-(writes to `docs/images/`).
+(writes to `docs/images/`); the app-window screenshots come from
+`python scripts/make_app_screenshot.py` (needs a display, or `xvfb-run`).
 
 ## Installing
 
@@ -187,7 +241,7 @@ Requires Python 3.11+ with Tk support.
 
 ```bash
 pip install -r requirements.txt
-python scripts/fetch_data.py   # one-time download of Natural Earth data (~130 MB)
+python scripts/fetch_data.py   # one-time download of Natural Earth data (~165 MB)
 python -m pymappr
 ```
 
@@ -224,14 +278,16 @@ Project layout:
 
 - `pymappr/coords.py` - decimal/DMS coordinate parsing
 - `pymappr/data_loader.py` - CSV reading and column mapping (N name columns)
-- `pymappr/layers.py` - Natural Earth layer store (lazy loading, continents)
+- `pymappr/layers.py` - Natural Earth layer store: lazy loading, the
+  110m/50m/10m resolution catalog, derived layers (continents, capitals,
+  deserts, wadis, EEZ, bathymetry, ...), and the on-disk frame cache
 - `pymappr/projections.py` - map projections (pyproj)
 - `pymappr/renderer.py` - matplotlib map rendering (layers, labels, graticule,
-  projections, wrap-around panning, legend)
+  projections, wrap-around panning, zoom-dependent detail, legend, compass)
 - `pymappr/styles.py` - point styles, marker symbols, group/color-by styling
 - `pymappr/updates.py` - daily update check against the GitHub releases API
-- `pymappr/app.py`, `pymappr/ui/` - Tkinter application (control panel,
-  column mapper, legend editor, filter bar)
+- `pymappr/app.py`, `pymappr/ui/` - Tkinter application (tabbed control
+  panel, column mapper, legend editor, filter bar)
 - `scripts/fetch_data.py` - downloads and prepares the bundled map data
 - `packaging/` - PyInstaller spec, Inno Setup script, Linux/Fedora/Arch
   packaging
@@ -257,5 +313,15 @@ credit it like this:
 ## Data credits
 
 Map data from [Natural Earth](https://www.naturalearthdata.com/) (public
-domain): country/state/county boundaries, lakes, rivers, oceans, roads, and
-the Natural Earth I shaded-relief raster.
+domain): country/state/county boundaries, sovereignty/map unit/subunit
+views, disputed areas and boundaries, maritime boundary and 200-nm-limit
+indicators, time zones, populated places, urban areas, airports, ports,
+US parks & protected lands, lakes, rivers (including intermittent
+rivers/wadis), oceans, bathymetry, glaciers, Antarctic ice shelves, reefs,
+playas, geographic regions, land polygons, roads, and the Natural Earth I
+shaded-relief raster.
+
+Two notes on the marine layers: Natural Earth ships EEZ *indicator lines*
+(the "200 mi nl" maritime indicators shown by the *EEZ / 200 nm limits*
+toggle), not full EEZ polygons; and the *Wadis* toggle draws Natural
+Earth's intermittent rivers, its closest match for wadi/seasonal drainage.

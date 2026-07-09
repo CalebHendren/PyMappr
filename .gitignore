@@ -23,3 +23,6 @@ Output/
 *.swp
 .DS_Store
 Thumbs.db
+
+# Headless render smoke-test output (scripts/render_preview.py)
+preview/

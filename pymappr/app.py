@@ -82,6 +82,10 @@ class PyMapprApp:
         self.renderer.set_layer("countries", True)
         self.canvas.draw()
 
+        # Pre-parse the most-used layers (and prime the on-disk cache) in
+        # the background so the first layer toggles feel instant.
+        threading.Thread(target=store.warm_cache, daemon=True).start()
+
         # Once-a-day update check, off the UI thread and after startup.
         root.after(2000, self._auto_update_check)
 
@@ -478,18 +482,43 @@ class PyMapprApp:
         self.renderer.set_line_width_scale(self.panel.line_width_var.get())
         self.renderer.redraw()
 
-    def on_layer(self, key: str) -> None:
-        visible = self.panel.layer_vars[key].get()
+    def _toggle_layer(self, key: str, visible: bool, setter) -> None:
+        """Shared busy-cursor plumbing for every kind of layer toggle."""
         if visible:
             self.set_status(f"Loading {key.replace('_', ' ')} layer"
                             f"\N{HORIZONTAL ELLIPSIS}")
             self._busy(True)
         try:
-            self.renderer.set_layer(key, visible)
+            setter(key, visible)
         finally:
             if visible:
                 self._busy(False)
                 self.set_status("Ready.")
+        self.renderer.redraw()
+
+    def on_layer(self, key: str) -> None:
+        self._toggle_layer(key, self.panel.layer_vars[key].get(),
+                           self.renderer.set_layer)
+
+    def on_fill_layer(self, key: str) -> None:
+        self._toggle_layer(key, self.panel.fill_vars[key].get(),
+                           self.renderer.set_fill_layer)
+
+    def on_point_layer(self, key: str) -> None:
+        self._toggle_layer(key, self.panel.point_vars[key].get(),
+                           self.renderer.set_point_layer)
+
+    def on_bathymetry(self) -> None:
+        self._toggle_layer(
+            "bathymetry", self.panel.bathymetry_var.get(),
+            lambda _key, visible: self.renderer.set_bathymetry(visible))
+
+    def on_capitals_only(self) -> None:
+        self.renderer.set_capitals_only(self.panel.capitals_only_var.get())
+        self.renderer.redraw()
+
+    def on_compass(self) -> None:
+        self.renderer.set_compass(self.panel.compass_var.get())
         self.renderer.redraw()
 
     def on_lake_fill(self) -> None:
