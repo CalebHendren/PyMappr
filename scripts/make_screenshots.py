@@ -157,6 +157,49 @@ def main() -> int:
     r.set_ocean("blue")
     save(r, "continent_outlines.png")
 
+    # 7. Physical world: bathymetry, land fill, glaciers, ice shelves,
+    #    deserts, playas, reefs, and the compass.
+    r = new_renderer(store)
+    r.set_layer("countries", True)
+    r.set_bathymetry(True)
+    for key in ("land", "glaciers", "ice_shelves", "deserts", "playas"):
+        r.set_fill_layer(key, True)
+    r.set_layer("reefs", True)
+    r.set_compass(True)
+    save(r, "physical_world.png")
+
+    # 8. Cities, airports, and ports over Europe: labels and markers are
+    #    scale-dependent, and the coastline switches to 10m automatically.
+    r = new_renderer(store)
+    r.set_extent((-12, 32, 35, 62))
+    r.set_layer("countries", True)
+    r.set_ocean("blue")
+    for key in ("cities", "airports", "ports"):
+        r.set_point_layer(key, True)
+    r.set_labels("cities", True)
+    save(r, "cities_europe.png")
+
+    # 9. Boundary detail: disputed areas and boundaries, maritime
+    #    boundaries, EEZ / 200 nm limits, urban areas.
+    r = new_renderer(store)
+    r.set_extent((40, 110, -5, 45))
+    r.set_layer("countries", True)
+    r.set_fill_layer("disputed", True)
+    r.set_fill_layer("urban", True)
+    for key in ("disputed_lines", "maritime", "eez"):
+        r.set_layer(key, True)
+    r.set_ocean("blue")
+    save(r, "boundaries_asia.png")
+
+    # 10. Time zones with capitals only.
+    r = new_renderer(store)
+    r.set_layer("countries", True)
+    r.set_layer("timezones", True)
+    r.set_labels("timezones", True)
+    r.set_point_layer("cities", True)
+    r.set_capitals_only(True)
+    save(r, "timezones_capitals.png")
+
     return 0
 
 

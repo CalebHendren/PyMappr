@@ -1,7 +1,10 @@
-"""Scrollable side panel holding every map control.
+"""Tabbed side panel holding every map control.
 
-The panel owns the Tk variables and forwards changes to the app's handler
-methods; the app owns the renderer and the data.
+With ~30 layer toggles the panel is organized as a notebook of four
+scrollable tabs - Data (CSV, styling, legend), Map (view, projection,
+graticule, compass, export), Layers (every Natural Earth layer, grouped),
+and Labels. The panel owns the Tk variables and forwards changes to the
+app's handler methods; the app owns the renderer and the data.
 """
 
 from __future__ import annotations
@@ -12,7 +15,7 @@ from tkinter import ttk
 from pymappr.layers import CONTINENT_EXTENTS
 from pymappr.projections import PROJECTIONS
 
-PANEL_WIDTH = 300
+PANEL_WIDTH = 320
 
 GRATICULE_CHOICES = {"Off": None, "1\N{DEGREE SIGN}": 1.0,
                      "5\N{DEGREE SIGN}": 5.0, "10\N{DEGREE SIGN}": 10.0}
@@ -21,20 +24,54 @@ LEGEND_LOCATIONS = ["best", "upper right", "upper left", "lower left",
                     "lower right", "center right"]
 DPI_CHOICES = ["100", "150", "200", "300"]
 
-LAYER_ROWS = [
-    ("countries", "Countries"),
-    ("states", "States/Provinces"),
-    ("counties", "US Counties"),
-    ("lakes_outline", "Lakes (outlines)"),
-    ("rivers", "Rivers"),
-    ("roads", "Roads"),
+# Layer toggles, grouped by panel section. Each row is (key, text, kind)
+# where kind picks the renderer call: "line" (vector outlines), "fill"
+# (filled polygons), "point" (markers), or a special handler.
+BOUNDARY_ROWS = [
+    ("countries", "Countries", "line"),
+    ("states", "States/Provinces", "line"),
+    ("counties", "US Counties", "line"),
+    ("sovereignty", "Sovereign states", "line"),
+    ("map_units", "Map units", "line"),
+    ("subunits", "Map subunits", "line"),
+    ("dependencies", "Dependencies", "line"),
+    ("disputed", "Disputed areas", "fill"),
+    ("disputed_lines", "Disputed boundaries", "line"),
+    ("timezones", "Time zones", "line"),
+]
+WATER_ROWS = [
+    ("rivers", "Rivers", "line"),
+    ("wadis", "Wadis / intermittent rivers", "line"),
+    ("maritime", "Maritime boundaries", "line"),
+    ("eez", "EEZ / 200 nm limits", "line"),
+    ("reefs", "Reefs", "line"),
+]
+PHYSICAL_ROWS = [
+    ("land", "Land polygons (fill)", "fill"),
+    ("glaciers", "Glaciers", "fill"),
+    ("ice_shelves", "Antarctic ice shelves", "fill"),
+    ("playas", "Playas", "fill"),
+    ("deserts", "Deserts", "fill"),
+    ("regions", "Geographic regions", "line"),
+]
+CULTURE_ROWS = [
+    ("urban", "Urban areas", "fill"),
+    ("airports", "Airports", "point"),
+    ("ports", "Ports", "point"),
+    ("parks", "Parks & protected areas", "fill"),
+    ("roads", "Roads", "line"),
 ]
 LABEL_ROWS = [
     ("countries", "Countries"),
     ("states", "States/Provinces"),
     ("counties", "US Counties"),
+    ("cities", "Major cities"),
+    ("airports", "Airports"),
+    ("ports", "Ports"),
     ("lakes", "Lakes"),
     ("rivers", "Rivers"),
+    ("regions", "Geographic regions"),
+    ("timezones", "Time zones"),
 ]
 
 
@@ -42,33 +79,52 @@ class ControlPanel(ttk.Frame):
     def __init__(self, master, app):
         super().__init__(master)
         self.app = app
+        self.layer_vars: dict[str, tk.BooleanVar] = {}
+        self.fill_vars: dict[str, tk.BooleanVar] = {}
+        self.point_vars: dict[str, tk.BooleanVar] = {}
+        self.label_vars: dict[str, tk.BooleanVar] = {}
 
-        canvas = tk.Canvas(self, width=PANEL_WIDTH, highlightthickness=0)
-        scroll = ttk.Scrollbar(self, orient="vertical", command=canvas.yview)
-        self.inner = ttk.Frame(canvas)
-        self.inner.bind(
+        self.notebook = ttk.Notebook(self, width=PANEL_WIDTH)
+        self.notebook.pack(fill="both", expand=True)
+
+        data_tab = self._scroll_tab("Data")
+        map_tab = self._scroll_tab("Map")
+        layers_tab = self._scroll_tab("Layers")
+        labels_tab = self._scroll_tab("Labels")
+
+        self._build_data_section(data_tab)
+        self._build_legend_section(data_tab)
+        self._build_support_section(data_tab)
+
+        self._build_view_section(map_tab)
+        self._build_graticule_section(map_tab)
+        self._build_export_section(map_tab)
+
+        self._build_layers_tab(layers_tab)
+        self._build_labels_tab(labels_tab)
+
+    # ---------------------------------------------------------------- tabs
+
+    def _scroll_tab(self, title: str) -> ttk.Frame:
+        """Add a notebook tab wrapping a vertically scrollable frame."""
+        outer = ttk.Frame(self.notebook)
+        self.notebook.add(outer, text=title)
+        canvas = tk.Canvas(outer, width=PANEL_WIDTH, highlightthickness=0)
+        scroll = ttk.Scrollbar(outer, orient="vertical", command=canvas.yview)
+        inner = ttk.Frame(canvas)
+        inner.bind(
             "<Configure>",
-            lambda _e: canvas.configure(scrollregion=canvas.bbox("all")))
-        canvas.create_window((0, 0), window=self.inner, anchor="nw",
-                             width=PANEL_WIDTH)
+            lambda _e, c=canvas: c.configure(scrollregion=c.bbox("all")))
+        canvas.create_window((0, 0), window=inner, anchor="nw",
+                             width=PANEL_WIDTH - 18)
         canvas.configure(yscrollcommand=scroll.set)
         canvas.pack(side="left", fill="both", expand=True)
         scroll.pack(side="right", fill="y")
         self._bind_mousewheel(canvas)
+        return inner
 
-        self._build_data_section()
-        self._build_legend_section()
-        self._build_view_section()
-        self._build_layers_section()
-        self._build_labels_section()
-        self._build_graticule_section()
-        self._build_export_section()
-        self._build_support_section()
-
-    # ------------------------------------------------------------- sections
-
-    def _section(self, title: str) -> ttk.LabelFrame:
-        frame = ttk.LabelFrame(self.inner, text=title, padding=(8, 4))
+    def _section(self, parent, title: str) -> ttk.LabelFrame:
+        frame = ttk.LabelFrame(parent, text=title, padding=(8, 4))
         frame.pack(fill="x", padx=6, pady=4)
         return frame
 
@@ -83,12 +139,18 @@ class ControlPanel(ttk.Frame):
         box.bind("<<ComboboxSelected>>", lambda _e: command())
         return box
 
-    def _build_data_section(self) -> None:
-        sec = self._section("Data")
+    def _check(self, parent, text: str, var: tk.BooleanVar, command) -> None:
+        ttk.Checkbutton(parent, text=text, variable=var,
+                        command=command).pack(anchor="w")
+
+    # ------------------------------------------------------------ data tab
+
+    def _build_data_section(self, tab) -> None:
+        sec = self._section(tab, "Data")
         ttk.Button(sec, text="Open CSV\N{HORIZONTAL ELLIPSIS}",
                    command=self.app.on_open_csv).pack(fill="x", pady=2)
         self.file_label = ttk.Label(sec, text="No data loaded",
-                                    wraplength=PANEL_WIDTH - 40,
+                                    wraplength=PANEL_WIDTH - 60,
                                     foreground="#666666")
         self.file_label.pack(anchor="w", pady=(0, 4))
 
@@ -117,9 +179,8 @@ class ControlPanel(ttk.Frame):
                   foreground="#666666").pack(anchor="w")
 
         self.vary_symbols_var = tk.BooleanVar(value=False)
-        ttk.Checkbutton(sec, text="Vary symbols per group",
-                        variable=self.vary_symbols_var,
-                        command=self.app.on_style_scheme).pack(anchor="w")
+        self._check(sec, "Vary symbols per group", self.vary_symbols_var,
+                    self.app.on_style_scheme)
 
         ttk.Label(sec, text="Point opacity:").pack(anchor="w", pady=(6, 0))
         self.point_alpha_var = tk.DoubleVar(value=1.0)
@@ -128,16 +189,14 @@ class ControlPanel(ttk.Frame):
                  resolution=0.05,
                  command=lambda _v: self.app.on_point_alpha()).pack(fill="x")
 
-    def _build_legend_section(self) -> None:
-        sec = self._section("Legend")
+    def _build_legend_section(self, tab) -> None:
+        sec = self._section(tab, "Legend")
         self.legend_show_var = tk.BooleanVar(value=True)
-        ttk.Checkbutton(sec, text="Show legend",
-                        variable=self.legend_show_var,
-                        command=self.app.on_legend_options).pack(anchor="w")
+        self._check(sec, "Show legend", self.legend_show_var,
+                    self.app.on_legend_options)
         self.legend_frame_var = tk.BooleanVar(value=True)
-        ttk.Checkbutton(sec, text="Draw legend frame",
-                        variable=self.legend_frame_var,
-                        command=self.app.on_legend_options).pack(anchor="w")
+        self._check(sec, "Draw legend frame", self.legend_frame_var,
+                    self.app.on_legend_options)
 
         self.legend_loc_var = tk.StringVar(value="best")
         self._combo_row(sec, "Position:", self.legend_loc_var,
@@ -177,8 +236,22 @@ class ControlPanel(ttk.Frame):
         ttk.Button(sec, text="Customize legend\N{HORIZONTAL ELLIPSIS}",
                    command=self.app.on_edit_styles).pack(fill="x", pady=2)
 
-    def _build_view_section(self) -> None:
-        sec = self._section("View")
+    def _build_support_section(self, tab) -> None:
+        sec = self._section(tab, "Support Me")
+        ttk.Label(sec, text="Enjoying PyMappr? Support development:",
+                  wraplength=PANEL_WIDTH - 60).pack(anchor="w")
+        ttk.Button(sec, text="\N{BLACK HEART SUIT} Support on Ko-fi",
+                   command=self._open_kofi).pack(fill="x", pady=2)
+
+    def _open_kofi(self) -> None:
+        import webbrowser
+
+        webbrowser.open(KOFI_URL)
+
+    # ------------------------------------------------------------- map tab
+
+    def _build_view_section(self, tab) -> None:
+        sec = self._section(tab, "View")
         self.continent_var = tk.StringVar(value="World")
         self._combo_row(sec, "Limit to:", self.continent_var,
                         CONTINENT_EXTENTS, self.app.on_continent, width=16)
@@ -196,67 +269,22 @@ class ControlPanel(ttk.Frame):
                         variable=self.basemap_var, value="satellite",
                         command=self.app.on_basemap).pack(anchor="w")
 
-    def _build_layers_section(self) -> None:
-        sec = self._section("Layers")
-        self.layer_vars: dict[str, tk.BooleanVar] = {}
-        for key, text in LAYER_ROWS:
-            var = tk.BooleanVar(value=key == "countries")
-            ttk.Checkbutton(sec, text=text, variable=var,
-                            command=lambda k=key: self.app.on_layer(k)).pack(
-                anchor="w")
-            self.layer_vars[key] = var
+        self.compass_var = tk.BooleanVar(value=False)
+        ttk.Separator(sec, orient="horizontal").pack(fill="x", pady=4)
+        self._check(sec, "Show compass (north arrow)", self.compass_var,
+                    self.app.on_compass)
 
-        ttk.Label(sec, text="Line thickness:").pack(anchor="w", pady=(6, 0))
-        self.line_width_var = tk.DoubleVar(value=1.0)
-        tk.Scale(sec, from_=0.25, to=3.0, orient="horizontal",
-                 variable=self.line_width_var, showvalue=True,
-                 resolution=0.25,
-                 command=lambda _v: self.app.on_line_width()).pack(fill="x")
-
-        ttk.Label(sec, text="Lakes fill:").pack(anchor="w", pady=(6, 0))
-        self.lake_fill_var = tk.StringVar(value="none")
-        row = ttk.Frame(sec)
-        row.pack(fill="x")
-        for value, text in (("none", "None"), ("grey", "Greyscale"),
-                            ("blue", "Blue")):
-            ttk.Radiobutton(row, text=text, variable=self.lake_fill_var,
-                            value=value,
-                            command=self.app.on_lake_fill).pack(side="left",
-                                                                padx=(0, 8))
-
-        ttk.Label(sec, text="Oceans:").pack(anchor="w", pady=(6, 0))
-        self.ocean_var = tk.StringVar(value="none")
-        row = ttk.Frame(sec)
-        row.pack(fill="x")
-        for value, text in (("none", "None"), ("grey", "Greyscale"),
-                            ("blue", "Blue")):
-            ttk.Radiobutton(row, text=text, variable=self.ocean_var,
-                            value=value,
-                            command=self.app.on_ocean).pack(side="left",
-                                                            padx=(0, 8))
-
-    def _build_labels_section(self) -> None:
-        sec = self._section("Labels")
-        self.label_vars: dict[str, tk.BooleanVar] = {}
-        for key, text in LABEL_ROWS:
-            var = tk.BooleanVar(value=False)
-            ttk.Checkbutton(sec, text=text, variable=var,
-                            command=lambda k=key: self.app.on_label(k)).pack(
-                anchor="w")
-            self.label_vars[key] = var
-
-    def _build_graticule_section(self) -> None:
-        sec = self._section("Graticule (grid)")
+    def _build_graticule_section(self, tab) -> None:
+        sec = self._section(tab, "Graticule (grid)")
         self.graticule_var = tk.StringVar(value="Off")
         self._combo_row(sec, "Grid spacing:", self.graticule_var,
                         GRATICULE_CHOICES, self.app.on_graticule, width=8)
         self.hide_grid_labels_var = tk.BooleanVar(value=False)
-        ttk.Checkbutton(sec, text="Hide grid labels",
-                        variable=self.hide_grid_labels_var,
-                        command=self.app.on_graticule).pack(anchor="w")
+        self._check(sec, "Hide grid labels", self.hide_grid_labels_var,
+                    self.app.on_graticule)
 
-    def _build_export_section(self) -> None:
-        sec = self._section("Export")
+    def _build_export_section(self, tab) -> None:
+        sec = self._section(tab, "Export")
         row = ttk.Frame(sec)
         row.pack(fill="x", pady=2)
         ttk.Label(row, text="Resolution (DPI):").pack(side="left")
@@ -266,17 +294,111 @@ class ControlPanel(ttk.Frame):
         ttk.Button(sec, text="Save map as PNG\N{HORIZONTAL ELLIPSIS}",
                    command=self.app.on_save_png).pack(fill="x", pady=2)
 
-    def _build_support_section(self) -> None:
-        sec = self._section("Support Me")
-        ttk.Label(sec, text="Enjoying PyMappr? Support development:",
-                  wraplength=PANEL_WIDTH - 40).pack(anchor="w")
-        ttk.Button(sec, text="\N{BLACK HEART SUIT} Support on Ko-fi",
-                   command=self._open_kofi).pack(fill="x", pady=2)
+    # ---------------------------------------------------------- layers tab
 
-    def _open_kofi(self) -> None:
-        import webbrowser
+    def _layer_rows(self, sec, rows) -> None:
+        for key, text, kind in rows:
+            var = tk.BooleanVar(value=key == "countries")
+            if kind == "line":
+                self.layer_vars[key] = var
+                command = lambda k=key: self.app.on_layer(k)  # noqa: E731
+            elif kind == "fill":
+                self.fill_vars[key] = var
+                command = lambda k=key: self.app.on_fill_layer(k)  # noqa: E731
+            else:
+                self.point_vars[key] = var
+                command = lambda k=key: self.app.on_point_layer(k)  # noqa: E731
+            ttk.Checkbutton(sec, text=text, variable=var,
+                            command=command).pack(anchor="w")
 
-        webbrowser.open(KOFI_URL)
+    def _build_layers_tab(self, tab) -> None:
+        note = ttk.Label(
+            tab, text="Detail follows the zoom: layers draw from Natural "
+            "Earth 110m/50m/10m data as you zoom in.",
+            wraplength=PANEL_WIDTH - 40, foreground="#666666")
+        note.pack(anchor="w", padx=8, pady=(4, 0))
+
+        sec = self._section(tab, "Borders & areas")
+        self._layer_rows(sec, BOUNDARY_ROWS)
+
+        sec = self._section(tab, "Cities & places")
+        self.cities_var = tk.BooleanVar(value=False)
+        self.point_vars["cities"] = self.cities_var
+        ttk.Checkbutton(sec, text="Populated places (city markers)",
+                        variable=self.cities_var,
+                        command=lambda: self.app.on_point_layer(
+                            "cities")).pack(anchor="w")
+        self.capitals_only_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(sec, text="Capitals only", variable=self.capitals_only_var,
+                        command=self.app.on_capitals_only).pack(anchor="w",
+                                                                padx=(18, 0))
+        ttk.Label(sec, text="Cities appear as you zoom in "
+                  "(biggest cities first).",
+                  wraplength=PANEL_WIDTH - 60,
+                  foreground="#666666").pack(anchor="w")
+
+        sec = self._section(tab, "Water & marine")
+        ttk.Label(sec, text="Oceans:").pack(anchor="w")
+        self.ocean_var = tk.StringVar(value="none")
+        row = ttk.Frame(sec)
+        row.pack(fill="x")
+        for value, text in (("none", "None"), ("grey", "Greyscale"),
+                            ("blue", "Blue")):
+            ttk.Radiobutton(row, text=text, variable=self.ocean_var,
+                            value=value,
+                            command=self.app.on_ocean).pack(side="left",
+                                                            padx=(0, 8))
+        self.bathymetry_var = tk.BooleanVar(value=False)
+        self._check(sec, "Bathymetry (ocean depth)", self.bathymetry_var,
+                    self.app.on_bathymetry)
+
+        var = tk.BooleanVar(value=False)
+        self.layer_vars["lakes_outline"] = var
+        ttk.Checkbutton(sec, text="Lakes (outlines)", variable=var,
+                        command=lambda: self.app.on_layer(
+                            "lakes_outline")).pack(anchor="w", pady=(4, 0))
+        ttk.Label(sec, text="Lakes fill:").pack(anchor="w")
+        self.lake_fill_var = tk.StringVar(value="none")
+        row = ttk.Frame(sec)
+        row.pack(fill="x")
+        for value, text in (("none", "None"), ("grey", "Greyscale"),
+                            ("blue", "Blue")):
+            ttk.Radiobutton(row, text=text, variable=self.lake_fill_var,
+                            value=value,
+                            command=self.app.on_lake_fill).pack(side="left",
+                                                                padx=(0, 8))
+        self._layer_rows(sec, WATER_ROWS)
+
+        sec = self._section(tab, "Physical features")
+        self._layer_rows(sec, PHYSICAL_ROWS)
+
+        sec = self._section(tab, "Culture & infrastructure")
+        self._layer_rows(sec, CULTURE_ROWS)
+
+        sec = self._section(tab, "Lines")
+        ttk.Label(sec, text="Line thickness:").pack(anchor="w")
+        self.line_width_var = tk.DoubleVar(value=1.0)
+        tk.Scale(sec, from_=0.25, to=3.0, orient="horizontal",
+                 variable=self.line_width_var, showvalue=True,
+                 resolution=0.25,
+                 command=lambda _v: self.app.on_line_width()).pack(fill="x")
+
+    # ---------------------------------------------------------- labels tab
+
+    def _build_labels_tab(self, tab) -> None:
+        sec = self._section(tab, "Labels")
+        for key, text in LABEL_ROWS:
+            var = tk.BooleanVar(value=False)
+            ttk.Checkbutton(sec, text=text, variable=var,
+                            command=lambda k=key: self.app.on_label(k)).pack(
+                anchor="w")
+            self.label_vars[key] = var
+        ttk.Label(
+            sec, text="Labels are scale-dependent: more appear as you zoom "
+            "in, and overlapping labels are hidden automatically. Drag any "
+            "label to reposition it; right-click to snap it back.",
+            wraplength=PANEL_WIDTH - 60,
+            foreground="#666666").pack(anchor="w", pady=(6, 0))
 
     # -------------------------------------------------------------- helpers
 
