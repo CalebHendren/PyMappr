@@ -91,7 +91,8 @@ def group_points(frame: pd.DataFrame, group_by: str | None):
 
 def default_styles(labels: list[str],
                    color_keys: list[str] | None = None,
-                   vary_symbols: bool = False) -> dict[str, PointStyle]:
+                   vary_symbols: bool = False,
+                   palette_offset: int = 0) -> dict[str, PointStyle]:
     """Assign default styles to the given group labels.
 
     Without *color_keys*, palette colors are assigned round-robin and every
@@ -101,11 +102,15 @@ def default_styles(labels: list[str],
     groups sharing a color key share a color - Felines one color, Canines
     another - while the symbol cycles within each color group, so domestic
     cats, lions and cheetahs each get their own shape.
+
+    *palette_offset* starts the color rotation further into the palette,
+    so several datasets shown on one map get distinct default colors.
     """
     if color_keys is None:
         return {
             label: PointStyle(
-                color=DEFAULT_PALETTE[i % len(DEFAULT_PALETTE)],
+                color=DEFAULT_PALETTE[(i + palette_offset)
+                                      % len(DEFAULT_PALETTE)],
                 marker=(MARKER_CYCLE[i % len(MARKER_CYCLE)]
                         if vary_symbols else "Circle"))
             for i, label in enumerate(labels)
@@ -117,7 +122,7 @@ def default_styles(labels: list[str],
     for label, key in zip(labels, color_keys):
         shape_idx = seen_in_group.get(key, 0)
         seen_in_group[key] = shape_idx + 1
-        color_idx = color_order.index(key)
+        color_idx = color_order.index(key) + palette_offset
         styles[label] = PointStyle(
             color=DEFAULT_PALETTE[color_idx % len(DEFAULT_PALETTE)],
             marker=MARKER_CYCLE[shape_idx % len(MARKER_CYCLE)])
