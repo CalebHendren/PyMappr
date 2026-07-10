@@ -2,12 +2,14 @@ import textwrap
 
 import pytest
 
-from pymappr.data_loader import (ColumnMapping, build_dataset, guess_mapping,
-                                load_csv, read_csv)
+from pymappr.data_loader import (ColumnMapping, build_dataset,
+                                build_manual_dataset, guess_mapping,
+                                headers_look_like_data, list_sheets,
+                                load_csv, read_csv, read_table)
 
 
-def write(tmp_path, text):
-    path = tmp_path / "points.csv"
+def write(tmp_path, text, name="points.csv"):
+    path = tmp_path / name
     path.write_text(textwrap.dedent(text), encoding="utf-8")
     return str(path)
 
@@ -121,3 +123,115 @@ def test_too_few_columns(tmp_path):
     """)
     with pytest.raises(ValueError):
         guess_mapping(read_csv(path))
+
+
+# ------------------------------------------------- first row is data, not headers
+
+def test_read_table_without_headers(tmp_path):
+    """headers=False keeps the first row as data to plot."""
+    path = write(tmp_path, """\
+        38,-100
+        -25,140
+    """)
+    frame = read_table(path, headers=False)
+    assert list(frame.columns) == ["Column 1", "Column 2"]
+    assert len(frame) == 2
+    assert frame.iloc[0]["Column 1"] == "38"
+
+
+def test_headers_look_like_data(tmp_path):
+    numeric = read_table(write(tmp_path, "38,-100\n-25,140\n"))
+    assert headers_look_like_data(numeric)
+    named = read_table(write(tmp_path, "City,Longitude,Latitude\n"
+                                       "Austin,-97.7,30.3\n"))
+    assert not headers_look_like_data(named)
+
+
+def test_positional_fallback_swaps_lat_lon_by_value(tmp_path):
+    """A headerless lat,lon file imports correctly: values beyond +/-90 in
+    the presumed latitude column flip the guess."""
+    path = write(tmp_path, """\
+        38,-100
+        -25,140
+    """)
+    frame = read_table(path, headers=False)
+    mapping = guess_mapping(frame)
+    assert mapping.latitude == "Column 1"
+    assert mapping.longitude == "Column 2"
+    ds = build_dataset(frame, mapping)
+    assert ds.frame.iloc[1]["lon"] == pytest.approx(140)
+    assert ds.frame.iloc[1]["lat"] == pytest.approx(-25)
+
+
+# --------------------------------------------------------------- other formats
+
+def test_read_table_tsv(tmp_path):
+    path = write(tmp_path, "City\tLongitude\tLatitude\n"
+                           "Austin\t-97.7\t30.3\n", name="points.tsv")
+    frame = read_table(path)
+    assert list(frame.columns) == ["City", "Longitude", "Latitude"]
+    assert frame.iloc[0]["Longitude"] == "-97.7"
+
+
+def test_read_table_sniffs_txt_delimiter(tmp_path):
+    path = write(tmp_path, "City;Longitude;Latitude\n"
+                           "Austin;-97.7;30.3\n", name="points.txt")
+    frame = read_table(path)
+    assert list(frame.columns) == ["City", "Longitude", "Latitude"]
+
+
+def test_read_table_excel(tmp_path):
+    pd = pytest.importorskip("pandas")
+    pytest.importorskip("openpyxl")
+    path = str(tmp_path / "points.xlsx")
+    pd.DataFrame({"City": ["Austin"], "Longitude": [-97.7],
+                  "Latitude": [30.3]}).to_excel(path, index=False,
+                                                sheet_name="Sites")
+    assert list_sheets(path) == ["Sites"]
+    frame = read_table(path, sheet="Sites")
+    assert list(frame.columns) == ["City", "Longitude", "Latitude"]
+    ds = build_dataset(frame, guess_mapping(frame), source_path=path)
+    assert len(ds) == 1
+    assert ds.frame.iloc[0]["lon"] == pytest.approx(-97.7)
+
+
+def test_read_table_excel_first_row_as_data(tmp_path):
+    pd = pytest.importorskip("pandas")
+    pytest.importorskip("openpyxl")
+    path = str(tmp_path / "raw.xlsx")
+    pd.DataFrame([[38, -100], [-25, 140]]).to_excel(path, index=False,
+                                                    header=False)
+    frame = read_table(path, headers=False)
+    assert list(frame.columns) == ["Column 1", "Column 2"]
+    assert len(frame) == 2
+
+
+# ---------------------------------------------------------------- manual entry
+
+def test_build_manual_dataset_lat_lon_lines():
+    ds = build_manual_dataset("Pardosa distincta", "38,-100\n-25,140\n")
+    assert len(ds) == 2
+    assert ds.skipped == []
+    assert ds.name_labels == ["Legend"]
+    assert set(ds.frame["name1"]) == {"Pardosa distincta"}
+    assert ds.frame.iloc[0]["lat"] == pytest.approx(38)
+    assert ds.frame.iloc[0]["lon"] == pytest.approx(-100)
+
+
+def test_build_manual_dataset_lon_lat_order_and_labels():
+    ds = build_manual_dataset("Sites", "-100, 38, Site A\n140.0;-25;Site B\n",
+                              order="lon,lat")
+    assert len(ds) == 2
+    assert ds.name_labels == ["Legend", "Label"]
+    assert list(ds.frame["name2"]) == ["Site A", "Site B"]
+    assert ds.frame.iloc[0]["lon"] == pytest.approx(-100)
+
+
+def test_build_manual_dataset_dms_and_errors():
+    text = "47°36'35\"N, 122°19'59\"W\nnot-a-coordinate\n95, 10\n"
+    ds = build_manual_dataset("Mixed", text)
+    assert len(ds) == 1
+    assert len(ds.skipped) == 2
+    assert "line 2" in ds.skipped[0]
+    assert "line 3" in ds.skipped[1]
+    assert ds.frame.iloc[0]["lat"] == pytest.approx(47 + 36 / 60 + 35 / 3600)

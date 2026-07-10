@@ -69,8 +69,9 @@ class FilterBar(ttk.Frame):
         """Point the bar at a newly loaded dataset; resets any filter."""
         self._frame = frame
         self._column_keys = dict(zip(name_labels, name_keys))
+        state = "readonly" if len(frame) else "disabled"
         self.column_box.configure(values=["None"] + list(name_labels),
-                                  state="readonly")
+                                  state=state)
         self.column_var.set("None")
         self._rebuild_values()
 
