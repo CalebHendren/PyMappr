@@ -1,8 +1,9 @@
 # PyMappr
 
 Simple desktop mapping software focused on high-quality point-distribution
-maps. Load point data from a CSV, style it, explore Natural Earth base layers
-in real time in several map projections, and export the result as a PNG.
+maps. Load point data from CSV/Excel files or type it in by hand, style it,
+explore Natural Earth base layers in real time in several map projections,
+save your work as a project, and export the result as a PNG.
 
 PyMappr is essentially a remake of
 [SimpleMappr](https://www.simplemappr.net/) in Python: the same
@@ -15,13 +16,32 @@ offline desktop application.
 
 ## Features
 
-- **CSV input** with a Longitude column, a Latitude column, and any number of
+- **Projects**: everything on the map - every dataset (data included),
+  styling, layers, projection, and view - saves to a single `.pymappr`
+  file. Create, name, save, load, rename, and delete projects from the
+  File menu; projects live in a **user-selectable projects folder**
+  (Documents/PyMappr Projects by default) and persist across application
+  updates. **Export/Import project** shares a self-contained project file
+  with collaborators. The current session also **autosaves on exit and is
+  restored on the next launch**, so closing the app never loses work.
+- **CSV, TSV, text, and Excel input** (`.csv`, `.tsv`, `.txt`, `.xlsx`,
+  `.xlsm`) with a Longitude column, a Latitude column, and any number of
   name columns (e.g. `Country, State, County, City, Longitude, Latitude`).
-  Any column order works.
-- **Column mapping on import**: when a CSV is opened you always choose which
-  column is Latitude and which is Longitude, tick the columns to use as
-  names, and pick whether the name labels use the CSV headers or the generic
-  `Name 1, Name 2, Name 3, ...` numbering.
+  Any column order works; multi-sheet workbooks get a worksheet selector.
+- **Column mapping on import**: when a file is opened you always choose
+  which column is Latitude and which is Longitude, tick the columns to use
+  as names, and pick whether the name labels use the file headers or the
+  generic `Name 1, Name 2, Name 3, ...` numbering. The **first row is not
+  assumed to be headers**: a checkbox controls whether it is column names
+  or data to plot, and PyMappr pre-guesses from the file contents.
+- **Manual entry**: type or paste points directly - one `lat, lon` line
+  per point (optionally with a label), plus a legend name, marker shape,
+  size, and color, like SimpleMappr's coordinate boxes. Manually entered
+  datasets can be re-opened and edited later.
+- **Multiple datasets on one map**: add as many files/manual point sets as
+  you like - each keeps its own grouping and styling, can be shown/hidden
+  independently, and they share the map and legend (handy for long-term
+  projects).
 - **Coordinates in decimal degrees or DMS**: `-97.7431`, `97°44'35"W`,
   `97 44 35 W`, `97d 44m 35s W`, `37°46.493'N`, and more.
 - **Real-time map view** - pan, zoom, and toggle layers live. Zoom with the
@@ -99,8 +119,9 @@ offline desktop application.
 - **Save map as PNG** at 100-300 DPI.
 - **Update check**: at most once per day, on launch, PyMappr asks the GitHub
   releases API whether a newer version exists and offers to open the
-  releases page (silent when offline). *Help > Check for updates* runs the
-  same check on demand.
+  releases page (silent when offline). *Help > Check for updates* and the
+  **Check for updates button** in the side panel run the same check on
+  demand.
 
 ## Screenshots
 
@@ -277,7 +298,10 @@ python scripts/make_screenshots.py # regenerate the README images
 Project layout:
 
 - `pymappr/coords.py` - decimal/DMS coordinate parsing
-- `pymappr/data_loader.py` - CSV reading and column mapping (N name columns)
+- `pymappr/data_loader.py` - CSV/TSV/Excel reading, column mapping (N name
+  columns), and manual coordinate entry parsing
+- `pymappr/projects.py` - project files (`.pymappr`), the projects folder,
+  settings, and the session autosave
 - `pymappr/layers.py` - Natural Earth layer store: lazy loading, the
   110m/50m/10m resolution catalog, derived layers (continents, capitals,
   deserts, wadis, EEZ, bathymetry, ...), and the on-disk frame cache
@@ -287,7 +311,8 @@ Project layout:
 - `pymappr/styles.py` - point styles, marker symbols, group/color-by styling
 - `pymappr/updates.py` - daily update check against the GitHub releases API
 - `pymappr/app.py`, `pymappr/ui/` - Tkinter application (tabbed control
-  panel, column mapper, legend editor, filter bar)
+  panel, column mapper, manual entry, project manager, legend editor,
+  filter bar)
 - `scripts/fetch_data.py` - downloads and prepares the bundled map data
 - `packaging/` - PyInstaller spec, Inno Setup script, Linux/Fedora/Arch
   packaging
