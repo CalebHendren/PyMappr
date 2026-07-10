@@ -146,14 +146,49 @@ class ControlPanel(ttk.Frame):
     # ------------------------------------------------------------ data tab
 
     def _build_data_section(self, tab) -> None:
-        sec = self._section(tab, "Data")
-        ttk.Button(sec, text="Open CSV\N{HORIZONTAL ELLIPSIS}",
-                   command=self.app.on_open_csv).pack(fill="x", pady=2)
+        sec = self._section(tab, "Datasets")
+        row = ttk.Frame(sec)
+        row.pack(fill="x", pady=2)
+        ttk.Button(row, text="Add data file\N{HORIZONTAL ELLIPSIS}",
+                   command=self.app.on_add_file).pack(
+            side="left", fill="x", expand=True)
+        ttk.Button(row, text="Manual entry\N{HORIZONTAL ELLIPSIS}",
+                   command=self.app.on_manual_entry).pack(
+            side="left", fill="x", expand=True, padx=(4, 0))
+
+        list_frame = ttk.Frame(sec)
+        list_frame.pack(fill="x", pady=2)
+        self.dataset_list = tk.Listbox(list_frame, height=5,
+                                       exportselection=False,
+                                       activestyle="dotbox")
+        scroll = ttk.Scrollbar(list_frame, orient="vertical",
+                               command=self.dataset_list.yview)
+        self.dataset_list.configure(yscrollcommand=scroll.set)
+        self.dataset_list.pack(side="left", fill="both", expand=True)
+        scroll.pack(side="right", fill="y")
+        self.dataset_list.bind(
+            "<<ListboxSelect>>",
+            lambda _e: self.app.on_select_dataset(self.selected_dataset()))
+
+        row = ttk.Frame(sec)
+        row.pack(fill="x", pady=2)
+        ttk.Button(row, text="Edit\N{HORIZONTAL ELLIPSIS}",
+                   command=self.app.on_edit_dataset).pack(
+            side="left", fill="x", expand=True)
+        ttk.Button(row, text="Remove",
+                   command=self.app.on_remove_dataset).pack(
+            side="left", fill="x", expand=True, padx=(4, 0))
+
+        self.dataset_visible_var = tk.BooleanVar(value=True)
+        self._check(sec, "Show this dataset on the map",
+                    self.dataset_visible_var, self.app.on_dataset_visible)
+
         self.file_label = ttk.Label(sec, text="No data loaded",
                                     wraplength=PANEL_WIDTH - 60,
                                     foreground="#666666")
         self.file_label.pack(anchor="w", pady=(0, 4))
 
+        sec = self._section(tab, "Styling (selected dataset)")
         self.group_by_var = tk.StringVar(value="None")
         self.group_by_box = self._combo_row(
             sec, "Group by:", self.group_by_var, ["None"],
@@ -242,6 +277,8 @@ class ControlPanel(ttk.Frame):
                   wraplength=PANEL_WIDTH - 60).pack(anchor="w")
         ttk.Button(sec, text="\N{BLACK HEART SUIT} Support on Ko-fi",
                    command=self._open_kofi).pack(fill="x", pady=2)
+        ttk.Button(sec, text="Check for updates\N{HORIZONTAL ELLIPSIS}",
+                   command=self.app.on_check_updates).pack(fill="x", pady=2)
 
     def _open_kofi(self) -> None:
         import webbrowser
@@ -349,8 +386,8 @@ class ControlPanel(ttk.Frame):
                             command=self.app.on_ocean).pack(side="left",
                                                             padx=(0, 8))
         self.bathymetry_var = tk.BooleanVar(value=False)
-        self._check(sec, "Bathymetry (ocean depth)", self.bathymetry_var,
-                    self.app.on_bathymetry)
+        self._check(sec, "Bathymetry (ocean depth, slower)",
+                    self.bathymetry_var, self.app.on_bathymetry)
 
         var = tk.BooleanVar(value=False)
         self.layer_vars["lakes_outline"] = var
@@ -435,13 +472,38 @@ class ControlPanel(ttk.Frame):
         except ValueError:
             return 1
 
-    def set_group_by_choices(self, choices: list[str], selected: str) -> None:
-        self.group_by_box.configure(values=choices)
-        self.group_by_var.set(selected)
-        self.color_by_box.configure(values=choices)
-        self.color_by_var.set("None")
-        self.symbol_by_box.configure(values=choices)
-        self.symbol_by_var.set("None")
+    def set_dataset_list(self, rows: list[tuple[str, bool]],
+                         active: int | None) -> None:
+        """Rebuild the dataset list: *rows* is (name, visible) per dataset."""
+        self.dataset_list.delete(0, "end")
+        for name, visible in rows:
+            mark = ("\N{BALLOT BOX WITH CHECK}" if visible
+                    else "\N{BALLOT BOX}")
+            self.dataset_list.insert("end", f"{mark} {name}")
+        if active is not None and 0 <= active < len(rows):
+            self.dataset_list.selection_set(active)
+            self.dataset_list.see(active)
+            self.dataset_visible_var.set(rows[active][1])
+
+    def selected_dataset(self) -> int | None:
+        selection = self.dataset_list.curselection()
+        return int(selection[0]) if selection else None
+
+    def set_dataset_controls(self, choices: list[str], group_by: str,
+                             color_by: str, symbol_by: str,
+                             vary_symbols: bool) -> None:
+        """Point the styling controls at the selected dataset's settings
+        (no change callbacks fire; combos only fire on user selection)."""
+        for box, var, value in ((self.group_by_box, self.group_by_var,
+                                 group_by),
+                                (self.color_by_box, self.color_by_var,
+                                 color_by),
+                                (self.symbol_by_box, self.symbol_by_var,
+                                 symbol_by)):
+            box.configure(values=choices)
+            var.set(value if value in choices else "None")
+        self.vary_symbols_var.set(vary_symbols)
 
     def set_file_info(self, text: str) -> None:
-        self.file_label.config(text=text, foreground="#333333")
+        color = "#666666" if text == "No data loaded" else "#333333"
+        self.file_label.config(text=text, foreground=color)

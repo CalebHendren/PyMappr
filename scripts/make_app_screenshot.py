@@ -28,16 +28,13 @@ OUT_DIR = REPO_ROOT / "docs" / "images"
 
 
 def load_sample(app: PyMapprApp, name: str) -> None:
-    """Load a bundled CSV exactly as the Open CSV flow would."""
+    """Load a bundled CSV exactly as the Add data file flow would."""
+    from pymappr.projects import DatasetEntry
+
     dataset = load_csv(str(REPO_ROOT / "sample_data" / name))
-    app.dataset = dataset
-    app.panel.set_file_info(f"{name}: {len(dataset)} points")
-    app._update_group_choices()
-    app.filter_bar.set_dataset(dataset.frame, dataset.name_labels,
-                               dataset.name_keys)
-    app.styles = {}
-    app._push_points()
-    app._zoom_to_data()
+    labels = dataset.name_labels
+    app._add_entry(DatasetEntry(dataset=dataset, name=name,
+                                group_by=labels[0] if labels else ""))
 
 
 def grab_window(root: tk.Tk, path: Path) -> None:
@@ -62,7 +59,7 @@ def main() -> int:
 
     root = tk.Tk()
     root.geometry("1500x950+0+0")
-    app = PyMapprApp(root, store)
+    app = PyMapprApp(root, store, restore_session=False)
     root.update()
 
     # 1. Grouped points with a legend, states + blue water (Data tab).
