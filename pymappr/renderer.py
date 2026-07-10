@@ -293,6 +293,15 @@ class MapRenderer:
         self.ax.set_xlim(x0, x1)
         self.ax.set_ylim(y0, y1)
 
+    def get_view(self) -> tuple[tuple[float, float], tuple[float, float]]:
+        """Current axis limits (map coordinates) for project persistence."""
+        return tuple(self.ax.get_xlim()), tuple(self.ax.get_ylim())
+
+    def set_view(self, xlim, ylim) -> None:
+        """Restore axis limits saved by :meth:`get_view` (same projection)."""
+        self.ax.set_xlim(tuple(xlim))
+        self.ax.set_ylim(tuple(ylim))
+
     def zoom(self, factor: float, center: tuple[float, float] | None = None) -> None:
         """Zoom the view by *factor* (>1 zooms in), keeping *center* (map
         coordinates, e.g. the cursor position) fixed; without a center the

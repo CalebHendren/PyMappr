@@ -62,6 +62,9 @@ a = Analysis(
     hiddenimports=[
         "pymappr.app",
         "matplotlib.backends.backend_tkagg",
+        # pandas loads its Excel engine lazily; without this the frozen
+        # app cannot import .xlsx workbooks.
+        "openpyxl",
         *collect_submodules("pyogrio", filter=lambda name: ".tests" not in name),
     ],
     excludes=[
