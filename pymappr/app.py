@@ -481,6 +481,8 @@ class PyMapprApp:
             "active": self.active,
             "map": {
                 "projection": p.projection_var.get(),
+                "proj_lon0": p.proj_lon0_var.get(),
+                "proj_lat0": p.proj_lat0_var.get(),
                 "basemap": p.basemap_var.get(),
                 "continent": p.continent_var.get(),
                 "compass": p.compass_var.get(),
@@ -525,6 +527,9 @@ class PyMapprApp:
         legend = {**defaults["legend"], **dict(state.get("legend", {}))}
 
         p.projection_var.set(m["projection"])
+        p.proj_lon0_var.set(m.get("proj_lon0", ""))
+        p.proj_lat0_var.set(m.get("proj_lat0", ""))
+        p.update_projection_origin(m["projection"])
         p.basemap_var.set(m["basemap"])
         p.continent_var.set(m["continent"])
         p.compass_var.set(m["compass"])
@@ -555,15 +560,16 @@ class PyMapprApp:
         self._busy(True)
         try:
             renderer = self.renderer
-            renderer.set_projection(p.projection_var.get())
+            lon0, lat0 = p.projection_origin()
+            renderer.set_projection(p.projection_var.get(), lon0, lat0)
             renderer.set_basemap(p.basemap_var.get())
             renderer.set_extent(p.continent_var.get())
             for key, var in p.layer_vars.items():
-                renderer.set_layer(key, var.get())
+                self._restore_layer(renderer.set_layer, key, var)
             for key, var in p.fill_vars.items():
-                renderer.set_fill_layer(key, var.get())
+                self._restore_layer(renderer.set_fill_layer, key, var)
             for key, var in p.point_vars.items():
-                renderer.set_point_layer(key, var.get())
+                self._restore_layer(renderer.set_point_layer, key, var)
             renderer.set_bathymetry(p.bathymetry_var.get())
             renderer.set_capitals_only(p.capitals_only_var.get())
             renderer.set_ocean(p.ocean_var.get())
@@ -590,6 +596,24 @@ class PyMapprApp:
         self._push_points()
 
     # ----------------------------------------------------------------- data
+
+    def _restore_layer(self, setter, key: str,
+                       var: tk.BooleanVar) -> None:
+        """Apply one layer toggle while restoring state, tolerating optional
+        layers whose data was never downloaded (untick them silently instead
+        of aborting the whole restore)."""
+        want = var.get()
+        if want and not self.store.has_layer_data(key):
+            var.set(False)
+            return
+        try:
+            setter(key, want)
+        except Exception:  # noqa: BLE001 - a bad layer must not block restore
+            var.set(False)
+            try:
+                setter(key, False)
+            except Exception:  # noqa: BLE001
+                pass
 
     def _active_entry(self) -> DatasetEntry | None:
         if self.active is None or not (0 <= self.active < len(self.entries)):
@@ -1032,51 +1056,111 @@ class PyMapprApp:
         self.renderer.redraw()
 
     def on_projection(self) -> None:
-        self.set_status(f"Reprojecting to {self.panel.projection_var.get()}"
-                        f"\N{HORIZONTAL ELLIPSIS}")
+        name = self.panel.projection_var.get()
+        # A newly chosen Lambert projection seeds its preset origin; other
+        # projections disable the origin controls.
+        self.panel.update_projection_origin(name, reset=True)
+        lon0, lat0 = self.panel.projection_origin()
+        self.set_status(f"Reprojecting to {name}\N{HORIZONTAL ELLIPSIS}")
         self._busy(True)
         try:
-            self.renderer.set_projection(self.panel.projection_var.get())
+            self.renderer.set_projection(name, lon0, lat0)
         finally:
             self._busy(False)
         self.toolbar.update()
         self.set_status("Ready.")
         self.renderer.redraw()
 
+    def on_projection_origin(self) -> None:
+        """Re-centre a Lambert projection on an edited point of natural
+        origin (central meridian / latitude of origin). A no-op for the
+        world projections, whose origin controls are disabled."""
+        name = self.panel.projection_var.get()
+        lon0, lat0 = self.panel.projection_origin()
+        self._busy(True)
+        try:
+            self.renderer.set_projection(name, lon0, lat0)
+        finally:
+            self._busy(False)
+        self.toolbar.update()
+        self.renderer.redraw()
+
     def on_line_width(self) -> None:
         self.renderer.set_line_width_scale(self.panel.line_width_var.get())
         self.renderer.redraw()
 
-    def _toggle_layer(self, key: str, visible: bool, setter) -> None:
-        """Shared busy-cursor plumbing for every kind of layer toggle."""
+    def _toggle_layer(self, key: str, visible: bool, setter,
+                      var: tk.BooleanVar | None = None) -> None:
+        """Shared busy-cursor plumbing for every kind of layer toggle.
+
+        Optional external layers (biodiversity, ecoregions) may not be
+        downloaded, and any layer's data could be missing or corrupt; rather
+        than crash, revert the checkbox and explain."""
+        if visible and not self.store.has_layer_data(key):
+            if var is not None:
+                var.set(False)
+            self._optional_layer_missing(key)
+            return
         if visible:
             self.set_status(f"Loading {key.replace('_', ' ')} layer"
                             f"\N{HORIZONTAL ELLIPSIS}")
             self._busy(True)
         try:
             setter(key, visible)
-        finally:
+        except Exception as exc:  # noqa: BLE001 - a bad layer must not crash
             if visible:
                 self._busy(False)
                 self.set_status("Ready.")
+                if var is not None:
+                    var.set(False)
+                try:
+                    setter(key, False)  # drop any half-built artists
+                except Exception:  # noqa: BLE001
+                    pass
+            self._layer_load_error(key, exc)
+            return
+        if visible:
+            self._busy(False)
+            self.set_status("Ready.")
         self.renderer.redraw()
+
+    def _optional_layer_missing(self, key: str) -> None:
+        label = key.replace("_", " ")
+        messagebox.showinfo(
+            "Layer not downloaded",
+            f"The {label} layer is an optional dataset that has not been "
+            "downloaded yet.\n\nRun 'python scripts/fetch_data.py' to fetch "
+            "the biodiversity and ecoregion layers, then tick the box again.",
+            parent=self.root)
+        self.set_status(f"{label.capitalize()} layer not available.")
+
+    def _layer_load_error(self, key: str, exc: Exception) -> None:
+        messagebox.showwarning(
+            "Could not load layer",
+            f"The {key.replace('_', ' ')} layer could not be loaded:\n\n{exc}",
+            parent=self.root)
+        self.set_status("Ready.")
 
     def on_layer(self, key: str) -> None:
         self._toggle_layer(key, self.panel.layer_vars[key].get(),
-                           self.renderer.set_layer)
+                           self.renderer.set_layer,
+                           self.panel.layer_vars[key])
 
     def on_fill_layer(self, key: str) -> None:
         self._toggle_layer(key, self.panel.fill_vars[key].get(),
-                           self.renderer.set_fill_layer)
+                           self.renderer.set_fill_layer,
+                           self.panel.fill_vars[key])
 
     def on_point_layer(self, key: str) -> None:
         self._toggle_layer(key, self.panel.point_vars[key].get(),
-                           self.renderer.set_point_layer)
+                           self.renderer.set_point_layer,
+                           self.panel.point_vars[key])
 
     def on_bathymetry(self) -> None:
         self._toggle_layer(
             "bathymetry", self.panel.bathymetry_var.get(),
-            lambda _key, visible: self.renderer.set_bathymetry(visible))
+            lambda _key, visible: self.renderer.set_bathymetry(visible),
+            self.panel.bathymetry_var)
 
     def on_capitals_only(self) -> None:
         self.renderer.set_capitals_only(self.panel.capitals_only_var.get())
