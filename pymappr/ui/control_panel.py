@@ -13,7 +13,8 @@ import tkinter as tk
 from tkinter import ttk
 
 from pymappr.layers import CONTINENT_EXTENTS
-from pymappr.projections import PROJECTIONS
+from pymappr.projections import (PROJECTIONS, is_lambert,
+                                 lambert_default_origin)
 
 PANEL_WIDTH = 320
 
@@ -60,6 +61,11 @@ CULTURE_ROWS = [
     ("ports", "Ports", "point"),
     ("parks", "Parks & protected areas", "fill"),
     ("roads", "Roads", "line"),
+]
+BIODIVERSITY_ROWS = [
+    ("biodiversity", "Biodiversity hotspots", "fill"),
+    ("ecoregions", "Terrestrial ecoregions", "fill"),
+    ("marine_ecoregions", "Marine ecoregions", "fill"),
 ]
 LABEL_ROWS = [
     ("countries", "Countries"),
@@ -297,6 +303,34 @@ class ControlPanel(ttk.Frame):
         self._combo_row(sec, "Projection:", self.projection_var,
                         PROJECTIONS, self.app.on_projection, width=16)
 
+        # Point of natural origin for the Lambert projections: enabled only
+        # while a Lambert projection is selected.
+        self.proj_lon0_var = tk.StringVar(value="")
+        self.proj_lat0_var = tk.StringVar(value="")
+        self.origin_frame = ttk.Frame(sec)
+        self.origin_frame.pack(fill="x", pady=(2, 0))
+        self.origin_spins: list[ttk.Spinbox] = []
+        for label, var, lo, hi in (("Center lon:", self.proj_lon0_var,
+                                    -180, 180),
+                                   ("Center lat:", self.proj_lat0_var,
+                                    -90, 90)):
+            row = ttk.Frame(self.origin_frame)
+            row.pack(fill="x", pady=1)
+            ttk.Label(row, text=label).pack(side="left")
+            spin = ttk.Spinbox(row, from_=lo, to=hi, increment=5, width=8,
+                               textvariable=var,
+                               command=self.app.on_projection_origin)
+            spin.pack(side="right")
+            spin.bind("<Return>", lambda _e: self.app.on_projection_origin())
+            spin.bind("<FocusOut>", lambda _e: self.app.on_projection_origin())
+            self.origin_spins.append(spin)
+        self.origin_hint = ttk.Label(
+            self.origin_frame,
+            text="Point of natural origin (Lambert projections).",
+            wraplength=PANEL_WIDTH - 60, foreground="#666666")
+        self.origin_hint.pack(anchor="w")
+        self.update_projection_origin(self.projection_var.get(), reset=True)
+
         ttk.Label(sec, text="Basemap:").pack(anchor="w", pady=(4, 0))
         self.basemap_var = tk.StringVar(value="simple")
         ttk.Radiobutton(sec, text="Simple (white with borders)",
@@ -412,6 +446,13 @@ class ControlPanel(ttk.Frame):
         sec = self._section(tab, "Culture & infrastructure")
         self._layer_rows(sec, CULTURE_ROWS)
 
+        sec = self._section(tab, "Biodiversity & ecoregions")
+        self._layer_rows(sec, BIODIVERSITY_ROWS)
+        ttk.Label(sec, text="Optional overlays (Conservation International, "
+                  "RESOLVE, WWF/TNC). Run fetch_data.py to download them.",
+                  wraplength=PANEL_WIDTH - 60,
+                  foreground="#666666").pack(anchor="w")
+
         sec = self._section(tab, "Lines")
         ttk.Label(sec, text="Line thickness:").pack(anchor="w")
         self.line_width_var = tk.DoubleVar(value=1.0)
@@ -456,6 +497,36 @@ class ControlPanel(ttk.Frame):
 
         canvas.bind("<Enter>", bind_all)
         canvas.bind("<Leave>", unbind_all)
+
+    def update_projection_origin(self, name: str, reset: bool = False) -> None:
+        """Enable the origin spinboxes for Lambert projections (seeding the
+        preset default when *reset*) and disable them otherwise."""
+        if is_lambert(name):
+            if reset or not self.proj_lon0_var.get().strip():
+                lon0, lat0 = lambert_default_origin(name)
+                self.proj_lon0_var.set(f"{lon0:g}")
+                self.proj_lat0_var.set(f"{lat0:g}")
+            state = "normal"
+            self.origin_hint.configure(foreground="#666666")
+        else:
+            state = "disabled"
+            self.origin_hint.configure(foreground="#999999")
+        for spin in self.origin_spins:
+            spin.configure(state=state)
+
+    def projection_origin(self) -> tuple[float | None, float | None]:
+        """The (lon_0, lat_0) origin for a Lambert projection, or (None, None)
+        for any other projection or unparseable input (uses the default)."""
+        if not is_lambert(self.projection_var.get()):
+            return None, None
+
+        def _num(var):
+            try:
+                return float(var.get())
+            except (TypeError, ValueError):
+                return None
+
+        return _num(self.proj_lon0_var), _num(self.proj_lat0_var)
 
     def graticule_interval(self) -> float | None:
         return GRATICULE_CHOICES[self.graticule_var.get()]
