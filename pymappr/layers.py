@@ -29,7 +29,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-__all__ = ["LayerStore", "LAYER_SPECS", "CONTINENT_EXTENTS", "default_data_dir"]
+__all__ = ["LayerStore", "LAYER_SPECS", "OPTIONAL_LAYERS",
+           "CONTINENT_EXTENTS", "default_data_dir"]
 
 # Bump when the cached frame format changes; stale caches are rebuilt.
 _CACHE_VERSION = 1
@@ -147,7 +148,21 @@ LAYER_SPECS = {
     "playas": LayerSpec("playas", "ne_10m_playas", "polygon", 40),
     "regions": LayerSpec("regions", "ne_10m_geography_regions_polys",
                          "polygon", 150),
+    # ------------------------------------------ biodiversity & ecoregions
+    # Optional overlays from external open datasets (see scripts/fetch_data.py):
+    # Conservation International biodiversity hotspots, RESOLVE terrestrial
+    # ecoregions, and WWF/TNC marine ecoregions.
+    "biodiversity": LayerSpec("biodiversity", "biodiversity_hotspots",
+                              "polygon"),
+    "ecoregions": LayerSpec("ecoregions", "ecoregions_2017", "polygon"),
+    "marine_ecoregions": LayerSpec("marine_ecoregions", "marine_ecoregions",
+                                   "polygon"),
 }
+
+# Layers whose data is fetched from external sources rather than Natural
+# Earth; they are optional and absent until scripts/fetch_data.py downloads
+# them, so the app checks availability before drawing them.
+OPTIONAL_LAYERS = frozenset({"biodiversity", "ecoregions", "marine_ecoregions"})
 
 # Derived layers: filtered or assembled views of the specs above.
 # key -> (source key, filter). The filter receives the source frame.
@@ -251,6 +266,17 @@ class LayerStore:
             return (f"Map data not found in {self.data_dir}.\n"
                     "Run 'python scripts/fetch_data.py' first.")
         return None
+
+    def has_layer_data(self, key: str) -> bool:
+        """Whether the shapefile backing *key* is present on disk. Used to
+        check the optional external layers before drawing them."""
+        spec = LAYER_SPECS.get(key)
+        if spec is None:
+            return True  # derived/special layers ride on Natural Earth data
+        for directory in spec.directories():
+            if self._shapefile_path(directory, spec.shapefile).exists():
+                return True
+        return False
 
     # -------------------------------------------------------------- loading
 
@@ -369,11 +395,15 @@ class LayerStore:
         return self._derived_frames["bathymetry"]
 
     def frame_projected(self, key: str, crs: str | None,
-                        max_lat: float = 90.0, zoom: float | None = None):
+                        max_lat: float = 90.0, zoom: float | None = None,
+                        clip_box: tuple[float, float, float, float] | None = None):
         """A layer reprojected to *crs* (None = untouched lon/lat), cached.
 
-        *max_lat* clips the data first, for projections such as Mercator
-        that blow up at the poles.
+        The data is clipped before reprojection to keep singular latitudes
+        out of the transform: *clip_box* (lon0, lon1, lat0, lat1) is used when
+        given - regional projections such as Lambert pass their latitude band
+        - otherwise *max_lat* clips a symmetric band, for world projections
+        such as Mercator that blow up at the poles.
         """
         if crs is None:
             return self.frame(key, zoom=zoom)
@@ -386,7 +416,10 @@ class LayerStore:
             from shapely.geometry import box
 
             gdf = self.frame(key, zoom=zoom)
-            if max_lat < 90.0:
+            if clip_box is not None:
+                lon0, lon1, lat0, lat1 = clip_box
+                gdf = gdf.clip(box(lon0, lat0, lon1, lat1))
+            elif max_lat < 90.0:
                 gdf = gdf.clip(box(-180, -max_lat, 180, max_lat))
             self._projected[cache_key] = gdf.to_crs(crs)
         return self._projected[cache_key]
