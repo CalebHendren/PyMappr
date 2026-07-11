@@ -49,8 +49,12 @@ offline desktop application.
   the toolbar, `Ctrl+=` / `Ctrl+-`, or the toolbar's rubber-band zoom.
   Panning east or west **loops around the globe** seamlessly.
 - **Map projections**: Equirectangular (default), Mercator, Robinson,
-  Mollweide, Natural Earth, and Winkel Tripel - every layer, label, point,
-  and the satellite basemap is reprojected live.
+  Mollweide, Natural Earth, and Winkel Tripel, plus regional **Lambert**
+  projections (North America, Europe, Asia, South America, Africa, and a
+  custom Lambert Azimuthal) with a **customizable point of natural origin** -
+  set the central meridian and latitude of origin to re-centre the map on
+  your region. Every layer, label, point, and the satellite basemap is
+  reprojected live.
 - **Basemaps**: *Simple* (white with black borders) or *Satellite*
   (full color, slower - Natural Earth shaded relief, fully offline).
 - **~30 Natural Earth layer toggles**, organized in a tabbed side panel:
@@ -67,6 +71,10 @@ offline desktop application.
     Playas, Deserts, Geographic regions
   - *Culture & infrastructure*: Urban areas, Airports, Ports,
     Parks & protected areas (US), Roads
+  - *Biodiversity & ecoregions*: Biodiversity hotspots, Terrestrial
+    ecoregions, Marine ecoregions - optional overlays from external open
+    datasets, downloaded by `scripts/fetch_data.py` (ticking one before it
+    is downloaded shows a note instead of failing)
 
   Switching Countries off removes the political borders but keeps the
   continent outlines.
@@ -262,7 +270,9 @@ Requires Python 3.11+ with Tk support.
 
 ```bash
 pip install -r requirements.txt
-python scripts/fetch_data.py   # one-time download of Natural Earth data (~165 MB)
+python scripts/fetch_data.py   # one-time data download (~165 MB core,
+                               # + optional biodiversity/ecoregion overlays;
+                               # add --skip-extras to fetch only the core)
 python -m pymappr
 ```
 
@@ -350,3 +360,19 @@ Two notes on the marine layers: Natural Earth ships EEZ *indicator lines*
 (the "200 mi nl" maritime indicators shown by the *EEZ / 200 nm limits*
 toggle), not full EEZ polygons; and the *Wadis* toggle draws Natural
 Earth's intermittent rivers, its closest match for wadi/seasonal drainage.
+
+The optional *Biodiversity & ecoregions* overlays come from external, openly
+licensed datasets (the same datasets used by
+[SimpleMappr](https://github.com/dshorthouse/SimpleMappr), in their
+open-licensed forms), fetched by `scripts/fetch_data.py`:
+
+- **Terrestrial ecoregions** - [RESOLVE Ecoregions 2017](https://ecoregions.appspot.com/)
+  (Dinerstein et al. 2017), CC-BY 4.0.
+- **Biodiversity hotspots** - [Conservation International Biodiversity
+  Hotspots](https://zenodo.org/records/3261807) (version 2016.1), CC-BY.
+- **Marine ecoregions** - [WWF/TNC Marine Ecoregions of the World
+  (MEOW)](https://hub.arcgis.com/datasets/903c3ae05b264c00a3b5e58a4561b7e6),
+  CC-BY 4.0.
+
+These are optional: if a download source is unavailable, `fetch_data.py`
+skips that layer and the rest of PyMappr works as usual.

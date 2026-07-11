@@ -84,6 +84,11 @@ FILL_LAYERS = {
     "ice_shelves": ("ice_shelves", "#d8ecf7", "#a8cfe6", 0.3, 1.0, 0.61),
     "glaciers": ("glaciers", "#e6f3fb", "#b9d9ec", 0.3, 1.0, 0.62),
     "disputed": ("disputed", "#e8b4b8", "#b03a48", 0.5, 0.75, 0.66),
+    # Optional biodiversity / ecoregion overlays (translucent thematic fills).
+    "ecoregions": ("ecoregions", "#8fbf6f", "#4e7a3a", 0.25, 0.42, 0.44),
+    "marine_ecoregions": ("marine_ecoregions", "#5fa8c4", "#2d6b8b",
+                          0.25, 0.42, 0.43),
+    "biodiversity": ("biodiversity", "#e0954a", "#a85f16", 0.5, 0.5, 0.53),
 }
 
 # Bathymetry: depth in meters -> fill color, shallow to deep. The polygons
@@ -365,11 +370,16 @@ class MapRenderer:
 
     # ----------------------------------------------------------- projection
 
-    def set_projection(self, name: str) -> None:
-        """Switch projection and rebuild every artist in the new one."""
-        if name == self.proj.name:
+    def set_projection(self, name: str, lon_0: float | None = None,
+                       lat_0: float | None = None) -> None:
+        """Switch projection and rebuild every artist in the new one.
+
+        For Lambert presets *lon_0*/*lat_0* set the point of natural origin;
+        they are ignored for the fixed world projections."""
+        proj = get_projection(name, lon_0, lat_0)
+        if proj == self.proj:
             return
-        self.proj = get_projection(name)
+        self.proj = proj
         # Manual label offsets are in map coordinates, which just changed
         # scale/shape entirely - start fresh in the new projection.
         self._label_offsets.clear()
@@ -452,7 +462,7 @@ class MapRenderer:
         img = self.store.basemap_image()
         if self.proj.is_geographic:
             return img, (-180, 180, -90, 90)
-        if self.proj.name not in self._warp_cache:
+        if self.proj.key not in self._warp_cache:
             wx0, wx1, wy0, wy1 = self.proj.bounds
             nx, ny = _WARP_GRID
             xs = np.linspace(wx0, wx1, nx)
@@ -474,8 +484,8 @@ class MapRenderer:
             warped = np.zeros((ny, nx, 4), dtype=np.uint8)
             warped[..., :3] = img[rows, cols]
             warped[..., 3] = np.where(valid, 255, 0)
-            self._warp_cache[self.proj.name] = (warped, (wx0, wx1, wy0, wy1))
-        return self._warp_cache[self.proj.name]
+            self._warp_cache[self.proj.key] = (warped, (wx0, wx1, wy0, wy1))
+        return self._warp_cache[self.proj.key]
 
     # ------------------------------------------------- multi-resolution core
 
@@ -490,7 +500,8 @@ class MapRenderer:
     def _projected_frame(self, source: str):
         return self.store.frame_projected(source, self.proj.crs,
                                           self.proj.max_lat,
-                                          zoom=self._zoom_level())
+                                          zoom=self._zoom_level(),
+                                          clip_box=self.proj.clip_box())
 
     def _sync_resolutions(self) -> None:
         """Swap multi-resolution layers to the resolution matching the new
@@ -701,7 +712,8 @@ class MapRenderer:
     def _show_bathymetry(self) -> None:
         def plot(_directory: str) -> list:
             gdf = self.store.frame_projected("bathymetry", self.proj.crs,
-                                             self.proj.max_lat)
+                                             self.proj.max_lat,
+                                             clip_box=self.proj.clip_box())
             artists = []
             for _letter, depth in BATHYMETRY_STEPS:
                 sub = gdf[gdf["depth"] == depth]
@@ -733,7 +745,7 @@ class MapRenderer:
         self._refresh_labels()
 
     def _point_xy(self, source: str) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        cache_key = (source, self.proj.name)
+        cache_key = (source, self.proj.key)
         if cache_key not in self._point_xy_cache:
             features = self.store.point_features(source)
             xs, ys = self.proj.forward(features["x"].to_numpy(),
@@ -805,7 +817,7 @@ class MapRenderer:
         self._refresh_labels()
 
     def _label_xy(self, source: str) -> tuple[np.ndarray, np.ndarray]:
-        cache_key = (source, self.proj.name)
+        cache_key = (source, self.proj.key)
         if cache_key not in self._label_xy_cache:
             points = self.store.label_points(source)
             xs, ys = self.proj.forward(points["x"].to_numpy(),
