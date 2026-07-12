@@ -26,7 +26,7 @@ import numpy as np
 
 __all__ = [
     "PROJECTIONS", "LAMBERT_PROJECTIONS", "Projection", "get_projection",
-    "is_lambert", "lambert_default_origin",
+    "is_lambert", "lambert_default_origin", "proj4_string",
 ]
 
 # Display name -> (proj4 string or None for plain lon/lat, max usable latitude).
@@ -91,6 +91,29 @@ def lambert_default_origin(name: str) -> tuple[float, float]:
     """The preset's default (lon_0, lat_0) point of natural origin."""
     d = LAMBERT_DEFS[name]
     return d.lon_0, d.lat_0
+
+
+def proj4_string(name: str, lon_0: float | None = None,
+                 lat_0: float | None = None) -> str | None:
+    """The proj4 CRS string for a projection name (None = plain lon/lat).
+
+    For Lambert presets, *lon_0*/*lat_0* override the default point of
+    natural origin, exactly as in :func:`get_projection` - but no
+    transformer or bounds are built, so callers that only need the CRS
+    text (the code export) stay cheap.
+    """
+    if name in LAMBERT_DEFS:
+        d = LAMBERT_DEFS[name]
+        lon0 = d.lon_0 if lon_0 is None else float(lon_0)
+        lat0 = d.lat_0 if lat_0 is None else float(lat_0)
+        if d.proj == "lcc":
+            return (f"+proj=lcc +lat_1={d.lat_1} +lat_2={d.lat_2} "
+                    f"+lat_0={lat0} +lon_0={lon0} +x_0=0 +y_0=0 "
+                    "+datum=WGS84 +units=m +no_defs")
+        return (f"+proj=laea +lat_0={lat0} +lon_0={lon0} +x_0=0 +y_0=0 "
+                "+datum=WGS84 +units=m +no_defs")
+    crs, _max_lat = PROJECTION_DEFS[name]
+    return crs
 
 
 @dataclass(frozen=True)
@@ -211,13 +234,7 @@ def _build_lambert(name: str, lon_0: float | None,
     d = LAMBERT_DEFS[name]
     lon0 = d.lon_0 if lon_0 is None else float(lon_0)
     lat0 = d.lat_0 if lat_0 is None else float(lat_0)
-    if d.proj == "lcc":
-        crs = (f"+proj=lcc +lat_1={d.lat_1} +lat_2={d.lat_2} "
-               f"+lat_0={lat0} +lon_0={lon0} +x_0=0 +y_0=0 "
-               "+datum=WGS84 +units=m +no_defs")
-    else:
-        crs = (f"+proj=laea +lat_0={lat0} +lon_0={lon0} +x_0=0 +y_0=0 "
-               "+datum=WGS84 +units=m +no_defs")
+    crs = proj4_string(name, lon0, lat0)
     bounds = _bounds_from_grid(crs, lon0 - d.lon_halfspan,
                                lon0 + d.lon_halfspan, d.lat_min, d.lat_max)
     return Projection(name=name, crs=crs, max_lat=d.lat_max, min_lat=d.lat_min,
