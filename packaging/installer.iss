@@ -27,6 +27,8 @@ AppPublisher={#MyAppPublisher}
 DefaultDirName={autopf}\{#MyAppName}
 DefaultGroupName={#MyAppName}
 UninstallDisplayIcon={app}\{#MyAppExeName}
+; Show the MIT license and require accepting it before installing.
+LicenseFile=..\LICENSE
 OutputDir=..\dist\installer
 OutputBaseFilename=PyMappr-Setup-{#MyAppVersion}
 SetupIconFile=..\data\icon\pymappr.ico
@@ -44,6 +46,8 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; \
 [Files]
 Source: "..\dist\PyMappr\*"; DestDir: "{app}"; \
     Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "..\LICENSE"; DestDir: "{app}"; DestName: "LICENSE.txt"; \
+    Flags: ignoreversion
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
