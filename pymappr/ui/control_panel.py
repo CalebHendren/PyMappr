@@ -372,6 +372,13 @@ class ControlPanel(ttk.Frame):
                      values=DPI_CHOICES, width=6).pack(side="right")
         ttk.Button(sec, text="Save map as PNG\N{HORIZONTAL ELLIPSIS}",
                    command=self.app.on_save_png).pack(fill="x", pady=2)
+        ttk.Button(sec, text="Export as code (Python/R)"
+                            "\N{HORIZONTAL ELLIPSIS}",
+                   command=self.app.on_export_code).pack(fill="x", pady=2)
+        ttk.Label(sec, text="(a ready-to-run script that recreates this "
+                            "map in an IDE)",
+                  foreground="#666666",
+                  wraplength=PANEL_WIDTH - 60).pack(anchor="w")
 
     # ---------------------------------------------------------- layers tab
 

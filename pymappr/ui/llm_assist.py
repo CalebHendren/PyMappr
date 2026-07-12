@@ -11,9 +11,9 @@ from __future__ import annotations
 import io
 import threading
 import tkinter as tk
-from tkinter import filedialog, ttk
+from tkinter import filedialog, messagebox, ttk
 
-from pymappr import llm, projects
+from pymappr import codecheck, llm, projects
 
 WRAP = 520
 WARNING_BG = "#fff3cd"
@@ -40,6 +40,9 @@ class LLMAssistDialog(tk.Toplevel):
         self.transient(master)
         self.minsize(560, 620)
         self._worker: threading.Thread | None = None
+        # The language the last reply was generated for, so validation
+        # still checks the right syntax after the radio button changes.
+        self._generated_language: str | None = None
         # Per-provider field edits, seeded from saved settings.
         stored = projects.load_settings().get("llm_assist", {})
         stored = stored if isinstance(stored, dict) else {}
@@ -151,6 +154,8 @@ class LLMAssistDialog(tk.Toplevel):
                    command=self._copy).pack(side="left")
         ttk.Button(row, text="Save code as\N{HORIZONTAL ELLIPSIS}",
                    command=self._save).pack(side="left", padx=(6, 0))
+        ttk.Button(row, text="Validate code",
+                   command=self._validate).pack(side="left", padx=(6, 0))
         ttk.Button(row, text="Close",
                    command=self._close).pack(side="right")
 
@@ -265,6 +270,7 @@ class LLMAssistDialog(tk.Toplevel):
             return
 
         self._generate_button.config(state="disabled")
+        self._generated_language = self._language_var.get()
         self._status.config(
             text=f"Asking {model} via {name}\N{HORIZONTAL ELLIPSIS} "
                  "(this can take a few minutes)")
@@ -319,6 +325,31 @@ class LLMAssistDialog(tk.Toplevel):
         self.clipboard_clear()
         self.clipboard_append(reply)
         self._status.config(text="Reply copied to the clipboard.")
+
+    def _validate(self) -> None:
+        """Static check of the reply's code block: syntax (real parse for
+        Python, bracket/string scan for R) plus leftover placeholders.
+        Offline and LLM-free; passing still doesn't mean correct."""
+        reply = self._reply_text()
+        if not reply:
+            self._status.config(text="Nothing to validate yet.")
+            return
+        language = self._generated_language or self._language_var.get()
+        code = llm.extract_code(reply)
+        issues = codecheck.validate_code(language, code)
+        summary = codecheck.summarize(language, issues)
+        if not issues:
+            self._status.config(text=summary)
+            return
+        errors = codecheck.has_errors(issues)
+        self._status.config(
+            text=f"Validation found {len(issues)} issue"
+                 f"{'s' if len(issues) != 1 else ''} - "
+                 "see the details window.")
+        show = messagebox.showwarning if errors else messagebox.showinfo
+        show("Validate code",
+             summary + "\n\nLLMs often need a second attempt: fix the "
+             "code yourself or regenerate.", parent=self)
 
     def _save(self) -> None:
         reply = self._reply_text()
