@@ -1,0 +1,321 @@
+"""Experimental LLM assist (dev-only, hidden behind the experimental
+features toggle - deliberately not mentioned in the README).
+
+Asks an LLM of the user's choice to write a standalone Python or R
+script that recreates the current map, so the mapping workflow can be
+audited and reproduced later. Only the map settings and the datasets'
+column names are ever sent - no data rows, no coordinates, no category
+values. The user supplies their own API key and requests go straight to
+the chosen provider. A PNG snapshot of the map can optionally be
+attached (off by default).
+
+The generated code is a starting point, not a result: the user must
+read it, run it themselves, and compare its output to their map.
+
+This module is UI-free (the dialog lives in pymappr/ui/llm_assist.py)
+and uses plain HTTPS JSON via urllib, like the update checker, so the
+packaged app gains no dependencies. Three wire formats cover every
+provider: Anthropic's Messages API, Google's Gemini API, and the
+OpenAI-compatible chat completions API used by everyone else.
+"""
+
+from __future__ import annotations
+
+import base64
+import json
+import re
+import urllib.error
+import urllib.request
+from dataclasses import dataclass
+
+from pymappr import __version__
+
+ANTHROPIC_VERSION = "2023-06-01"
+MAX_TOKENS = 8192  # Anthropic requires an explicit output cap
+DEFAULT_TIMEOUT = 300.0  # reasoning models can take minutes
+
+
+class LLMError(Exception):
+    """A provider request failed or returned nothing usable."""
+
+
+@dataclass(frozen=True)
+class Provider:
+    """One selectable provider: a wire format plus editable defaults."""
+
+    api: str        # "anthropic" | "openai" | "gemini"
+    endpoint: str   # default endpoint URL (editable in the dialog)
+    model: str      # default model (editable in the dialog)
+    key_hint: str   # what the provider's API keys usually look like
+
+
+# Mainstream + Chinese providers; anything else fits through the
+# OpenAI-compatible custom entry (e.g. Mistral, xAI, or a local server).
+PROVIDERS: dict[str, Provider] = {
+    "Anthropic (Claude)": Provider(
+        api="anthropic",
+        endpoint="https://api.anthropic.com/v1/messages",
+        model="claude-opus-4-8",
+        key_hint="sk-ant-..."),
+    "OpenAI (GPT)": Provider(
+        api="openai",
+        endpoint="https://api.openai.com/v1/chat/completions",
+        model="gpt-5.1",
+        key_hint="sk-..."),
+    "Google (Gemini)": Provider(
+        api="gemini",
+        endpoint="https://generativelanguage.googleapis.com/v1beta/models",
+        model="gemini-2.5-pro",
+        key_hint="AIza..."),
+    "DeepSeek": Provider(
+        api="openai",
+        endpoint="https://api.deepseek.com/v1/chat/completions",
+        model="deepseek-chat",
+        key_hint="sk-..."),
+    "Qwen (Alibaba DashScope)": Provider(
+        api="openai",
+        endpoint="https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
+                 "/chat/completions",
+        model="qwen-max",
+        key_hint="sk-..."),
+    "Kimi (Moonshot)": Provider(
+        api="openai",
+        endpoint="https://api.moonshot.ai/v1/chat/completions",
+        model="kimi-latest",
+        key_hint="sk-..."),
+    "GLM (Zhipu / BigModel)": Provider(
+        api="openai",
+        endpoint="https://open.bigmodel.cn/api/paas/v4/chat/completions",
+        model="glm-4.6",
+        key_hint=""),
+    "Custom (OpenAI-compatible)": Provider(
+        api="openai",
+        endpoint="",
+        model="",
+        key_hint=""),
+}
+
+LANGUAGES = ("Python", "R")
+_TOOLCHAINS = {
+    "Python": "Python, using matplotlib with cartopy (or geopandas) "
+              "and pandas",
+    "R": "R, using ggplot2 with sf and rnaturalearth",
+}
+
+
+# ------------------------------------------------------- what gets sent
+
+def describe_entry(entry) -> dict:
+    """A data-free summary of one dataset: column names and styling
+    choices, never values. Style entries are keyed by group values in
+    the app, so only the color/marker/size triples are kept."""
+    styles = [{"color": s.color, "marker": s.marker, "size": s.size}
+              for _label, s in sorted(entry.styles.items())]
+    return {
+        "name": entry.name,
+        "visible": entry.visible,
+        "points": len(entry.dataset),
+        "name_columns": list(entry.dataset.name_labels),
+        "coordinate_columns": ["Longitude", "Latitude"],
+        "group_by": entry.group_by or None,
+        "color_by": entry.color_by or None,
+        "symbol_by": entry.symbol_by or None,
+        "vary_symbols": entry.vary_symbols,
+        "manually_entered": entry.manual is not None,
+        "groups": len(entry.styles),
+        "group_styles": styles,
+    }
+
+
+def describe_map(state: dict, entries) -> dict:
+    """Everything the LLM gets to see: the app's collected map state
+    with the dataset rows replaced by :func:`describe_entry` summaries,
+    and boolean layer dicts flattened to lists of enabled layers."""
+    m = dict(state.get("map", {}))
+    enabled = {section: sorted(key for key, on
+                               in dict(m.pop(section, {})).items() if on)
+               for section in ("lines", "fills", "points", "labels")}
+    return {
+        "generator": f"PyMappr {__version__}",
+        "map": m,
+        "enabled_layers": enabled,
+        "legend": dict(state.get("legend", {})),
+        "point_alpha": state.get("point_alpha"),
+        "view": dict(state.get("view", {})),
+        "datasets": [describe_entry(e) for e in entries],
+        "withheld": "Data rows, coordinates, and category values were "
+                    "deliberately not shared; only column names and "
+                    "settings.",
+    }
+
+
+def build_prompt(summary: dict, language: str, extra: str = "",
+                 with_image: bool = False) -> tuple[str, str]:
+    """The (system, user) texts sent to the provider, verbatim."""
+    system = (
+        "You are helping a researcher document a map they made in "
+        f"PyMappr, a desktop point-distribution mapping application. "
+        f"Write a complete, standalone script in {_TOOLCHAINS[language]} "
+        "that recreates the map from the settings provided, so the "
+        "workflow can be audited and reproduced later.\n\n"
+        "Requirements:\n"
+        "- The script must run as-is once the user fills in clearly "
+        "marked placeholders (path to their data file, exact column "
+        "names, group values for the legend).\n"
+        "- The data rows, coordinates, and category values were "
+        "deliberately NOT shared with you. Never invent example data; "
+        "load everything from the user's file.\n"
+        "- Recreate the projection (including any custom origin), map "
+        "extent, base layers, point styling, and legend as described.\n"
+        "- Comment the script so another researcher can audit each "
+        "step, and state any assumptions in comments at the top.\n"
+        "- Reply with only the script, in a single code block.")
+    user = ("Recreate this map.\n\nMap configuration (JSON):\n"
+            + json.dumps(summary, indent=2, sort_keys=True))
+    if with_image:
+        user += ("\n\nA PNG snapshot of the rendered map is attached "
+                 "for reference.")
+    if extra.strip():
+        user += "\n\nAdditional notes from the user:\n" + extra.strip()
+    return system, user
+
+
+# -------------------------------------------------------- wire formats
+
+def build_request(api: str, endpoint: str, model: str, api_key: str,
+                  system: str, user: str,
+                  image_png: bytes | None = None):
+    """Build one provider request; returns (url, headers, body bytes)."""
+    b64 = (base64.b64encode(image_png).decode("ascii")
+           if image_png else None)
+    if api == "anthropic":
+        content: list[dict] = []
+        if b64:
+            content.append({"type": "image",
+                            "source": {"type": "base64",
+                                       "media_type": "image/png",
+                                       "data": b64}})
+        content.append({"type": "text", "text": user})
+        body = {"model": model, "max_tokens": MAX_TOKENS,
+                "system": system,
+                "messages": [{"role": "user", "content": content}]}
+        headers = {"content-type": "application/json",
+                   "x-api-key": api_key,
+                   "anthropic-version": ANTHROPIC_VERSION}
+        url = endpoint
+    elif api == "gemini":
+        parts: list[dict] = [{"text": user}]
+        if b64:
+            parts.append({"inline_data": {"mime_type": "image/png",
+                                          "data": b64}})
+        body = {"system_instruction": {"parts": [{"text": system}]},
+                "contents": [{"role": "user", "parts": parts}]}
+        headers = {"content-type": "application/json",
+                   "x-goog-api-key": api_key}
+        # The default endpoint is the models base; a pasted full URL
+        # (already naming the model and method) is used as-is.
+        url = (endpoint if ":generateContent" in endpoint
+               else f"{endpoint.rstrip('/')}/{model}:generateContent")
+    elif api == "openai":
+        if b64:
+            user_content: object = [
+                {"type": "text", "text": user},
+                {"type": "image_url",
+                 "image_url": {"url": f"data:image/png;base64,{b64}"}}]
+        else:
+            user_content = user
+        body = {"model": model,
+                "messages": [{"role": "system", "content": system},
+                             {"role": "user", "content": user_content}]}
+        headers = {"content-type": "application/json"}
+        if api_key:  # local OpenAI-compatible servers may not need one
+            headers["authorization"] = f"Bearer {api_key}"
+        url = endpoint
+    else:
+        raise LLMError(f"Unknown API kind: {api!r}")
+    return url, headers, json.dumps(body).encode("utf-8")
+
+
+def parse_response(api: str, payload: dict) -> str:
+    """The model's reply text from one provider response payload."""
+    try:
+        if api == "anthropic":
+            if payload.get("stop_reason") == "refusal":
+                raise LLMError("The model declined this request "
+                               "(stop_reason: refusal).")
+            text = "".join(block.get("text", "")
+                           for block in payload.get("content", [])
+                           if block.get("type") == "text")
+        elif api == "gemini":
+            candidates = payload.get("candidates")
+            if not candidates:
+                feedback = payload.get("promptFeedback", {})
+                raise LLMError("The model returned no reply"
+                               + (f" (blocked: {feedback['blockReason']})"
+                                  if feedback.get("blockReason") else "")
+                               + ".")
+            parts = candidates[0].get("content", {}).get("parts", [])
+            text = "".join(part.get("text", "") for part in parts)
+        elif api == "openai":
+            message = payload["choices"][0]["message"]
+            text = message.get("content") or ""
+        else:
+            raise LLMError(f"Unknown API kind: {api!r}")
+    except LLMError:
+        raise
+    except (KeyError, IndexError, TypeError) as exc:
+        raise LLMError(
+            f"Unexpected response from the provider: {exc}") from exc
+    if not text.strip():
+        raise LLMError("The model returned an empty reply.")
+    return text
+
+
+def _http_error_message(exc: urllib.error.HTTPError) -> str:
+    """A readable message from an HTTP error body (providers return
+    JSON error envelopes in a couple of shapes)."""
+    try:
+        payload = json.loads(exc.read().decode("utf-8", "replace"))
+        error = payload.get("error", payload)
+        if isinstance(error, dict):
+            return str(error.get("message") or error)
+        return str(error)
+    except Exception:  # noqa: BLE001 - any body is better than none
+        return exc.reason if isinstance(exc.reason, str) else str(exc)
+
+
+def generate_code(api: str, endpoint: str, model: str, api_key: str,
+                  system: str, user: str,
+                  image_png: bytes | None = None,
+                  timeout: float = DEFAULT_TIMEOUT) -> str:
+    """Send one request to the provider and return the reply text.
+
+    Blocking - the dialog calls this from a worker thread. Raises
+    :class:`LLMError` with a readable message on any failure.
+    """
+    url, headers, body = build_request(api, endpoint, model, api_key,
+                                       system, user, image_png)
+    if not url.lower().startswith(("http://", "https://")):
+        raise LLMError(f"Not a valid endpoint URL: {url!r}")
+    request = urllib.request.Request(
+        url, data=body,
+        headers={**headers, "user-agent": f"PyMappr/{__version__}"})
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as resp:
+            payload = json.load(resp)
+    except urllib.error.HTTPError as exc:
+        raise LLMError(
+            f"HTTP {exc.code}: {_http_error_message(exc)}") from exc
+    except urllib.error.URLError as exc:
+        raise LLMError(f"Could not reach the provider: "
+                       f"{exc.reason}") from exc
+    except (TimeoutError, json.JSONDecodeError, OSError) as exc:
+        raise LLMError(str(exc)) from exc
+    return parse_response(api, payload)
+
+
+def extract_code(reply: str) -> str:
+    """The first fenced code block of a reply (for saving to a file),
+    or the whole reply when the model didn't use a fence."""
+    match = re.search(r"```[^\n]*\n(.*?)```", reply, re.DOTALL)
+    return match.group(1).strip() if match else reply.strip()
