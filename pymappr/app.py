@@ -161,6 +161,9 @@ class PyMapprApp:
         file_menu.add_command(label="Save map as PNG\N{HORIZONTAL ELLIPSIS}",
                               accelerator="Ctrl+E",
                               command=self.on_save_png)
+        file_menu.add_command(label="Export map as code (Python/R)"
+                              "\N{HORIZONTAL ELLIPSIS}",
+                              command=self.on_export_code)
         file_menu.add_separator()
         file_menu.add_command(label="Exit", command=self.on_exit)
         menubar.add_cascade(label="File", menu=file_menu)
@@ -1217,6 +1220,13 @@ class PyMapprApp:
             return
         self._busy(False)
         self.set_status(f"Saved map to {path}")
+
+    def on_export_code(self) -> None:
+        """Show the map as ready-to-run Python or R code (no LLM: the
+        script is assembled from pre-made function templates)."""
+        from pymappr.ui.code_export import CodeExportDialog
+
+        CodeExportDialog(self.root, self)
 
 
 def main() -> int:
