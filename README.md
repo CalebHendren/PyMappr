@@ -3,7 +3,8 @@
 Simple desktop mapping software focused on high-quality point-distribution
 maps. Load point data from CSV/Excel files or type it in by hand, style it,
 explore Natural Earth base layers in real time in several map projections,
-save your work as a project, and export the result as a PNG.
+save your work as a project, and export the result as a PNG - or as a
+ready-to-run Python/R script that recreates the map outside PyMappr.
 
 PyMappr is essentially a remake of
 [SimpleMappr](https://www.simplemappr.net/) in Python: the same
@@ -125,6 +126,16 @@ offline desktop application.
   The legend follows the filter: only the values currently shown on the map
   appear in it (their colors and symbols stay stable while you toggle).
 - **Save map as PNG** at 100-300 DPI.
+- **Export as code**: turn the current map into a ready-to-run **Python
+  (pandas + geopandas + matplotlib) or R (sf + ggplot2) script** to
+  reproduce and adapt it in an IDE. Selecting a language pastes pre-made
+  function templates filled in with your map settings - generated
+  locally and deterministically, no AI and no network involved. The
+  script downloads its base layers from Natural Earth, loads your point
+  data from the original file (manually entered points are embedded
+  inline), and recreates the projection, extent, layers, styling, and
+  legend. Reachable from *File > Export map as code* or the Map tab's
+  Export section.
 - **Update check**: at most once per day, on launch, PyMappr asks the GitHub
   releases API whether a newer version exists and offers to open the
   releases page (silent when offline). *Help > Check for updates* and the

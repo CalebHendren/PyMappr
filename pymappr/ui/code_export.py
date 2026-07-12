@@ -1,0 +1,139 @@
+"""Export-as-code dialog: show and save the Python/R map script.
+
+Unlike the experimental LLM Assist, this is a normal, always-available
+feature with no network use: selecting a language box pastes the
+pre-made functions from ``pymappr/codegen.py`` (filled in with the
+current map settings) into the preview, and "Save code as" writes them
+to a ``.py`` or ``.R`` file ready to open in an IDE.
+"""
+
+from __future__ import annotations
+
+import tkinter as tk
+from tkinter import filedialog, ttk
+
+from pymappr import codegen, projects
+
+WRAP = 560
+NOTE = ("Generated locally from your current map settings - no AI, no "
+        "network. The script downloads its base layers from Natural "
+        "Earth and loads your point data from the original file, so you "
+        "can rerun and adapt the map in an IDE.")
+
+
+class CodeExportDialog(tk.Toplevel):
+    """Show pre-made Python/R code that recreates the current map."""
+
+    def __init__(self, master, app):
+        super().__init__(master)
+        self.app = app
+        self.title("Export map as code")
+        self.transient(master)
+        self.minsize(640, 520)
+
+        body = ttk.Frame(self, padding=12)
+        body.pack(fill="both", expand=True)
+        ttk.Label(body, text=NOTE, wraplength=WRAP,
+                  justify="left", foreground="#333333").pack(anchor="w")
+
+        row = ttk.Frame(body)
+        row.pack(fill="x", pady=(10, 4))
+        ttk.Label(row, text="Language:").pack(side="left")
+        stored = str(projects.load_settings().get("code_export_language",
+                                                  ""))
+        self._language_var = tk.StringVar(
+            value=stored if stored in codegen.LANGUAGES else "Python")
+        for language in codegen.LANGUAGES:
+            ttk.Radiobutton(row, text=language, value=language,
+                            variable=self._language_var,
+                            command=self._refresh).pack(side="left",
+                                                        padx=(8, 0))
+        self._status = ttk.Label(row, text="", foreground="#666666")
+        self._status.pack(side="right")
+
+        out_frame = ttk.Frame(body)
+        out_frame.pack(fill="both", expand=True)
+        self._output = tk.Text(out_frame, height=22, width=80,
+                               state="disabled", wrap="none")
+        yscroll = ttk.Scrollbar(out_frame, orient="vertical",
+                                command=self._output.yview)
+        xscroll = ttk.Scrollbar(out_frame, orient="horizontal",
+                                command=self._output.xview)
+        self._output.configure(yscrollcommand=yscroll.set,
+                               xscrollcommand=xscroll.set)
+        yscroll.pack(side="right", fill="y")
+        xscroll.pack(side="bottom", fill="x")
+        self._output.pack(side="left", fill="both", expand=True)
+
+        row = ttk.Frame(body)
+        row.pack(fill="x", pady=(8, 0))
+        ttk.Button(row, text="Copy code",
+                   command=self._copy).pack(side="left")
+        ttk.Button(row, text="Save code as\N{HORIZONTAL ELLIPSIS}",
+                   command=self._save).pack(side="left", padx=(6, 0))
+        ttk.Button(row, text="Close",
+                   command=self.destroy).pack(side="right")
+
+        self.bind("<Escape>", lambda _e: self.destroy())
+        self._refresh()
+
+    # ------------------------------------------------------------- code
+
+    def _generate(self) -> str:
+        return codegen.generate_code(self.app._collect_state(),
+                                     self.app.entries,
+                                     self._language_var.get(),
+                                     self.app.project_name)
+
+    def _refresh(self) -> None:
+        """Selecting a language box pastes that language's pre-made
+        functions (with the current settings) into the preview."""
+        language = self._language_var.get()
+        settings = projects.load_settings()
+        settings["code_export_language"] = language
+        projects.save_settings(settings)
+        try:
+            code = self._generate()
+        except Exception as exc:  # noqa: BLE001 - show any build error
+            self._status.config(text=f"Could not generate code: {exc}")
+            return
+        self._output.configure(state="normal")
+        self._output.delete("1.0", "end")
+        self._output.insert("1.0", code)
+        self._output.configure(state="disabled")
+        self._status.config(
+            text=f"{language} \N{MIDDLE DOT} "
+                 f"{len(code.splitlines())} lines")
+
+    def _code_text(self) -> str:
+        return self._output.get("1.0", "end").strip()
+
+    def _copy(self) -> None:
+        code = self._code_text()
+        if not code:
+            return
+        self.clipboard_clear()
+        self.clipboard_append(code)
+        self._status.config(text="Code copied to the clipboard.")
+
+    def _save(self) -> None:
+        code = self._code_text()
+        if not code:
+            return
+        language = self._language_var.get()
+        extension = codegen.CODE_EXTENSIONS[language]
+        path = filedialog.asksaveasfilename(
+            parent=self, title="Save map code",
+            defaultextension=extension,
+            initialfile="recreate_map" + extension,
+            filetypes=[(f"{language} script", "*" + extension),
+                       ("All files", "*.*")])
+        if not path:
+            return
+        try:
+            with open(path, "w", encoding="utf-8") as handle:
+                handle.write(code + "\n")
+        except OSError as exc:
+            self._status.config(text=f"Could not save: {exc}")
+            return
+        self._status.config(text=f"Saved to {path}")
