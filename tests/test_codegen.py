@@ -343,7 +343,8 @@ def test_generated_r_parses_with_real_r(tmp_path):
         script = tmp_path / "recreate_map.R"
         script.write_text(codegen.generate_code(make_state(), entries, "R"),
                           encoding="utf-8")
-        subprocess.run([rscript, "-e", f"invisible(parse('{script}'))"],
+        subprocess.run([rscript, "-e",
+                        f"invisible(parse('{script.as_posix()}'))"],
                        check=True, capture_output=True)
 
 
