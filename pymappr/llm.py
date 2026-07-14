@@ -45,54 +45,71 @@ class Provider:
 
     api: str        # "anthropic" | "openai" | "gemini"
     endpoint: str   # default endpoint URL (editable in the dialog)
-    model: str      # default model (editable in the dialog)
+    model: str      # default model (the seed; still editable in the dialog)
     key_hint: str   # what the provider's API keys usually look like
+    models: tuple[str, ...] = ()  # dropdown suggestions (still editable)
 
 
 # Mainstream + Chinese providers; anything else fits through the
 # OpenAI-compatible custom entry (e.g. Mistral, xAI, or a local server).
+# The ``models`` lists seed an editable dropdown - a user can always type a
+# model the list doesn't mention. Names checked mid-2026; providers rename
+# fast, so treat these as current-at-time-of-writing defaults, not gospel.
 PROVIDERS: dict[str, Provider] = {
     "Anthropic (Claude)": Provider(
         api="anthropic",
         endpoint="https://api.anthropic.com/v1/messages",
         model="claude-opus-4-8",
-        key_hint="sk-ant-..."),
+        key_hint="sk-ant-...",
+        models=("claude-opus-4-8", "claude-sonnet-5", "claude-haiku-4-5",
+                "claude-fable-5")),
     "OpenAI (GPT)": Provider(
         api="openai",
         endpoint="https://api.openai.com/v1/chat/completions",
-        model="gpt-5.1",
-        key_hint="sk-..."),
+        model="gpt-5.6",
+        key_hint="sk-...",
+        models=("gpt-5.6", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna",
+                "gpt-5.5", "gpt-5.1")),
     "Google (Gemini)": Provider(
         api="gemini",
         endpoint="https://generativelanguage.googleapis.com/v1beta/models",
-        model="gemini-2.5-pro",
-        key_hint="AIza..."),
+        model="gemini-3.1-pro-preview",
+        key_hint="AIza...",
+        models=("gemini-3.1-pro-preview", "gemini-3.5-flash",
+                "gemini-3.1-flash-lite", "gemini-2.5-pro",
+                "gemini-2.5-flash")),
     "DeepSeek": Provider(
         api="openai",
         endpoint="https://api.deepseek.com/v1/chat/completions",
-        model="deepseek-chat",
-        key_hint="sk-..."),
+        model="deepseek-v4-flash",
+        key_hint="sk-...",
+        models=("deepseek-v4-flash", "deepseek-v4-pro")),
     "Qwen (Alibaba DashScope)": Provider(
         api="openai",
         endpoint="https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
                  "/chat/completions",
-        model="qwen-max",
-        key_hint="sk-..."),
+        model="qwen3-max",
+        key_hint="sk-...",
+        models=("qwen3-max", "qwen-max", "qwen-plus", "qwen-turbo",
+                "qwen3-coder-plus")),
     "Kimi (Moonshot)": Provider(
         api="openai",
         endpoint="https://api.moonshot.ai/v1/chat/completions",
-        model="kimi-latest",
-        key_hint="sk-..."),
+        model="kimi-k2.6",
+        key_hint="sk-...",
+        models=("kimi-k2.6", "kimi-k2.7-code", "kimi-k2.5")),
     "GLM (Zhipu / BigModel)": Provider(
         api="openai",
         endpoint="https://open.bigmodel.cn/api/paas/v4/chat/completions",
-        model="glm-4.6",
-        key_hint=""),
+        model="glm-4.7",
+        key_hint="",
+        models=("glm-4.7", "glm-4.7-flash", "glm-5", "glm-4.6")),
     "Custom (OpenAI-compatible)": Provider(
         api="openai",
         endpoint="",
         model="",
-        key_hint=""),
+        key_hint="",
+        models=()),
 }
 
 LANGUAGES = ("Python", "R")
@@ -101,6 +118,16 @@ _TOOLCHAINS = {
               "and pandas",
     "R": "R, using ggplot2 with sf and rnaturalearth",
 }
+
+
+def toolchain(language: str) -> str:
+    """The libraries hint dropped into the system prompt. Python and R get
+    tuned recommendations; any other language the user asks for gets a
+    generic, best-effort hint (only Python and R are actually tested)."""
+    return _TOOLCHAINS.get(
+        language,
+        f"{language}, using whatever mapping and plotting libraries are "
+        f"idiomatic for {language}")
 
 
 # ------------------------------------------------------- what gets sent
@@ -155,7 +182,7 @@ def build_prompt(summary: dict, language: str, extra: str = "",
     system = (
         "You are helping a researcher document a map they made in "
         f"PyMappr, a desktop point-distribution mapping application. "
-        f"Write a complete, standalone script in {_TOOLCHAINS[language]} "
+        f"Write a complete, standalone script in {toolchain(language)} "
         "that recreates the map from the settings provided, so the "
         "workflow can be audited and reproduced later.\n\n"
         "Requirements:\n"
