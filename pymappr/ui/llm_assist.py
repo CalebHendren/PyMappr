@@ -28,6 +28,11 @@ WARNING_TEXT = (
     "diligence as a researcher.")
 IMAGE_DPI = 150
 CODE_EXTENSIONS = {"Python": ".py", "R": ".R"}
+# Sentinel language: export in whatever language the user types below.
+OTHER_LANGUAGE = "Other"
+OTHER_LANGUAGE_NOTE = (
+    "\N{WARNING SIGN} Only Python and R are tested. Any other language is "
+    "best-effort - the generated code may be wrong or may not run at all.")
 
 
 class LLMAssistDialog(tk.Toplevel):
@@ -73,9 +78,11 @@ class LLMAssistDialog(tk.Toplevel):
         box.bind("<<ComboboxSelected>>", lambda _e: self._on_provider())
         ttk.Label(row, text="Model:").pack(side="left")
         self._model_var = tk.StringVar()
-        ttk.Entry(row, textvariable=self._model_var,
-                  width=22).pack(side="left", fill="x", expand=True,
-                                 padx=(6, 0))
+        # Editable combobox: the provider's known models seed the dropdown,
+        # but a typed-in model (a newer release, a fine-tune) still works.
+        self._model_box = ttk.Combobox(row, textvariable=self._model_var,
+                                       width=22)
+        self._model_box.pack(side="left", fill="x", expand=True, padx=(6, 0))
 
         row = ttk.Frame(body)
         row.pack(fill="x", pady=2)
@@ -100,11 +107,27 @@ class LLMAssistDialog(tk.Toplevel):
         ttk.Label(row, text="Code language:").pack(side="left")
         self._language_var = tk.StringVar(
             value=stored.get("language")
-            if stored.get("language") in llm.LANGUAGES else "Python")
+            if stored.get("language") in (*llm.LANGUAGES, OTHER_LANGUAGE)
+            else "Python")
         for language in llm.LANGUAGES:
             ttk.Radiobutton(row, text=language, value=language,
-                            variable=self._language_var).pack(
+                            variable=self._language_var,
+                            command=self._on_language).pack(
                 side="left", padx=(8, 0))
+        ttk.Radiobutton(row, text="Other (specify)", value=OTHER_LANGUAGE,
+                        variable=self._language_var,
+                        command=self._on_language).pack(side="left",
+                                                        padx=(8, 0))
+        self._other_language_var = tk.StringVar(
+            value=str(stored.get("other_language", "")))
+        self._other_language_entry = ttk.Entry(
+            row, textvariable=self._other_language_var, width=14)
+        self._other_language_entry.pack(side="left", fill="x", expand=True,
+                                        padx=(6, 0))
+        self._other_language_note = ttk.Label(
+            body, text="", foreground=WARNING_FG, wraplength=WRAP,
+            justify="left")
+        self._other_language_note.pack(anchor="w")
         self._image_var = tk.BooleanVar(
             value=bool(stored.get("send_image", False)))
         ttk.Checkbutton(
@@ -161,6 +184,7 @@ class LLMAssistDialog(tk.Toplevel):
 
         self._current_provider = self._provider_var.get()
         self._load_provider_fields()
+        self._on_language()
         self.protocol("WM_DELETE_WINDOW", self._close)
         self.bind("<Escape>", lambda _e: self._close())
 
@@ -170,6 +194,7 @@ class LLMAssistDialog(tk.Toplevel):
         name = self._provider_var.get()
         provider = llm.PROVIDERS[name]
         stored = self._fields.get(name, {})
+        self._model_box.configure(values=list(provider.models))
         self._model_var.set(str(stored.get("model") or provider.model))
         self._key_var.set(str(stored.get("api_key", "")))
         self._endpoint_var.set(str(stored.get("endpoint")
@@ -190,11 +215,29 @@ class LLMAssistDialog(tk.Toplevel):
         self._load_provider_fields()
         self._save_settings()
 
+    def _on_language(self) -> None:
+        # Enable the free-text language box only for "Other", and show the
+        # untested-language warning while it's in play.
+        other = self._language_var.get() == OTHER_LANGUAGE
+        self._other_language_entry.config(
+            state="normal" if other else "disabled")
+        self._other_language_note.config(
+            text=OTHER_LANGUAGE_NOTE if other else "")
+        self._save_settings()
+
+    def _effective_language(self) -> str:
+        """The language actually requested: the typed-in name for "Other",
+        otherwise the selected radio value."""
+        if self._language_var.get() == OTHER_LANGUAGE:
+            return self._other_language_var.get().strip()
+        return self._language_var.get()
+
     def _save_settings(self) -> None:
         settings = projects.load_settings()
         settings["llm_assist"] = {
             "provider": self._provider_var.get(),
             "language": self._language_var.get(),
+            "other_language": self._other_language_var.get().strip(),
             "send_image": self._image_var.get(),
             "extra": self._extra.get("1.0", "end").strip(),
             "providers": self._fields,
@@ -206,7 +249,7 @@ class LLMAssistDialog(tk.Toplevel):
     def _build_prompt(self) -> tuple[str, str]:
         summary = llm.describe_map(self.app._collect_state(),
                                    self.app.entries)
-        return llm.build_prompt(summary, self._language_var.get(),
+        return llm.build_prompt(summary, self._effective_language(),
                                 extra=self._extra.get("1.0", "end"),
                                 with_image=self._image_var.get())
 
@@ -259,6 +302,10 @@ class LLMAssistDialog(tk.Toplevel):
                      + (f" ({provider.key_hint})" if provider.key_hint
                         else "") + ".")
             return
+        if not self._effective_language():
+            self._status.config(
+                text="Type the language to export to first.")
+            return
         try:
             system, user = self._build_prompt()
             # Matplotlib isn't thread-safe: render on the UI thread.
@@ -270,7 +317,7 @@ class LLMAssistDialog(tk.Toplevel):
             return
 
         self._generate_button.config(state="disabled")
-        self._generated_language = self._language_var.get()
+        self._generated_language = self._effective_language()
         self._status.config(
             text=f"Asking {model} via {name}\N{HORIZONTAL ELLIPSIS} "
                  "(this can take a few minutes)")
@@ -334,7 +381,13 @@ class LLMAssistDialog(tk.Toplevel):
         if not reply:
             self._status.config(text="Nothing to validate yet.")
             return
-        language = self._generated_language or self._language_var.get()
+        language = self._generated_language or self._effective_language()
+        if language not in codecheck.LANGUAGES:
+            self._status.config(
+                text=f"No offline validator for {language or 'this language'}"
+                     " - only Python and R can be checked. Read and run the "
+                     "code yourself.")
+            return
         code = llm.extract_code(reply)
         issues = codecheck.validate_code(language, code)
         summary = codecheck.summarize(language, issues)
@@ -356,13 +409,13 @@ class LLMAssistDialog(tk.Toplevel):
         if not reply:
             self._status.config(text="Nothing to save yet.")
             return
-        language = self._language_var.get()
+        language = self._generated_language or self._effective_language()
         extension = CODE_EXTENSIONS.get(language, ".txt")
         path = filedialog.asksaveasfilename(
             parent=self, title="Save generated code",
             defaultextension=extension,
             initialfile="recreate_map" + extension,
-            filetypes=[(f"{language} script", "*" + extension),
+            filetypes=[(f"{language or 'Code'} script", "*" + extension),
                        ("All files", "*.*")])
         if not path:
             return
