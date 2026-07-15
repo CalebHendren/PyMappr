@@ -320,7 +320,8 @@ class LLMAssistDialog(tk.Toplevel):
         return llm.build_prompt(summary, self._effective_language(),
                                 extra=self._extra.get("1.0", "end"),
                                 with_image=self._image_var.get(),
-                                with_sample=sample > 0)
+                                with_sample=sample > 0,
+                                model=self._model_var.get().strip())
 
     def _preview(self) -> None:
         system, user = self._build_prompt()
