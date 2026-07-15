@@ -113,7 +113,8 @@ offline desktop application.
     color by Family, and every feline species gets its own shape in one
     color while canines get their own shapes in another color
   - *Vary symbols per group* to cycle shapes automatically
-  - position, font size, column count, frame on/off, and a custom title
+  - position, label and title font size, legend marker size, row spacing,
+    column count, frame on/off, and a custom title
 - **Two-attribute styling for deep hierarchies**: *Color by* one column and
   *Symbol by* another to encode two levels at once (e.g. color by Order,
   symbol by Family). The legend switches to a compact **color key + symbol

@@ -32,7 +32,9 @@ def make_state(**overrides):
             "labels": {"countries": False},
         },
         "legend": {"show": True, "frame": True, "location": "upper right",
-                   "fontsize": "9", "columns": "2", "title": ""},
+                   "fontsize": "9", "title_fontsize": "12", "columns": "2",
+                   "marker_scale": "1.5", "label_spacing": "0.8",
+                   "title": ""},
         "point_alpha": 0.85,
         "view": {"xlim": [-180, 180], "ylim": [-90, 90]},
     }
@@ -116,6 +118,18 @@ def test_r_output_is_valid_and_placeholder_free():
     assert "library(ggplot2)" in code
 
 
+def test_scripts_carry_pymappr_attribution():
+    from pymappr import __version__
+    for language in codegen.LANGUAGES:
+        code = codegen.generate_code(make_state(), [file_entry()], language)
+        first = code.splitlines()[0 if language == "R" else 1]
+        assert first == (f"# Made with PyMappr {__version__} - "
+                         "https://github.com/CalebHendren/PyMappr")
+    # The Python shebang still comes first so the script stays executable.
+    py = codegen.generate_code(make_state(), [], "Python")
+    assert py.splitlines()[0] == "#!/usr/bin/env python3"
+
+
 def test_premade_functions_are_identical_across_maps():
     """The function templates are pre-made: only the config block above
     them may differ between two different maps."""
@@ -154,6 +168,13 @@ def test_python_config_reflects_map_settings():
     assert "'Colorado'" in code  # default style assigned to the 2nd group
     assert "'location': 'upper right'" in code and "'columns': 2" in code
     assert "'title': 'State'" in code  # defaults to the group-by column
+    # Legend customization options reach the matplotlib legend call.
+    assert "'title_fontsize': 12.0" in code
+    assert "'marker_scale': 1.5" in code
+    assert "'label_spacing': 0.8" in code
+    assert "markerscale=LEGEND[\"marker_scale\"]" in code
+    assert "labelspacing=LEGEND[\"label_spacing\"]" in code
+    assert "title_fontsize=LEGEND[\"title_fontsize\"]" in code
 
 
 def test_r_config_reflects_map_settings():
@@ -166,6 +187,30 @@ def test_r_config_reflects_map_settings():
     assert '"group_col" = "State"' in code
     assert 'naturalearth.s3.amazonaws.com' in code
     assert '"admin_0_countries"' in code
+    # Legend customization options reach the ggplot2 legend/theme.
+    assert '"title_fontsize" = 12.0' in code
+    assert '"marker_scale" = 1.5' in code
+    assert '"label_spacing" = 0.8' in code
+    assert "override.aes = list(size = key_sizes)" in code
+    assert "unname(STYLE_SIZES) * LEGEND$marker_scale" in code
+    assert "element_text(size = LEGEND$title_fontsize)" in code
+    assert "grid::unit(1 + LEGEND$label_spacing" in code
+
+
+def test_legend_options_default_when_absent():
+    # Projects saved before these options existed omit the new keys; the
+    # export must fall back to sensible defaults instead of raising.
+    state = make_state(legend={"show": True, "frame": True,
+                               "location": "best", "fontsize": "8",
+                               "columns": "1", "title": ""})
+    py = codegen.generate_code(state, [file_entry()], "Python")
+    assert "'title_fontsize': 9.0" in py
+    assert "'marker_scale': 1.0" in py
+    assert "'label_spacing': 0.5" in py
+    r = codegen.generate_code(state, [file_entry()], "R")
+    assert '"title_fontsize" = 9.0' in r
+    assert '"marker_scale" = 1.0' in r
+    assert '"label_spacing" = 0.5' in r
 
 
 def test_lambert_origin_reaches_the_crs():
