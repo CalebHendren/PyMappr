@@ -379,7 +379,12 @@ def build_config(state: dict, entries, project_name: str = "map") -> dict:
             "frame": bool(legend.get("frame", True)),
             "location": str(legend.get("location", "best")),
             "fontsize": _num(legend.get("fontsize", 8), 8.0),
+            "title_fontsize": _num(legend.get("title_fontsize", 9), 9.0),
             "columns": max(1, int(_num(legend.get("columns", 1), 1.0))),
+            "marker_scale": max(0.1, _num(legend.get("marker_scale", 1.0),
+                                          1.0)),
+            "label_spacing": max(0.0, _num(legend.get("label_spacing", 0.5),
+                                           0.5)),
             "title": title,
         },
         "point_alpha": _num(state.get("point_alpha", 1.0), 1.0),
@@ -772,7 +777,10 @@ def add_legend(ax):
     if not handles:
         return
     ax.legend(loc=LEGEND["location"], title=LEGEND["title"] or None,
-              fontsize=LEGEND["fontsize"], ncol=LEGEND["columns"],
+              fontsize=LEGEND["fontsize"],
+              title_fontsize=LEGEND["title_fontsize"],
+              ncol=LEGEND["columns"], markerscale=LEGEND["marker_scale"],
+              labelspacing=LEGEND["label_spacing"],
               frameon=LEGEND["frame"])
 
 
@@ -1117,14 +1125,22 @@ build_map <- function() {
   if (length(DATASETS) > 0) {
     points <- sf::st_transform(load_all_points(), MAP_CRS)
     title <- if (LEGEND$title == "") NULL else LEGEND$title
+    # Legend key marker sizes = the mapped point sizes scaled by
+    # marker_scale, matching matplotlib's markerscale (the sizes drawn on
+    # the map itself are left untouched).
+    key_sizes <- unname(STYLE_SIZES) * LEGEND$marker_scale
     p <- p +
       geom_sf(data = points,
               aes(color = label, shape = label, size = label),
               alpha = POINT_ALPHA) +
       scale_color_manual(values = STYLE_COLORS, name = title) +
       scale_shape_manual(values = STYLE_SHAPES, name = title) +
-      scale_size_manual(values = STYLE_SIZES, name = title) +
-      guides(color = guide_legend(ncol = LEGEND$columns))
+      scale_size_manual(values = STYLE_SIZES, name = title,
+                        guide = "none") +
+      guides(
+        color = guide_legend(ncol = LEGEND$columns,
+                             override.aes = list(size = key_sizes)),
+        shape = guide_legend(ncol = LEGEND$columns))
   }
   extent <- projected_extent()
   p <- p + coord_sf(crs = MAP_CRS, xlim = extent$xlim, ylim = extent$ylim,
@@ -1133,7 +1149,9 @@ build_map <- function() {
     panel.background = element_rect(fill = "white", color = NA),
     plot.background = element_rect(fill = "white", color = NA),
     legend.text = element_text(size = LEGEND$fontsize),
-    legend.title = element_text(size = LEGEND$fontsize + 1),
+    legend.title = element_text(size = LEGEND$title_fontsize),
+    # Approximates matplotlib's labelspacing (vertical gap per entry).
+    legend.key.height = grid::unit(1 + LEGEND$label_spacing, "lines"),
     legend.position = if (LEGEND$show) legend_position(LEGEND$location)
                       else "none",
     legend.background = if (LEGEND$frame)
