@@ -264,6 +264,38 @@ class ControlPanel(ttk.Frame):
 
         row = ttk.Frame(sec)
         row.pack(fill="x", pady=2)
+        ttk.Label(row, text="Title font size:").pack(side="left")
+        self.legend_title_fontsize_var = tk.StringVar(value="9")
+        spin = ttk.Spinbox(row, from_=5, to=24, increment=1, width=5,
+                           textvariable=self.legend_title_fontsize_var,
+                           command=self.app.on_legend_options)
+        spin.pack(side="right")
+        spin.bind("<KeyRelease>", lambda _e: self.app.on_legend_options())
+
+        # Marker size scales the sample symbols shown in the legend
+        # (markerscale), independent of the point sizes on the map.
+        row = ttk.Frame(sec)
+        row.pack(fill="x", pady=2)
+        ttk.Label(row, text="Marker size:").pack(side="left")
+        self.legend_marker_scale_var = tk.StringVar(value="1.0")
+        spin = ttk.Spinbox(row, from_=0.5, to=4.0, increment=0.25, width=5,
+                           textvariable=self.legend_marker_scale_var,
+                           command=self.app.on_legend_options)
+        spin.pack(side="right")
+        spin.bind("<KeyRelease>", lambda _e: self.app.on_legend_options())
+
+        row = ttk.Frame(sec)
+        row.pack(fill="x", pady=2)
+        ttk.Label(row, text="Row spacing:").pack(side="left")
+        self.legend_label_spacing_var = tk.StringVar(value="0.5")
+        spin = ttk.Spinbox(row, from_=0.2, to=2.0, increment=0.1, width=5,
+                           textvariable=self.legend_label_spacing_var,
+                           command=self.app.on_legend_options)
+        spin.pack(side="right")
+        spin.bind("<KeyRelease>", lambda _e: self.app.on_legend_options())
+
+        row = ttk.Frame(sec)
+        row.pack(fill="x", pady=2)
         ttk.Label(row, text="Columns:").pack(side="left")
         self.legend_columns_var = tk.StringVar(value="1")
         spin = ttk.Spinbox(row, from_=1, to=6, increment=1, width=5,
@@ -600,6 +632,27 @@ class ControlPanel(ttk.Frame):
             return max(min(float(self.legend_fontsize_var.get()), 32.0), 4.0)
         except ValueError:
             return 8.0
+
+    def legend_title_fontsize(self) -> float:
+        try:
+            return max(min(float(self.legend_title_fontsize_var.get()),
+                           40.0), 4.0)
+        except ValueError:
+            return 9.0
+
+    def legend_marker_scale(self) -> float:
+        try:
+            return max(min(float(self.legend_marker_scale_var.get()), 6.0),
+                       0.2)
+        except ValueError:
+            return 1.0
+
+    def legend_label_spacing(self) -> float:
+        try:
+            return max(min(float(self.legend_label_spacing_var.get()), 4.0),
+                       0.0)
+        except ValueError:
+            return 0.5
 
     def legend_columns(self) -> int:
         try:
