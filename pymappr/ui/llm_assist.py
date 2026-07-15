@@ -19,13 +19,14 @@ WRAP = 520
 WARNING_BG = "#fff3cd"
 WARNING_FG = "#664d03"
 WARNING_TEXT = (
-    "\N{WARNING SIGN} Use at your own risk. This sends your map "
-    "settings and dataset column names - never your data rows, "
-    "coordinates, or category values - to the provider you choose, "
-    "using your own API key. LLMs make mistakes and invent details: "
-    "always verify the generated code and run it yourself, comparing "
-    "its output to your map. If you don't, you have not done your due "
-    "diligence as a researcher.")
+    "\N{WARNING SIGN} Use at your own risk. By default this sends your "
+    "map settings and dataset column names only - never your data rows, "
+    "coordinates, or category values - to the provider you choose, using "
+    "your own API key. (You can opt in below to also send the first few "
+    "rows of data.) LLMs make mistakes and invent details: always verify "
+    "the generated code and run it yourself, comparing its output to your "
+    "map. If you don't, you have not done your due diligence as a "
+    "researcher.")
 IMAGE_DPI = 150
 CODE_EXTENSIONS = {"Python": ".py", "R": ".R"}
 # Sentinel language: export in whatever language the user types below.
@@ -93,6 +94,13 @@ class LLMAssistDialog(tk.Toplevel):
         ttk.Label(body, text="(stored unencrypted in this app's local "
                              "settings; sent only to the provider)",
                   foreground="#666666").pack(anchor="w")
+        # A clickable link to where the selected provider hands out API
+        # keys; the text/target are refreshed in _load_provider_fields.
+        self._key_link = tk.Label(body, text="", foreground="#0645ad",
+                                  cursor="hand2",
+                                  font=("TkDefaultFont", 9, "underline"))
+        self._key_link.pack(anchor="w")
+        self._key_link.bind("<Button-1>", lambda _e: self._open_key_url())
 
         row = ttk.Frame(body)
         row.pack(fill="x", pady=2)
@@ -136,6 +144,33 @@ class LLMAssistDialog(tk.Toplevel):
         ttk.Label(body, text="(the image goes to the provider too; the "
                              "chosen model must support image input)",
                   foreground="#666666", wraplength=WRAP).pack(anchor="w")
+
+        # Opt-in data sample: off by default. When on, the first N rows of
+        # each dataset - real coordinates and category values - are sent
+        # for slightly better accuracy.
+        sample_row = ttk.Frame(body)
+        sample_row.pack(fill="x", pady=(4, 0))
+        self._sample_var = tk.BooleanVar(
+            value=bool(stored.get("send_sample", False)))
+        ttk.Checkbutton(sample_row, text="Also send the first",
+                        variable=self._sample_var,
+                        command=self._on_sample_toggle).pack(side="left")
+        self._sample_count_var = tk.StringVar(
+            value=str(stored.get("sample_rows", 5)))
+        self._sample_spin = ttk.Spinbox(
+            sample_row, from_=1, to=100, increment=1, width=5,
+            textvariable=self._sample_count_var, command=self._save_settings)
+        self._sample_spin.pack(side="left", padx=(4, 4))
+        self._sample_spin.bind("<KeyRelease>",
+                               lambda _e: self._save_settings())
+        ttk.Label(sample_row, text="row(s) of each dataset").pack(
+            side="left")
+        ttk.Label(body, text="(shares real data values - coordinates and "
+                             "category values - for those rows; off shares "
+                             "only column names)",
+                  foreground="#666666", wraplength=WRAP).pack(anchor="w")
+        if not self._sample_var.get():
+            self._sample_spin.config(state="disabled")
 
         ttk.Label(body, text="Add to the prompt (what the columns mean, "
                              "what to look out for, ...):").pack(
@@ -199,6 +234,19 @@ class LLMAssistDialog(tk.Toplevel):
         self._key_var.set(str(stored.get("api_key", "")))
         self._endpoint_var.set(str(stored.get("endpoint")
                                    or provider.endpoint))
+        if provider.key_url:
+            self._key_link.config(
+                text=f"Get an API key for {name} \N{NORTH EAST ARROW}")
+        else:
+            self._key_link.config(text="")
+
+    def _open_key_url(self) -> None:
+        """Open the selected provider's API-key page in a web browser."""
+        import webbrowser
+
+        url = llm.PROVIDERS[self._provider_var.get()].key_url
+        if url:
+            webbrowser.open(url)
 
     def _remember_provider_fields(self) -> None:
         self._fields[self._current_provider] = {
@@ -225,6 +273,23 @@ class LLMAssistDialog(tk.Toplevel):
             text=OTHER_LANGUAGE_NOTE if other else "")
         self._save_settings()
 
+    def _on_sample_toggle(self) -> None:
+        # The row-count spinbox is only meaningful while the box is ticked.
+        self._sample_spin.config(
+            state="normal" if self._sample_var.get() else "disabled")
+        self._save_settings()
+
+    def _sample_count(self) -> int:
+        """The configured sample size, clamped to a sane range."""
+        try:
+            return max(1, min(int(float(self._sample_count_var.get())), 1000))
+        except (TypeError, ValueError):
+            return 5
+
+    def _effective_sample(self) -> int:
+        """Rows to actually send: the configured count, or 0 when off."""
+        return self._sample_count() if self._sample_var.get() else 0
+
     def _effective_language(self) -> str:
         """The language actually requested: the typed-in name for "Other",
         otherwise the selected radio value."""
@@ -239,6 +304,8 @@ class LLMAssistDialog(tk.Toplevel):
             "language": self._language_var.get(),
             "other_language": self._other_language_var.get().strip(),
             "send_image": self._image_var.get(),
+            "send_sample": self._sample_var.get(),
+            "sample_rows": self._sample_count(),
             "extra": self._extra.get("1.0", "end").strip(),
             "providers": self._fields,
         }
@@ -247,11 +314,14 @@ class LLMAssistDialog(tk.Toplevel):
     # --------------------------------------------------------- prompt
 
     def _build_prompt(self) -> tuple[str, str]:
+        sample = self._effective_sample()
         summary = llm.describe_map(self.app._collect_state(),
-                                   self.app.entries)
+                                   self.app.entries, sample=sample)
         return llm.build_prompt(summary, self._effective_language(),
                                 extra=self._extra.get("1.0", "end"),
-                                with_image=self._image_var.get())
+                                with_image=self._image_var.get(),
+                                with_sample=sample > 0,
+                                model=self._model_var.get().strip())
 
     def _preview(self) -> None:
         system, user = self._build_prompt()
