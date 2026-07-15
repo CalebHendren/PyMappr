@@ -142,13 +142,53 @@ def toolchain(language: str) -> str:
 
 # ------------------------------------------------------- what gets sent
 
-def describe_entry(entry) -> dict:
-    """A data-free summary of one dataset: column names and styling
-    choices, never values. Style entries are keyed by group values in
-    the app, so only the color/marker/size triples are kept."""
+def _json_scalar(value):
+    """Coerce one dataframe cell to a JSON-serialisable scalar; NaN and
+    missing values become None, numpy scalars become Python scalars."""
+    if value is None:
+        return None
+    try:
+        if value != value:  # NaN (Python or numpy) is never equal to itself
+            return None
+    except (TypeError, ValueError):
+        pass
+    if isinstance(value, (bool, int, float, str)):
+        return value
+    item = getattr(value, "item", None)  # numpy scalar -> Python scalar
+    return item() if callable(item) else str(value)
+
+
+def first_rows(entry, count: int) -> list[dict]:
+    """The first *count* rows of a dataset as ``{column label: value}``
+    dicts, using the same display column names as :func:`describe_entry`.
+
+    Unlike everything else in this module, this exposes real coordinate
+    and category values, so it is only ever called when the user has
+    explicitly opted in to sending a data sample (off by default).
+    """
+    if count <= 0:
+        return []
+    frame = entry.dataset.frame
+    labels = dict(zip(entry.dataset.name_keys, entry.dataset.name_labels))
+    labels.update({"lon": "Longitude", "lat": "Latitude"})
+    present = [c for c in frame.columns if c in labels]
+    rows = []
+    for values in frame[present].head(count).itertuples(index=False,
+                                                        name=None):
+        rows.append({labels[col]: _json_scalar(val)
+                     for col, val in zip(present, values)})
+    return rows
+
+
+def describe_entry(entry, sample: int = 0) -> dict:
+    """A summary of one dataset: column names and styling choices. With
+    *sample* > 0, the first *sample* rows of real data are attached too
+    (opt-in); otherwise no values are included. Style entries are keyed by
+    group values in the app, so only the color/marker/size triples are
+    kept."""
     styles = [{"color": s.color, "marker": s.marker, "size": s.size}
               for _label, s in sorted(entry.styles.items())]
-    return {
+    summary = {
         "name": entry.name,
         "visible": entry.visible,
         "points": len(entry.dataset),
@@ -162,16 +202,31 @@ def describe_entry(entry) -> dict:
         "groups": len(entry.styles),
         "group_styles": styles,
     }
+    if sample > 0:
+        summary["sample_rows"] = first_rows(entry, sample)
+    return summary
 
 
-def describe_map(state: dict, entries) -> dict:
+def describe_map(state: dict, entries, sample: int = 0) -> dict:
     """Everything the LLM gets to see: the app's collected map state
     with the dataset rows replaced by :func:`describe_entry` summaries,
-    and boolean layer dicts flattened to lists of enabled layers."""
+    and boolean layer dicts flattened to lists of enabled layers.
+
+    *sample* (0 by default) is how many leading rows of each dataset to
+    include verbatim; 0 keeps the summary entirely data-free."""
     m = dict(state.get("map", {}))
     enabled = {section: sorted(key for key, on
                                in dict(m.pop(section, {})).items() if on)
                for section in ("lines", "fills", "points", "labels")}
+    if sample > 0:
+        withheld = (f"Only the first {sample} row(s) of each dataset are "
+                    "shared (see sample_rows) for reference; every other "
+                    "row is withheld. Load the full data from the user's "
+                    "file - do not treat the sample as complete.")
+    else:
+        withheld = ("Data rows, coordinates, and category values were "
+                    "deliberately not shared; only column names and "
+                    "settings.")
     return {
         "generator": f"PyMappr {__version__}",
         "map": m,
@@ -179,16 +234,24 @@ def describe_map(state: dict, entries) -> dict:
         "legend": dict(state.get("legend", {})),
         "point_alpha": state.get("point_alpha"),
         "view": dict(state.get("view", {})),
-        "datasets": [describe_entry(e) for e in entries],
-        "withheld": "Data rows, coordinates, and category values were "
-                    "deliberately not shared; only column names and "
-                    "settings.",
+        "datasets": [describe_entry(e, sample) for e in entries],
+        "withheld": withheld,
     }
 
 
 def build_prompt(summary: dict, language: str, extra: str = "",
-                 with_image: bool = False) -> tuple[str, str]:
+                 with_image: bool = False,
+                 with_sample: bool = False) -> tuple[str, str]:
     """The (system, user) texts sent to the provider, verbatim."""
+    data_rule = (
+        "- Only a small sample of the first data rows is included for "
+        "reference; the full dataset was NOT shared. Never invent "
+        "example data or treat the sample as complete; load everything "
+        "from the user's file.\n"
+        if with_sample else
+        "- The data rows, coordinates, and category values were "
+        "deliberately NOT shared with you. Never invent example data; "
+        "load everything from the user's file.\n")
     system = (
         "You are helping a researcher document a map they made in "
         f"PyMappr, a desktop point-distribution mapping application. "
@@ -199,9 +262,7 @@ def build_prompt(summary: dict, language: str, extra: str = "",
         "- The script must run as-is once the user fills in clearly "
         "marked placeholders (path to their data file, exact column "
         "names, group values for the legend).\n"
-        "- The data rows, coordinates, and category values were "
-        "deliberately NOT shared with you. Never invent example data; "
-        "load everything from the user's file.\n"
+        + data_rule +
         "- Recreate the projection (including any custom origin), map "
         "extent, base layers, point styling, and legend as described.\n"
         "- Comment the script so another researcher can audit each "
