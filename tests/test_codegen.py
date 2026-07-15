@@ -118,6 +118,18 @@ def test_r_output_is_valid_and_placeholder_free():
     assert "library(ggplot2)" in code
 
 
+def test_scripts_carry_pymappr_attribution():
+    from pymappr import __version__
+    for language in codegen.LANGUAGES:
+        code = codegen.generate_code(make_state(), [file_entry()], language)
+        first = code.splitlines()[0 if language == "R" else 1]
+        assert first == (f"# Made with PyMappr {__version__} - "
+                         "https://github.com/CalebHendren/PyMappr")
+    # The Python shebang still comes first so the script stays executable.
+    py = codegen.generate_code(make_state(), [], "Python")
+    assert py.splitlines()[0] == "#!/usr/bin/env python3"
+
+
 def test_premade_functions_are_identical_across_maps():
     """The function templates are pre-made: only the config block above
     them may differ between two different maps."""
