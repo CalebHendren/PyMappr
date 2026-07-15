@@ -54,6 +54,10 @@ def test_provider_registry():
         if name != "Custom (OpenAI-compatible)":
             assert provider.endpoint.startswith("https://"), name
             assert provider.model, name
+            # Every named provider links to where you get an API key.
+            assert provider.key_url.startswith("https://"), name
+    # The custom (bring-your-own-endpoint) entry has no fixed key page.
+    assert llm.PROVIDERS["Custom (OpenAI-compatible)"].key_url == ""
 
 
 # ----------------------------------------------------- what may be sent

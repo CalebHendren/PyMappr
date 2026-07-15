@@ -93,6 +93,13 @@ class LLMAssistDialog(tk.Toplevel):
         ttk.Label(body, text="(stored unencrypted in this app's local "
                              "settings; sent only to the provider)",
                   foreground="#666666").pack(anchor="w")
+        # A clickable link to where the selected provider hands out API
+        # keys; the text/target are refreshed in _load_provider_fields.
+        self._key_link = tk.Label(body, text="", foreground="#0645ad",
+                                  cursor="hand2",
+                                  font=("TkDefaultFont", 9, "underline"))
+        self._key_link.pack(anchor="w")
+        self._key_link.bind("<Button-1>", lambda _e: self._open_key_url())
 
         row = ttk.Frame(body)
         row.pack(fill="x", pady=2)
@@ -199,6 +206,19 @@ class LLMAssistDialog(tk.Toplevel):
         self._key_var.set(str(stored.get("api_key", "")))
         self._endpoint_var.set(str(stored.get("endpoint")
                                    or provider.endpoint))
+        if provider.key_url:
+            self._key_link.config(
+                text=f"Get an API key for {name} \N{NORTH EAST ARROW}")
+        else:
+            self._key_link.config(text="")
+
+    def _open_key_url(self) -> None:
+        """Open the selected provider's API-key page in a web browser."""
+        import webbrowser
+
+        url = llm.PROVIDERS[self._provider_var.get()].key_url
+        if url:
+            webbrowser.open(url)
 
     def _remember_provider_fields(self) -> None:
         self._fields[self._current_provider] = {
