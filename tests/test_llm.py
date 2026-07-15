@@ -121,6 +121,17 @@ def test_build_prompt_sample_instruction():
     assert "deliberately NOT shared" in system_off
 
 
+def test_build_prompt_adds_attribution():
+    summary = llm.describe_map(make_state(), [make_entry()])
+    system, _user = llm.build_prompt(summary, "Python", model="gpt-5.6")
+    assert (f"Made with PyMappr {llm.__version__} + gpt-5.6 - "
+            f"{llm.REPO_URL}") in system
+    assert "as a comment" in system  # placed at the top of the script
+    # Falls back gracefully when the model field is somehow blank.
+    system_blank, _ = llm.build_prompt(summary, "R")
+    assert "an LLM" in system_blank
+
+
 def test_build_prompt_mentions_language_and_notes():
     summary = llm.describe_map(make_state(), [make_entry()])
     system, user = llm.build_prompt(summary, "R",
