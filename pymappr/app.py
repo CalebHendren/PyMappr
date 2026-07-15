@@ -507,7 +507,10 @@ class PyMapprApp:
                 "frame": p.legend_frame_var.get(),
                 "location": p.legend_loc_var.get(),
                 "fontsize": p.legend_fontsize_var.get(),
+                "title_fontsize": p.legend_title_fontsize_var.get(),
                 "columns": p.legend_columns_var.get(),
+                "marker_scale": p.legend_marker_scale_var.get(),
+                "label_spacing": p.legend_label_spacing_var.get(),
                 "title": p.legend_title_var.get(),
             },
             "point_alpha": p.point_alpha_var.get(),
@@ -555,7 +558,10 @@ class PyMapprApp:
         p.legend_frame_var.set(legend["frame"])
         p.legend_loc_var.set(legend["location"])
         p.legend_fontsize_var.set(legend["fontsize"])
+        p.legend_title_fontsize_var.set(legend["title_fontsize"])
         p.legend_columns_var.set(legend["columns"])
+        p.legend_marker_scale_var.set(legend["marker_scale"])
+        p.legend_label_spacing_var.set(legend["label_spacing"])
         p.legend_title_var.set(legend["title"])
         p.point_alpha_var.set(state.get("point_alpha",
                                         defaults["point_alpha"]))
@@ -1026,7 +1032,10 @@ class PyMapprApp:
             self.panel.legend_loc_var.get(),
             fontsize=self.panel.legend_fontsize(),
             columns=self.panel.legend_columns(),
-            frame=self.panel.legend_frame_var.get())
+            frame=self.panel.legend_frame_var.get(),
+            title_fontsize=self.panel.legend_title_fontsize(),
+            marker_scale=self.panel.legend_marker_scale(),
+            label_spacing=self.panel.legend_label_spacing())
         if redraw:
             self.renderer.redraw()
 
