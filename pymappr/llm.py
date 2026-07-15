@@ -29,10 +29,14 @@ import urllib.request
 from dataclasses import dataclass
 
 from pymappr import __version__
+from pymappr.updates import GITHUB_REPO
 
 ANTHROPIC_VERSION = "2023-06-01"
 MAX_TOKENS = 8192  # Anthropic requires an explicit output cap
 DEFAULT_TIMEOUT = 300.0  # reasoning models can take minutes
+
+# Home page credited in the attribution comment the model is asked to add.
+REPO_URL = f"https://github.com/{GITHUB_REPO}"
 
 
 class LLMError(Exception):
@@ -240,8 +244,8 @@ def describe_map(state: dict, entries, sample: int = 0) -> dict:
 
 
 def build_prompt(summary: dict, language: str, extra: str = "",
-                 with_image: bool = False,
-                 with_sample: bool = False) -> tuple[str, str]:
+                 with_image: bool = False, with_sample: bool = False,
+                 model: str = "") -> tuple[str, str]:
     """The (system, user) texts sent to the provider, verbatim."""
     data_rule = (
         "- Only a small sample of the first data rows is included for "
@@ -252,6 +256,11 @@ def build_prompt(summary: dict, language: str, extra: str = "",
         "- The data rows, coordinates, and category values were "
         "deliberately NOT shared with you. Never invent example data; "
         "load everything from the user's file.\n")
+    # Credit both tools and their versions: the PyMappr version rides in
+    # summary["generator"] ("PyMappr X.Y.Z"), and the model id names the
+    # LLM and its version (e.g. "claude-opus-4-8", "gpt-5.6").
+    attribution = (f"Made with {summary.get('generator', 'PyMappr')} + "
+                   f"{model or 'an LLM'} - {REPO_URL}")
     system = (
         "You are helping a researcher document a map they made in "
         f"PyMappr, a desktop point-distribution mapping application. "
@@ -267,6 +276,8 @@ def build_prompt(summary: dict, language: str, extra: str = "",
         "extent, base layers, point styling, and legend as described.\n"
         "- Comment the script so another researcher can audit each "
         "step, and state any assumptions in comments at the top.\n"
+        f"- Start the script with this exact attribution as a comment, "
+        f"using {language}'s comment syntax: {attribution}\n"
         "- Reply with only the script, in a single code block.")
     user = ("Recreate this map.\n\nMap configuration (JSON):\n"
             + json.dumps(summary, indent=2, sort_keys=True))
