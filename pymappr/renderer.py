@@ -206,8 +206,11 @@ class MapRenderer:
         self._legend_title: str | None = None
         self._legend_loc = "best"
         self._legend_fontsize = 8.0
+        self._legend_title_fontsize = 9.0
         self._legend_columns = 1
         self._legend_frame = True
+        self._legend_marker_scale = 1.0
+        self._legend_label_spacing = 0.5
         # Structured legend: list of (section title, [(label, PointStyle)]).
         # When set, it replaces the one-row-per-group legend.
         self._legend_sections: list | None = None
@@ -634,9 +637,6 @@ class MapRenderer:
         else:
             self._hide_layer("continents")
 
-    def layer_visible(self, key: str) -> bool:
-        return key in self._line_visible
-
     def set_line_width_scale(self, scale: float) -> None:
         """Scale the line width of every vector line layer (0.25 - 3)."""
         self._line_scale = max(float(scale), 0.05)
@@ -1042,13 +1042,20 @@ class MapRenderer:
 
     def set_legend(self, visible: bool, title: str | None = None,
                    location: str = "best", fontsize: float = 8.0,
-                   columns: int = 1, frame: bool = True) -> None:
+                   columns: int = 1, frame: bool = True,
+                   title_fontsize: float | None = None,
+                   marker_scale: float = 1.0,
+                   label_spacing: float = 0.5) -> None:
         self._legend_visible = visible
         self._legend_title = title
         self._legend_loc = location
         self._legend_fontsize = fontsize
+        self._legend_title_fontsize = (fontsize if title_fontsize is None
+                                       else title_fontsize)
         self._legend_columns = max(int(columns), 1)
         self._legend_frame = frame
+        self._legend_marker_scale = max(float(marker_scale), 0.1)
+        self._legend_label_spacing = max(float(label_spacing), 0.0)
         self._update_legend()
 
     def set_structured_legend(self, sections: list | None) -> None:
@@ -1111,8 +1118,10 @@ class MapRenderer:
         self.ax.legend(handles=handles, loc=self._legend_loc,
                        title=self._legend_title,
                        fontsize=self._legend_fontsize,
-                       title_fontsize=self._legend_fontsize,
+                       title_fontsize=self._legend_title_fontsize,
                        ncols=self._legend_columns,
+                       markerscale=self._legend_marker_scale,
+                       labelspacing=self._legend_label_spacing,
                        frameon=self._legend_frame, framealpha=0.85)
 
     def _draw_structured_legend(self) -> None:
@@ -1140,10 +1149,12 @@ class MapRenderer:
         leg = self.ax.legend(handles, labels, loc=self._legend_loc,
                              title=self._legend_title,
                              fontsize=self._legend_fontsize,
-                             title_fontsize=self._legend_fontsize,
+                             title_fontsize=self._legend_title_fontsize,
                              ncols=self._legend_columns,
+                             markerscale=self._legend_marker_scale,
                              frameon=self._legend_frame, framealpha=0.85,
-                             handletextpad=0.4, labelspacing=0.3)
+                             handletextpad=0.4,
+                             labelspacing=self._legend_label_spacing)
         texts = leg.get_texts()
         for row in header_rows:
             if row < len(texts):
