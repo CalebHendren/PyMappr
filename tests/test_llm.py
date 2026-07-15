@@ -81,6 +81,46 @@ def test_describe_map_excludes_data_values():
     assert "withheld" in summary
 
 
+def test_describe_map_can_include_sample_rows():
+    # Opt-in: the first N rows of real data are attached, with the display
+    # column names, and the withheld note changes to say so.
+    summary = llm.describe_map(make_state(), [make_entry()], sample=1)
+    dataset = summary["datasets"][0]
+    assert dataset["sample_rows"] == [
+        {"Legend": "spiders.csv", "Label": "Secret Site",
+         "Longitude": -100.0, "Latitude": 38.0}]
+    # Only the first row is shared; the second stays withheld.
+    dumped = json.dumps(summary)
+    assert "Secret Site" in dumped
+    assert "Hidden Spring" not in dumped
+    assert "sample_rows" in summary["withheld"]
+    # The summary is still JSON-serialisable (no stray numpy scalars).
+    json.dumps(summary)
+
+
+def test_describe_map_default_shares_no_rows():
+    summary = llm.describe_map(make_state(), [make_entry()])
+    assert "sample_rows" not in summary["datasets"][0]
+    assert "deliberately not shared" in summary["withheld"]
+
+
+def test_first_rows_caps_and_off():
+    entry = make_entry()  # two rows
+    assert llm.first_rows(entry, 0) == []
+    assert len(llm.first_rows(entry, 1)) == 1
+    assert len(llm.first_rows(entry, 5)) == 2  # capped at what exists
+
+
+def test_build_prompt_sample_instruction():
+    summary = llm.describe_map(make_state(), [make_entry()], sample=3)
+    system, _user = llm.build_prompt(summary, "Python", with_sample=True)
+    assert "small sample" in system
+    assert "load everything from the user's file" in system
+    # Without the flag the strict "not shared" wording is used.
+    system_off, _user = llm.build_prompt(summary, "Python")
+    assert "deliberately NOT shared" in system_off
+
+
 def test_build_prompt_mentions_language_and_notes():
     summary = llm.describe_map(make_state(), [make_entry()])
     system, user = llm.build_prompt(summary, "R",
