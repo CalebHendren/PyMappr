@@ -47,20 +47,23 @@ class Provider:
     endpoint: str   # default endpoint URL (editable in the dialog)
     model: str      # default model (the seed; still editable in the dialog)
     key_hint: str   # what the provider's API keys usually look like
+    key_url: str = ""  # where to sign up for / manage an API key
     models: tuple[str, ...] = ()  # dropdown suggestions (still editable)
 
 
 # Mainstream + Chinese providers; anything else fits through the
 # OpenAI-compatible custom entry (e.g. Mistral, xAI, or a local server).
 # The ``models`` lists seed an editable dropdown - a user can always type a
-# model the list doesn't mention. Names checked mid-2026; providers rename
-# fast, so treat these as current-at-time-of-writing defaults, not gospel.
+# model the list doesn't mention. Names and key_url pages checked mid-2026;
+# providers rename fast, so treat these as current-at-time-of-writing
+# defaults, not gospel.
 PROVIDERS: dict[str, Provider] = {
     "Anthropic (Claude)": Provider(
         api="anthropic",
         endpoint="https://api.anthropic.com/v1/messages",
         model="claude-opus-4-8",
         key_hint="sk-ant-...",
+        key_url="https://console.anthropic.com/settings/keys",
         models=("claude-opus-4-8", "claude-sonnet-5", "claude-haiku-4-5",
                 "claude-fable-5")),
     "OpenAI (GPT)": Provider(
@@ -68,6 +71,7 @@ PROVIDERS: dict[str, Provider] = {
         endpoint="https://api.openai.com/v1/chat/completions",
         model="gpt-5.6",
         key_hint="sk-...",
+        key_url="https://platform.openai.com/api-keys",
         models=("gpt-5.6", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna",
                 "gpt-5.5", "gpt-5.1")),
     "Google (Gemini)": Provider(
@@ -75,6 +79,7 @@ PROVIDERS: dict[str, Provider] = {
         endpoint="https://generativelanguage.googleapis.com/v1beta/models",
         model="gemini-3.1-pro-preview",
         key_hint="AIza...",
+        key_url="https://aistudio.google.com/apikey",
         models=("gemini-3.1-pro-preview", "gemini-3.5-flash",
                 "gemini-3.1-flash-lite", "gemini-2.5-pro",
                 "gemini-2.5-flash")),
@@ -83,6 +88,7 @@ PROVIDERS: dict[str, Provider] = {
         endpoint="https://api.deepseek.com/v1/chat/completions",
         model="deepseek-v4-flash",
         key_hint="sk-...",
+        key_url="https://platform.deepseek.com/api_keys",
         models=("deepseek-v4-flash", "deepseek-v4-pro")),
     "Qwen (Alibaba DashScope)": Provider(
         api="openai",
@@ -90,6 +96,7 @@ PROVIDERS: dict[str, Provider] = {
                  "/chat/completions",
         model="qwen3-max",
         key_hint="sk-...",
+        key_url="https://dashscope.console.aliyun.com/apiKey",
         models=("qwen3-max", "qwen-max", "qwen-plus", "qwen-turbo",
                 "qwen3-coder-plus")),
     "Kimi (Moonshot)": Provider(
@@ -97,18 +104,21 @@ PROVIDERS: dict[str, Provider] = {
         endpoint="https://api.moonshot.ai/v1/chat/completions",
         model="kimi-k2.6",
         key_hint="sk-...",
+        key_url="https://platform.moonshot.ai/console/api-keys",
         models=("kimi-k2.6", "kimi-k2.7-code", "kimi-k2.5")),
     "GLM (Zhipu / BigModel)": Provider(
         api="openai",
         endpoint="https://open.bigmodel.cn/api/paas/v4/chat/completions",
         model="glm-4.7",
         key_hint="",
+        key_url="https://open.bigmodel.cn/usercenter/apikeys",
         models=("glm-4.7", "glm-4.7-flash", "glm-5", "glm-4.6")),
     "Custom (OpenAI-compatible)": Provider(
         api="openai",
         endpoint="",
         model="",
         key_hint="",
+        key_url="",
         models=()),
 }
 
