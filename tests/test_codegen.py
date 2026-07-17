@@ -229,6 +229,54 @@ def test_equirectangular_uses_plain_crs():
     assert "MAP_CRS = 'EPSG:4326'" in code
 
 
+def test_globe_export_clips_to_the_visible_hemisphere():
+    state = make_state(map={"projection": "Globe (Orthographic)",
+                            "proj_lon0": "-100", "proj_lat0": "40"})
+    py = codegen.generate_code(state, [file_entry()], "Python")
+    compile(py, "globe.py", "exec")
+    assert codecheck.validate_code("Python", py) == []
+    assert "+proj=ortho +lat_0=40.0 +lon_0=-100.0" in py
+    assert "CLIP_CAP = (-100.0, 40.0, 88.0)" in py
+    assert "WORLD_BOUNDS = (" in py  # the projected disk to frame
+    r = codegen.generate_code(state, [file_entry()], "R")
+    assert codecheck.validate_code("R", r) == []
+    assert "CLIP_CAP <- c(-100.0, 40.0, 88.0)" in r
+    assert "WORLD_BOUNDS <- c(" in r
+
+
+def test_non_globe_export_leaves_clipping_off():
+    for language, none in (("Python", "CLIP_CAP = None"),
+                           ("R", "CLIP_CAP <- NULL")):
+        code = codegen.generate_code(
+            make_state(map={"projection": "Robinson"}), [], language)
+        assert none in code
+
+
+def test_globe_cap_polygon_runtime_clips_and_stays_finite():
+    """The pre-made cap_polygon/to_map_crs actually run: clip whole-world
+    geometry to the near hemisphere and reproject without infinities."""
+    import geopandas as gpd
+    import numpy as np
+    from shapely.geometry import Polygon
+
+    state = make_state(map={"projection": "Globe (Orthographic)",
+                            "proj_lon0": "-100", "proj_lat0": "40"})
+    py = codegen.generate_code(state, [], "Python")
+    namespace: dict = {}
+    exec(py.replace('if __name__ == "__main__":\n    main()', ""),
+         namespace)
+    polys = [Polygon([(lon, lat), (lon + 20, lat), (lon + 20, lat + 20),
+                      (lon, lat + 20)])
+             for lon in range(-180, 180, 20) for lat in range(-80, 80, 20)]
+    gdf = gpd.GeoDataFrame(geometry=polys, crs="EPSG:4326")
+    projected = namespace["to_map_crs"](gdf)
+    assert 0 < len(projected) < len(gdf)  # far hemisphere dropped
+    coords = np.concatenate([np.asarray(geom.exterior.coords)
+                             for geom in projected.geometry
+                             if not geom.is_empty])
+    assert np.isfinite(coords).all()
+
+
 def test_notes_list_unreproduced_features():
     state = make_state(map={"bathymetry": True, "basemap": "satellite",
                             "fills": {"biodiversity": True}})
