@@ -396,14 +396,15 @@ class LayerStore:
 
     def frame_projected(self, key: str, crs: str | None,
                         max_lat: float = 90.0, zoom: float | None = None,
-                        clip_box: tuple[float, float, float, float] | None = None):
+                        clip_shape=None):
         """A layer reprojected to *crs* (None = untouched lon/lat), cached.
 
-        The data is clipped before reprojection to keep singular latitudes
-        out of the transform: *clip_box* (lon0, lon1, lat0, lat1) is used when
-        given - regional projections such as Lambert pass their latitude band
-        - otherwise *max_lat* clips a symmetric band, for world projections
-        such as Mercator that blow up at the poles.
+        The data is clipped before reprojection to keep coordinates the
+        projection cannot represent out of the transform: *clip_shape* (a
+        shapely geometry in lon/lat) is used when given - regional
+        projections pass their latitude band, the Globe its visible
+        hemisphere - otherwise *max_lat* clips a symmetric band, for world
+        projections such as Mercator that blow up at the poles.
         """
         if crs is None:
             return self.frame(key, zoom=zoom)
@@ -416,9 +417,8 @@ class LayerStore:
             from shapely.geometry import box
 
             gdf = self.frame(key, zoom=zoom)
-            if clip_box is not None:
-                lon0, lon1, lat0, lat1 = clip_box
-                gdf = gdf.clip(box(lon0, lat0, lon1, lat1))
+            if clip_shape is not None:
+                gdf = gdf.clip(clip_shape)
             elif max_lat < 90.0:
                 gdf = gdf.clip(box(-180, -max_lat, 180, max_lat))
             self._projected[cache_key] = gdf.to_crs(crs)

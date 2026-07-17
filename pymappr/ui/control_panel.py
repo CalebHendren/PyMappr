@@ -14,8 +14,8 @@ from tkinter import messagebox, simpledialog, ttk
 
 from pymappr import projects
 from pymappr.layers import CONTINENT_EXTENTS
-from pymappr.projections import (PROJECTIONS, is_lambert,
-                                 lambert_default_origin)
+from pymappr.projections import (PROJECTIONS, default_origin,
+                                 has_custom_origin)
 
 PANEL_WIDTH = 320
 
@@ -343,8 +343,8 @@ class ControlPanel(ttk.Frame):
         self._combo_row(sec, "Projection:", self.projection_var,
                         PROJECTIONS, self.app.on_projection, width=16)
 
-        # Point of natural origin for the Lambert projections: enabled only
-        # while a Lambert projection is selected.
+        # Map centre for the Globe and point of natural origin for the
+        # Lambert projections: enabled only while one of those is selected.
         self.proj_lon0_var = tk.StringVar(value="")
         self.proj_lat0_var = tk.StringVar(value="")
         self.origin_frame = ttk.Frame(sec)
@@ -366,7 +366,7 @@ class ControlPanel(ttk.Frame):
             self.origin_spins.append(spin)
         self.origin_hint = ttk.Label(
             self.origin_frame,
-            text="Point of natural origin (Lambert projections).",
+            text="Map centre (Globe and Lambert projections).",
             wraplength=PANEL_WIDTH - 60, foreground="#666666")
         self.origin_hint.pack(anchor="w")
         self.update_projection_origin(self.projection_var.get(), reset=True)
@@ -595,11 +595,12 @@ class ControlPanel(ttk.Frame):
         canvas.bind("<Leave>", unbind_all)
 
     def update_projection_origin(self, name: str, reset: bool = False) -> None:
-        """Enable the origin spinboxes for Lambert projections (seeding the
-        preset default when *reset*) and disable them otherwise."""
-        if is_lambert(name):
+        """Enable the origin spinboxes for the Globe and the Lambert
+        projections (seeding the preset default when *reset*) and disable
+        them otherwise."""
+        if has_custom_origin(name):
             if reset or not self.proj_lon0_var.get().strip():
-                lon0, lat0 = lambert_default_origin(name)
+                lon0, lat0 = default_origin(name)
                 self.proj_lon0_var.set(f"{lon0:g}")
                 self.proj_lat0_var.set(f"{lat0:g}")
             state = "normal"
@@ -611,9 +612,10 @@ class ControlPanel(ttk.Frame):
             spin.configure(state=state)
 
     def projection_origin(self) -> tuple[float | None, float | None]:
-        """The (lon_0, lat_0) origin for a Lambert projection, or (None, None)
-        for any other projection or unparseable input (uses the default)."""
-        if not is_lambert(self.projection_var.get()):
+        """The (lon_0, lat_0) centre for the Globe or a Lambert projection,
+        or (None, None) for any other projection or unparseable input
+        (uses the default)."""
+        if not has_custom_origin(self.projection_var.get()):
             return None, None
 
         def _num(var):
