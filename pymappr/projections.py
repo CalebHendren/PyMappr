@@ -4,10 +4,16 @@ Every projection maps geographic lon/lat (EPSG:4326) into a projected plane.
 ``Equirectangular`` is the identity (plain degrees) and is the default; the
 others reproject all vector layers, points, labels, and the basemap raster.
 
-Two families live here:
+Three families live here:
 
 * **World projections** (Mercator, Robinson, ...) cover the whole globe and
   are keyed by name alone.
+* **The Globe** (orthographic) shows the Earth as seen from space: one
+  hemisphere on a disk, centred on a customizable point. Only the near
+  hemisphere exists in an orthographic projection - the far side projects
+  to infinity - so vector layers are clipped to the visible spherical cap
+  before reprojection (:meth:`Projection.clip_shape`) and stray far-side
+  coordinates come back as NaN from :meth:`Projection.forward`.
 * **Lambert projections** (Lambert Conformal Conic and Lambert Azimuthal
   Equal Area) are regional. Each preset centres on a region but exposes a
   **customizable point of natural origin** (central meridian ``lon_0`` and
@@ -25,8 +31,9 @@ from functools import lru_cache
 import numpy as np
 
 __all__ = [
-    "PROJECTIONS", "LAMBERT_PROJECTIONS", "Projection", "get_projection",
-    "is_lambert", "lambert_default_origin", "proj4_string",
+    "CAP_CLIP_RADIUS", "GLOBE", "PROJECTIONS", "LAMBERT_PROJECTIONS",
+    "Projection", "default_origin", "get_projection", "has_custom_origin",
+    "is_globe", "is_lambert", "lambert_default_origin", "proj4_string",
 ]
 
 # Display name -> (proj4 string or None for plain lon/lat, max usable latitude).
@@ -78,7 +85,20 @@ LAMBERT_DEFS = {
                                              120.0, -88.0, 88.0),
 }
 
-PROJECTIONS = list(PROJECTION_DEFS) + list(LAMBERT_DEFS)
+# The globe: orthographic, one hemisphere on a disk, customizable centre.
+GLOBE = "Globe (Orthographic)"
+
+# Vector layers are clipped to a spherical cap slightly inside the 90 deg
+# visible hemisphere, so no clipped coordinate sits close enough to the
+# horizon for the transform to blow up. Public: the code export bakes the
+# same radius into the script it writes.
+CAP_CLIP_RADIUS = 88.0
+_CAP_CLIP_RADIUS = CAP_CLIP_RADIUS
+# The drawn globe outline (and the projected bounds) sit just inside the
+# exact horizon, where the forward transform is still finite everywhere.
+_HORIZON_RADIUS = 89.9
+
+PROJECTIONS = list(PROJECTION_DEFS) + [GLOBE] + list(LAMBERT_DEFS)
 LAMBERT_PROJECTIONS = list(LAMBERT_DEFS)
 
 
@@ -87,21 +107,45 @@ def is_lambert(name: str) -> bool:
     return name in LAMBERT_DEFS
 
 
+def is_globe(name: str) -> bool:
+    """True if *name* is the orthographic globe."""
+    return name == GLOBE
+
+
+def has_custom_origin(name: str) -> bool:
+    """True if *name* exposes a customizable centre / point of natural
+    origin (the Lambert presets and the Globe)."""
+    return is_lambert(name) or is_globe(name)
+
+
 def lambert_default_origin(name: str) -> tuple[float, float]:
     """The preset's default (lon_0, lat_0) point of natural origin."""
     d = LAMBERT_DEFS[name]
     return d.lon_0, d.lat_0
 
 
+def default_origin(name: str) -> tuple[float, float]:
+    """The default (lon_0, lat_0) centre for any origin-customizable
+    projection (Lambert presets and the Globe)."""
+    if is_globe(name):
+        return 0.0, 0.0
+    return lambert_default_origin(name)
+
+
 def proj4_string(name: str, lon_0: float | None = None,
                  lat_0: float | None = None) -> str | None:
     """The proj4 CRS string for a projection name (None = plain lon/lat).
 
-    For Lambert presets, *lon_0*/*lat_0* override the default point of
-    natural origin, exactly as in :func:`get_projection` - but no
-    transformer or bounds are built, so callers that only need the CRS
-    text (the code export) stay cheap.
+    For Lambert presets and the Globe, *lon_0*/*lat_0* override the
+    default point of natural origin, exactly as in :func:`get_projection`
+    - but no transformer or bounds are built, so callers that only need
+    the CRS text (the code export) stay cheap.
     """
+    if name == GLOBE:
+        lon0 = 0.0 if lon_0 is None else float(lon_0)
+        lat0 = 0.0 if lat_0 is None else float(lat_0)
+        return (f"+proj=ortho +lat_0={lat0} +lon_0={lon0} +x_0=0 +y_0=0 "
+                "+datum=WGS84 +units=m +no_defs")
     if name in LAMBERT_DEFS:
         d = LAMBERT_DEFS[name]
         lon0 = d.lon_0 if lon_0 is None else float(lon_0)
@@ -125,6 +169,8 @@ class Projection:
     bounds: tuple[float, float, float, float]  # projected world x0,x1,y0,y1
     lon_0: float = 0.0        # central meridian (region centre)
     lon_halfspan: float = 180.0  # +/- degrees around lon_0 kept (<180 = regional)
+    lat_0: float = 0.0        # latitude of the centre (globe tilt)
+    hemisphere: bool = False  # only the near hemisphere exists (the Globe)
 
     @property
     def is_geographic(self) -> bool:
@@ -153,6 +199,29 @@ class Projection:
             return (-180.0, 180.0, self.min_lat, self.max_lat)
         return None
 
+    def clip_shape(self):
+        """Lon/lat geometry vector layers are clipped to before
+        reprojection (a shapely geometry), or None to leave them whole.
+
+        The Globe clips to its visible spherical cap - the far hemisphere
+        projects to infinity - and regional (Lambert) projections to their
+        latitude band, matching :meth:`clip_box`."""
+        if self.hemisphere:
+            return _cap_clip(self.lon_0, self.lat_0)
+        box = self.clip_box()
+        if box is not None:
+            from shapely.geometry import box as shapely_box
+
+            lon0, lon1, lat0, lat1 = box
+            return shapely_box(lon0, lat0, lon1, lat1)
+        return None
+
+    def horizon_xy(self) -> tuple[np.ndarray, np.ndarray]:
+        """The globe's horizon circle in projected coordinates (the disk
+        outline the renderer draws). Only meaningful for the Globe."""
+        lons, lats = _cap_ring(self.lon_0, self.lat_0, _HORIZON_RADIUS)
+        return self.forward(lons, lats)
+
     def _clip(self, lons: np.ndarray, lats: np.ndarray):
         lats = np.clip(lats, self.min_lat, self.max_lat)
         if self.lon_halfspan < 180.0:
@@ -161,13 +230,23 @@ class Projection:
         return lons, lats
 
     def forward(self, lons, lats) -> tuple[np.ndarray, np.ndarray]:
-        """Project lon/lat arrays into map coordinates."""
+        """Project lon/lat arrays into map coordinates. Coordinates the
+        projection cannot represent (the globe's far hemisphere) come back
+        as NaN, which matplotlib drops from paths and scatters cleanly."""
         lons = np.asarray(lons, dtype=float)
         lats = np.asarray(lats, dtype=float)
         if self.crs is None:
             return lons, lats
         lons, lats = self._clip(lons, lats)
-        return _transformer(self.crs).transform(lons, lats)
+        xs, ys = _transformer(self.crs).transform(lons, lats)
+        if self.hemisphere:
+            xs = np.asarray(xs, dtype=float)
+            ys = np.asarray(ys, dtype=float)
+            bad = ~(np.isfinite(xs) & np.isfinite(ys))
+            if bad.any():
+                xs = np.where(bad, np.nan, xs)
+                ys = np.where(bad, np.nan, ys)
+        return xs, ys
 
     def inverse(self, xs, ys) -> tuple[np.ndarray, np.ndarray]:
         """Map coordinates back to lon/lat (non-finite where undefined)."""
@@ -191,6 +270,19 @@ class Projection:
         y0 = max(y0, self.min_lat)
         y1 = min(y1, self.max_lat)
         n = 40
+        if self.hemisphere:
+            # The box edges may lie entirely on the far hemisphere (a
+            # world extent's do) while the interior is visible: sample a
+            # grid instead of just the edges.
+            glons, glats = np.meshgrid(np.linspace(x0, x1, n),
+                                       np.linspace(y0, y1, n))
+            px, py = self.forward(glons.ravel(), glats.ravel())
+            good = np.isfinite(px) & np.isfinite(py)
+            if not good.any():  # extent fully on the far side: whole disk
+                return self.bounds
+            px, py = px[good], py[good]
+            return (float(px.min()), float(px.max()),
+                    float(py.min()), float(py.max()))
         lons = np.concatenate([
             np.linspace(x0, x1, n), np.linspace(x0, x1, n),
             np.full(n, x0), np.full(n, x1)])
@@ -229,6 +321,61 @@ def _bounds_from_grid(crs: str, lon0: float, lon1: float,
             float(ys[good].min()), float(ys[good].max()))
 
 
+def _cap_ring(lon_0: float, lat_0: float, radius_deg: float,
+              n: int = 361) -> tuple[np.ndarray, np.ndarray]:
+    """The lon/lat ring of points *radius_deg* great-circle degrees away
+    from (lon_0, lat_0), traced by azimuth. Longitudes come back centred
+    on lon_0 (within +/-180 of it), not wrapped into [-180, 180]."""
+    az = np.linspace(0.0, 2.0 * np.pi, n)
+    phi0 = np.radians(lat_0)
+    r = np.radians(radius_deg)
+    lat = np.arcsin(np.sin(phi0) * np.cos(r)
+                    + np.cos(phi0) * np.sin(r) * np.cos(az))
+    dlon = np.arctan2(np.sin(az) * np.sin(r) * np.cos(phi0),
+                      np.cos(r) - np.sin(phi0) * np.sin(lat))
+    return lon_0 + np.degrees(dlon), np.degrees(lat)
+
+
+@lru_cache(maxsize=None)
+def _cap_clip(lon_0: float, lat_0: float):
+    """The visible spherical cap around (lon_0, lat_0) as lon/lat geometry
+    for clipping vector layers, with +/-360 degree copies so caps crossing
+    the antimeridian still cover data stored in [-180, 180]."""
+    from shapely import affinity
+    from shapely.geometry import Polygon
+    from shapely.ops import unary_union
+
+    lons, lats = _cap_ring(lon_0, lat_0, _CAP_CLIP_RADIUS)
+    if lat_0 + _CAP_CLIP_RADIUS >= 90.0:  # cap encloses the north pole
+        order = np.argsort(lons)
+        shell = list(zip(lons[order], lats[order]))
+        shell += [(lon_0 + 180.0, 90.0), (lon_0 - 180.0, 90.0)]
+    elif lat_0 - _CAP_CLIP_RADIUS <= -90.0:  # ... the south pole
+        order = np.argsort(lons)
+        shell = list(zip(lons[order], lats[order]))
+        shell += [(lon_0 + 180.0, -90.0), (lon_0 - 180.0, -90.0)]
+    else:  # a closed ring away from both poles
+        shell = list(zip(lons, lats))
+    cap = Polygon(shell).buffer(0)  # heal numerical self-touches
+    return unary_union([affinity.translate(cap, xoff=off)
+                        for off in (-360.0, 0.0, 360.0)])
+
+
+def _build_globe(lon_0: float | None, lat_0: float | None) -> Projection:
+    lon0 = 0.0 if lon_0 is None else float(lon_0)
+    lat0 = 0.0 if lat_0 is None else float(lat_0)
+    crs = proj4_string(GLOBE, lon0, lat0)
+    lons, lats = _cap_ring(lon0, lat0, _HORIZON_RADIUS)
+    xs, ys = _transformer(crs).transform(lons, lats)
+    xs, ys = np.asarray(xs), np.asarray(ys)
+    good = np.isfinite(xs) & np.isfinite(ys)
+    bounds = (float(xs[good].min()), float(xs[good].max()),
+              float(ys[good].min()), float(ys[good].max()))
+    return Projection(name=GLOBE, crs=crs, max_lat=90.0, min_lat=-90.0,
+                      bounds=bounds, lon_0=lon0, lon_halfspan=180.0,
+                      lat_0=lat0, hemisphere=True)
+
+
 def _build_lambert(name: str, lon_0: float | None,
                    lat_0: float | None) -> Projection:
     d = LAMBERT_DEFS[name]
@@ -246,9 +393,12 @@ def get_projection(name: str, lon_0: float | None = None,
                    lat_0: float | None = None) -> Projection:
     """Build a :class:`Projection` by name.
 
-    For Lambert presets, *lon_0*/*lat_0* override the default point of natural
-    origin; they are ignored for the fixed world projections.
+    For Lambert presets and the Globe, *lon_0*/*lat_0* override the default
+    point of natural origin; they are ignored for the fixed world
+    projections.
     """
+    if name == GLOBE:
+        return _build_globe(lon_0, lat_0)
     if name in LAMBERT_DEFS:
         return _build_lambert(name, lon_0, lat_0)
     crs, max_lat = PROJECTION_DEFS[name]
