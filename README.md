@@ -50,12 +50,13 @@ offline desktop application.
   the toolbar, `Ctrl+=` / `Ctrl+-`, or the toolbar's rubber-band zoom.
   Panning east or west **loops around the globe** seamlessly.
 - **Map projections**: Equirectangular (default), Mercator, Robinson,
-  Mollweide, Natural Earth, and Winkel Tripel, plus regional **Lambert**
-  projections (North America, Europe, Asia, South America, Africa, and a
-  custom Lambert Azimuthal) with a **customizable point of natural origin** -
-  set the central meridian and latitude of origin to re-centre the map on
-  your region. Every layer, label, point, and the satellite basemap is
-  reprojected live.
+  Mollweide, Natural Earth, and Winkel Tripel, a **Globe (Orthographic)**
+  view that shows the Earth as a disk seen from space, plus regional
+  **Lambert** projections (North America, Europe, Asia, South America,
+  Africa, and a custom Lambert Azimuthal). The Globe and the Lambert
+  projections take a **customizable centre** - set the central meridian and
+  latitude to spin the globe or re-centre the map on your region. Every
+  layer, label, point, and the satellite basemap is reprojected live.
 - **Basemaps**: *Simple* (white with black borders) or *Satellite*
   (full color, slower - Natural Earth shaded relief, fully offline).
 - **~30 Natural Earth layer toggles**, organized in a tabbed side panel:
