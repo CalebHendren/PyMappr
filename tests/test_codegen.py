@@ -107,7 +107,8 @@ def test_python_output_is_valid_and_placeholder_free():
     compile(code, "recreate_map.py", "exec")  # real syntax check
     assert codecheck.validate_code("Python", code) == []
     assert '"My Project"' in code
-    assert "no AI involved" in code
+    assert "deterministically" in code
+    assert "no AI involved" not in code
 
 
 def test_r_output_is_valid_and_placeholder_free():

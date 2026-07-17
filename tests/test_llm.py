@@ -121,15 +121,28 @@ def test_build_prompt_sample_instruction():
     assert "deliberately NOT shared" in system_off
 
 
-def test_build_prompt_adds_attribution():
+def test_build_prompt_leaves_attribution_to_pymappr():
+    # PyMappr adds the credit line itself, so the prompt no longer asks
+    # the model to include one.
     summary = llm.describe_map(make_state(), [make_entry()])
-    system, _user = llm.build_prompt(summary, "Python", model="gpt-5.6")
-    assert (f"Made with PyMappr {llm.__version__} + gpt-5.6 - "
-            f"{llm.REPO_URL}") in system
-    assert "as a comment" in system  # placed at the top of the script
-    # Falls back gracefully when the model field is somehow blank.
-    system_blank, _ = llm.build_prompt(summary, "R")
-    assert "an LLM" in system_blank
+    system, _user = llm.build_prompt(summary, "Python")
+    assert "attribution" not in system.lower()
+    assert "Made with PyMappr" not in system
+
+
+def test_prepend_attribution_adds_credit_comment():
+    code = llm.prepend_attribution("print('hi')\n", "Python", "gpt-5.6")
+    assert code.splitlines()[0] == (
+        f"# Made with PyMappr {llm.__version__} + gpt-5.6 - {llm.REPO_URL}")
+    # Falls back gracefully when the model is somehow blank.
+    assert "an LLM" in llm.attribution_comment("R", "")
+    # A shebang stays first so the script remains executable; the credit
+    # follows it.
+    shebang = llm.prepend_attribution("#!/usr/bin/env python3\nx = 1\n",
+                                      "Python", "gpt-5.6")
+    lines = shebang.splitlines()
+    assert lines[0] == "#!/usr/bin/env python3"
+    assert lines[1].startswith("# Made with PyMappr")
 
 
 def test_build_prompt_mentions_language_and_notes():

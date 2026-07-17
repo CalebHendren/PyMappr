@@ -46,9 +46,11 @@ class LLMAssistDialog(tk.Toplevel):
         self.transient(master)
         self.minsize(560, 620)
         self._worker: threading.Thread | None = None
-        # The language the last reply was generated for, so validation
-        # still checks the right syntax after the radio button changes.
+        # The language and model the last reply was generated for, so
+        # validation still checks the right syntax - and the saved code
+        # carries the right credit - after the fields change.
         self._generated_language: str | None = None
+        self._generated_model: str | None = None
         # Per-provider field edits, seeded from saved settings.
         stored = projects.load_settings().get("llm_assist", {})
         stored = stored if isinstance(stored, dict) else {}
@@ -320,8 +322,7 @@ class LLMAssistDialog(tk.Toplevel):
         return llm.build_prompt(summary, self._effective_language(),
                                 extra=self._extra.get("1.0", "end"),
                                 with_image=self._image_var.get(),
-                                with_sample=sample > 0,
-                                model=self._model_var.get().strip())
+                                with_sample=sample > 0)
 
     def _preview(self) -> None:
         system, user = self._build_prompt()
@@ -388,6 +389,7 @@ class LLMAssistDialog(tk.Toplevel):
 
         self._generate_button.config(state="disabled")
         self._generated_language = self._effective_language()
+        self._generated_model = model
         self._status.config(
             text=f"Asking {model} via {name}\N{HORIZONTAL ELLIPSIS} "
                  "(this can take a few minutes)")
@@ -489,9 +491,12 @@ class LLMAssistDialog(tk.Toplevel):
                        ("All files", "*.*")])
         if not path:
             return
+        model = self._generated_model or self._model_var.get().strip()
+        code = llm.prepend_attribution(llm.extract_code(reply), language,
+                                       model)
         try:
             with open(path, "w", encoding="utf-8") as handle:
-                handle.write(llm.extract_code(reply) + "\n")
+                handle.write(code + "\n")
         except OSError as exc:
             self._status.config(text=f"Could not save: {exc}")
             return
