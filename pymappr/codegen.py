@@ -26,7 +26,8 @@ import math
 
 from pymappr import __version__
 from pymappr.layers import CONTINENT_EXTENTS
-from pymappr.projections import get_projection, proj4_string
+from pymappr.projections import (CAP_CLIP_RADIUS, get_projection, is_globe,
+                                 proj4_string)
 from pymappr.renderer import (FILL_COLORS, FILL_LAYERS, LINE_LAYERS,
                               POINT_LAYERS)
 from pymappr.styles import (PointStyle, attribute_style_maps,
@@ -369,12 +370,24 @@ def build_config(state: dict, entries, project_name: str = "map") -> dict:
     title = str(legend.get("title", "")).strip()
     if not title and len(datasets) == 1 and datasets[0]["group_col"]:
         title = datasets[0]["group_col"]
+    # The orthographic globe only projects one hemisphere; the far side
+    # is infinite, so the script clips layers to the visible cap and
+    # frames the projected disk directly (world_bounds).
+    clip_cap = None
+    world_bounds = None
+    if is_globe(projection):
+        globe = get_projection(projection, lon0, lat0)
+        clip_cap = (round(globe.lon_0, 6), round(globe.lat_0, 6),
+                    round(CAP_CLIP_RADIUS, 6))
+        world_bounds = tuple(round(v, 3) for v in globe.bounds)
     return {
         "project": project_name,
         "generator": f"PyMappr {__version__}",
         "projection": projection,
         "crs": proj4_string(projection, lon0, lat0) or "EPSG:4326",
         "extent": view_extent_lonlat(state),
+        "clip_cap": clip_cap,
+        "world_bounds": world_bounds,
         "layers": layers,
         "datasets": datasets,
         "styles": styles,
@@ -487,6 +500,11 @@ def _py_config(config: dict) -> str:
     extent = tuple(round(v, 4) for v in config["extent"])
     lines.append(f"EXTENT_LONLAT = {_py(extent)}"
                  "  # lon_min, lon_max, lat_min, lat_max")
+    lines.append(f'CLIP_CAP = {_py(config["clip_cap"])}'
+                 "  # (lon0, lat0, radius) visible cap for the globe, else "
+                 "None")
+    lines.append(f'WORLD_BOUNDS = {_py(config["world_bounds"])}'
+                 "  # projected disk to frame the globe (None = use EXTENT)")
     lines.append(f'POINT_ALPHA = {_py(config["point_alpha"])}')
     lines.append(f'DPI = {_py(config["dpi"])}')
     lines.append(f'GRID_INTERVAL = {_py(config["graticule"])}'
@@ -610,8 +628,42 @@ def filter_layer(gdf, spec):
     return gdf[mask] if keep else gdf[~mask]
 
 
+def cap_polygon(lon0, lat0, radius):
+    """The visible spherical cap (a lon/lat polygon) for clipping to an
+    orthographic globe's near hemisphere, with +/-360 copies so a cap
+    crossing the antimeridian still covers data stored in [-180, 180]."""
+    from shapely import affinity
+    from shapely.geometry import Polygon
+    from shapely.ops import unary_union
+
+    az = np.linspace(0.0, 2.0 * np.pi, 181)
+    phi0, r = np.radians(lat0), np.radians(radius)
+    lat = np.arcsin(np.sin(phi0) * np.cos(r)
+                    + np.cos(phi0) * np.sin(r) * np.cos(az))
+    dlon = np.arctan2(np.sin(az) * np.sin(r) * np.cos(phi0),
+                      np.cos(r) - np.sin(phi0) * np.sin(lat))
+    lon, lat = lon0 + np.degrees(dlon), np.degrees(lat)
+    if lat0 + radius >= 90.0:      # cap encloses the north pole
+        order = np.argsort(lon)
+        shell = list(zip(lon[order], lat[order]))
+        shell += [(lon0 + 180.0, 90.0), (lon0 - 180.0, 90.0)]
+    elif lat0 - radius <= -90.0:   # ... or the south pole
+        order = np.argsort(lon)
+        shell = list(zip(lon[order], lat[order]))
+        shell += [(lon0 + 180.0, -90.0), (lon0 - 180.0, -90.0)]
+    else:
+        shell = list(zip(lon, lat))
+    cap = Polygon(shell).buffer(0)
+    return unary_union([affinity.translate(cap, xoff=off)
+                        for off in (-360.0, 0.0, 360.0)])
+
+
 def to_map_crs(gdf):
-    """Reproject any GeoDataFrame/GeoSeries into the map projection."""
+    """Reproject any GeoDataFrame/GeoSeries into the map projection,
+    first clipping to the visible hemisphere on an orthographic globe
+    (the far side has no finite projection)."""
+    if CLIP_CAP is not None:
+        gdf = gdf.clip(cap_polygon(*CLIP_CAP))
     return gdf.to_crs(MAP_CRS)
 
 
@@ -745,14 +797,20 @@ def densified_box(lon_min, lon_max, lat_min, lat_max, n=40):
 
 
 def set_extent(ax):
-    """Zoom the axes to EXTENT_LONLAT, projected into the map CRS."""
-    lons, lats = densified_box(*EXTENT_LONLAT)
-    edge = to_map_crs(gpd.GeoSeries(gpd.points_from_xy(lons, lats),
-                                    crs="EPSG:4326"))
-    xs, ys = edge.x, edge.y
-    good = np.isfinite(xs) & np.isfinite(ys)
-    ax.set_xlim(float(xs[good].min()), float(xs[good].max()))
-    ax.set_ylim(float(ys[good].min()), float(ys[good].max()))
+    """Zoom the axes to EXTENT_LONLAT (projected into the map CRS), or to
+    the whole projected disk on an orthographic globe (WORLD_BOUNDS)."""
+    if WORLD_BOUNDS is not None:
+        x0, x1, y0, y1 = WORLD_BOUNDS
+    else:
+        lons, lats = densified_box(*EXTENT_LONLAT)
+        edge = to_map_crs(gpd.GeoSeries(gpd.points_from_xy(lons, lats),
+                                        crs="EPSG:4326"))
+        xs, ys = edge.x, edge.y
+        good = np.isfinite(xs) & np.isfinite(ys)
+        x0, x1 = float(xs[good].min()), float(xs[good].max())
+        y0, y1 = float(ys[good].min()), float(ys[good].max())
+    ax.set_xlim(x0, x1)
+    ax.set_ylim(y0, y1)
     ax.set_aspect("equal")
 
 
@@ -897,6 +955,21 @@ def _r_config(config: dict) -> str:
     extent = tuple(round(v, 4) for v in config["extent"])
     lines.append(f'EXTENT_LONLAT <- c({", ".join(_r(v) for v in extent)})'
                  "  # lon_min, lon_max, lat_min, lat_max")
+    clip_cap = config["clip_cap"]
+    if clip_cap is None:
+        lines.append("CLIP_CAP <- NULL  # (lon0, lat0, radius) visible cap "
+                     "for the globe, else NULL")
+    else:
+        lines.append(f'CLIP_CAP <- c({", ".join(_r(v) for v in clip_cap)})'
+                     "  # (lon0, lat0, radius) visible cap for the globe")
+    world_bounds = config["world_bounds"]
+    if world_bounds is None:
+        lines.append("WORLD_BOUNDS <- NULL  # projected disk to frame the "
+                     "globe (NULL = use EXTENT)")
+    else:
+        lines.append("WORLD_BOUNDS <- c("
+                     f'{", ".join(_r(v) for v in world_bounds)})'
+                     "  # projected disk to frame the globe")
     lines.append(f'POINT_ALPHA <- {_r(config["point_alpha"])}')
     lines.append(f'DPI <- {_r(config["dpi"])}')
     lines.append(f'GRID_INTERVAL <- {_r(config["graticule"])}'
@@ -1075,13 +1148,54 @@ load_all_points <- function() {
   sf::st_as_sf(merged, coords = c("lon", "lat"), crs = "EPSG:4326")
 }
 
+cap_polygon <- function(lon0, lat0, radius) {
+  # The visible spherical cap (a lon/lat polygon) for clipping to an
+  # orthographic globe's near hemisphere, with +/-360 copies so a cap
+  # crossing the antimeridian still covers data stored in [-180, 180].
+  az <- seq(0, 2 * pi, length.out = 181)
+  phi0 <- lat0 * pi / 180
+  r <- radius * pi / 180
+  lat <- asin(sin(phi0) * cos(r) + cos(phi0) * sin(r) * cos(az))
+  dlon <- atan2(sin(az) * sin(r) * cos(phi0),
+                cos(r) - sin(phi0) * sin(lat))
+  lon <- lon0 + dlon * 180 / pi
+  lat <- lat * 180 / pi
+  if (lat0 + radius >= 90) {          # cap encloses the north pole
+    ord <- order(lon)
+    coords <- rbind(cbind(lon[ord], lat[ord]),
+                    c(lon0 + 180, 90), c(lon0 - 180, 90),
+                    c(lon[ord][1], lat[ord][1]))
+  } else if (lat0 - radius <= -90) {  # ... or the south pole
+    ord <- order(lon)
+    coords <- rbind(cbind(lon[ord], lat[ord]),
+                    c(lon0 + 180, -90), c(lon0 - 180, -90),
+                    c(lon[ord][1], lat[ord][1]))
+  } else {
+    coords <- cbind(lon, lat)         # az 0..2pi already closes the ring
+  }
+  base <- sf::st_polygon(list(coords))
+  parts <- lapply(c(-360, 0, 360), function(off) base + c(off, 0))
+  sf::st_make_valid(sf::st_union(sf::st_sfc(parts, crs = "EPSG:4326")))
+}
+
+to_map_crs <- function(data) {
+  # Reproject into the map projection, first clipping to the visible
+  # hemisphere on an orthographic globe (the far side has no finite
+  # projection).
+  if (!is.null(CLIP_CAP)) {
+    cap <- cap_polygon(CLIP_CAP[1], CLIP_CAP[2], CLIP_CAP[3])
+    data <- suppressWarnings(sf::st_intersection(data, cap))
+  }
+  sf::st_transform(data, MAP_CRS)
+}
+
 base_layer_geom <- function(layer) {
   # One ggplot2 geom_sf for a configured Natural Earth layer.
   data <- load_natural_earth(layer$name, layer$category, layer$scale,
                              layer$member)
   data <- filter_layer(data, layer$filter_column, layer$filter_values,
                        layer$filter_keep)
-  data <- sf::st_transform(data, MAP_CRS)
+  data <- to_map_crs(data)
   if (layer$kind == "fill") {
     geom_sf(data = data, fill = layer$fill,
             color = if (is.null(layer$edgecolor)) NA else layer$edgecolor,
@@ -1096,7 +1210,12 @@ base_layer_geom <- function(layer) {
 }
 
 projected_extent <- function() {
-  # EXTENT_LONLAT projected into the map CRS (edges densified).
+  # EXTENT_LONLAT projected into the map CRS (edges densified), or the
+  # whole projected disk on an orthographic globe (WORLD_BOUNDS).
+  if (!is.null(WORLD_BOUNDS)) {
+    return(list(xlim = c(WORLD_BOUNDS[1], WORLD_BOUNDS[2]),
+                ylim = c(WORLD_BOUNDS[3], WORLD_BOUNDS[4])))
+  }
   n <- 40
   lons <- c(seq(EXTENT_LONLAT[1], EXTENT_LONLAT[2], length.out = n),
             seq(EXTENT_LONLAT[1], EXTENT_LONLAT[2], length.out = n),
@@ -1125,11 +1244,11 @@ build_map <- function() {
       crs = sf::st_crs("EPSG:4326"),
       lon = seq(-180, 180, by = GRID_INTERVAL),
       lat = seq(-90, 90, by = GRID_INTERVAL))
-    p <- p + geom_sf(data = sf::st_transform(grid, MAP_CRS),
+    p <- p + geom_sf(data = to_map_crs(grid),
                      color = "#b0b0b0", linewidth = 0.15, alpha = 0.7)
   }
   if (length(DATASETS) > 0) {
-    points <- sf::st_transform(load_all_points(), MAP_CRS)
+    points <- to_map_crs(load_all_points())
     title <- if (LEGEND$title == "") NULL else LEGEND$title
     # Legend key marker sizes = the mapped point sizes scaled by
     # marker_scale, matching matplotlib's markerscale (the sizes drawn on
