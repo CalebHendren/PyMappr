@@ -352,8 +352,11 @@ class MapRenderer:
     def _wrap_view(self) -> None:
         """Loop the view around the globe: when a pan carries the view
         center past the antimeridian, shift it one world-width back. The
-        neighbouring world copies keep the map seamless while crossing."""
-        if self._in_wrap:
+        neighbouring world copies keep the map seamless while crossing.
+
+        The orthographic globe is a disk, not a repeating strip, so it does
+        not wrap."""
+        if self._in_wrap or self.proj.hemisphere:
             return
         wx0, wx1 = self.proj.bounds[0], self.proj.bounds[1]
         world_w = wx1 - wx0
@@ -377,8 +380,8 @@ class MapRenderer:
                        lat_0: float | None = None) -> None:
         """Switch projection and rebuild every artist in the new one.
 
-        For Lambert presets *lon_0*/*lat_0* set the point of natural origin;
-        they are ignored for the fixed world projections."""
+        For Lambert presets and the Globe *lon_0*/*lat_0* set the point of
+        natural origin; they are ignored for the fixed world projections."""
         proj = get_projection(name, lon_0, lat_0)
         if proj == self.proj:
             return
@@ -429,14 +432,32 @@ class MapRenderer:
         if self._bathymetry_visible:
             self._show_bathymetry()
         self._apply_graticule()
+        self._apply_horizon()
         self._apply_compass()
         self._rebuild_points()
         self._refresh_point_layers()
         self._refresh_labels()
 
     def _offsets(self) -> tuple[float, ...]:
+        # The orthographic globe is a single disk: no wrap-around copies.
+        if self.proj.hemisphere:
+            return (0.0,)
         world_w = self.proj.world_width
         return tuple(k * world_w for k in _WRAP_OFFSETS)
+
+    def _apply_horizon(self) -> None:
+        """The globe's disk outline (the horizon circle). Other
+        projections have no horizon and draw nothing."""
+        for artist in self._artists.pop("horizon", []):
+            artist.remove()
+        if not self.proj.hemisphere:
+            return
+        xs, ys = self.proj.horizon_xy()
+        with self._preserving_view():
+            (line,) = self.ax.plot(xs, ys, color="#787878", linewidth=0.8,
+                                   zorder=Z_GRID)
+            line._pym_offset = 0.0
+            self._artists["horizon"] = [line]
 
     # --------------------------------------------------------------- basemap
 
@@ -504,7 +525,7 @@ class MapRenderer:
         return self.store.frame_projected(source, self.proj.crs,
                                           self.proj.max_lat,
                                           zoom=self._zoom_level(),
-                                          clip_box=self.proj.clip_box())
+                                          clip_shape=self.proj.clip_shape())
 
     def _sync_resolutions(self) -> None:
         """Swap multi-resolution layers to the resolution matching the new
@@ -713,7 +734,7 @@ class MapRenderer:
         def plot(_directory: str) -> list:
             gdf = self.store.frame_projected("bathymetry", self.proj.crs,
                                              self.proj.max_lat,
-                                             clip_box=self.proj.clip_box())
+                                             clip_shape=self.proj.clip_shape())
             artists = []
             for _letter, depth in BATHYMETRY_STEPS:
                 sub = gdf[gdf["depth"] == depth]
