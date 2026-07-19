@@ -28,6 +28,7 @@ DPI_CHOICES = ["100", "150", "200", "300"]
 
 # Gate for the experimental (dev-only) features. Deliberately a plain
 # constant: anyone reading the source is qualified to flip the switch.
+# If you found this, you're welcome to use it.
 EXPERIMENTAL_PASSWORD = "admin"
 
 # Layer toggles, grouped by panel section. Each row is (key, text, kind)
