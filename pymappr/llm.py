@@ -35,6 +35,16 @@ ANTHROPIC_VERSION = "2023-06-01"
 MAX_TOKENS = 8192  # Anthropic requires an explicit output cap
 DEFAULT_TIMEOUT = 300.0  # reasoning models can take minutes
 
+# Per-API ceiling for the sampling temperature. Anthropic tops out at 1.0;
+# the OpenAI-compatible and Gemini APIs accept up to 2.0. Requests are
+# clamped to this range so an over-eager setting is not rejected outright.
+_TEMPERATURE_MAX = {"anthropic": 1.0, "openai": 2.0, "gemini": 2.0}
+
+
+def _clamp_temperature(api: str, temperature: float) -> float:
+    """The requested temperature, clamped to [0, the API's ceiling]."""
+    return max(0.0, min(float(temperature), _TEMPERATURE_MAX.get(api, 2.0)))
+
 # Home page credited in the attribution comment PyMappr prepends to the
 # generated code.
 REPO_URL = f"https://github.com/{GITHUB_REPO}"
@@ -250,8 +260,13 @@ def describe_map(state: dict, entries, sample: int = 0) -> dict:
 
 def build_prompt(summary: dict, language: str, extra: str = "",
                  with_image: bool = False,
-                 with_sample: bool = False) -> tuple[str, str]:
-    """The (system, user) texts sent to the provider, verbatim."""
+                 with_sample: bool = False,
+                 starter_code: str = "") -> tuple[str, str]:
+    """The (system, user) texts sent to the provider, verbatim.
+
+    *starter_code*, when given, is PyMappr's own deterministic script for
+    the same map (produced locally, no AI). It is offered to the model as
+    a starting point to build on rather than starting from scratch."""
     data_rule = (
         "- Only a small sample of the first data rows is included for "
         "reference; the full dataset was NOT shared. Never invent "
@@ -261,6 +276,11 @@ def build_prompt(summary: dict, language: str, extra: str = "",
         "- The data rows, coordinates, and category values were "
         "deliberately NOT shared with you. Never invent example data; "
         "load everything from the user's file.\n")
+    starter_rule = (
+        "- A deterministic starter script (produced locally by PyMappr, "
+        "no AI) is included below. Build on it: keep what is correct, fix "
+        "what is wrong, and improve it rather than starting over.\n"
+        if starter_code.strip() else "")
     system = (
         "You are helping a researcher document a map they made in "
         f"PyMappr, a desktop point-distribution mapping application. "
@@ -276,12 +296,18 @@ def build_prompt(summary: dict, language: str, extra: str = "",
         "extent, base layers, point styling, and legend as described.\n"
         "- Comment the script so another researcher can audit each "
         "step, and state any assumptions in comments at the top.\n"
+        + starter_rule +
         "- Reply with only the script, in a single code block.")
     user = ("Recreate this map.\n\nMap configuration (JSON):\n"
             + json.dumps(summary, indent=2, sort_keys=True))
     if with_image:
         user += ("\n\nA PNG snapshot of the rendered map is attached "
                  "for reference.")
+    if starter_code.strip():
+        user += ("\n\nPyMappr also generated this deterministic starter "
+                 "script for the same map (no AI - produced locally). Use "
+                 "it as your starting point:\n\n```\n"
+                 + starter_code.strip() + "\n```")
     if extra.strip():
         user += "\n\nAdditional notes from the user:\n" + extra.strip()
     return system, user
@@ -312,10 +338,17 @@ def prepend_attribution(code: str, language: str, model: str) -> str:
 
 def build_request(api: str, endpoint: str, model: str, api_key: str,
                   system: str, user: str,
-                  image_png: bytes | None = None):
-    """Build one provider request; returns (url, headers, body bytes)."""
+                  image_png: bytes | None = None,
+                  temperature: float | None = None):
+    """Build one provider request; returns (url, headers, body bytes).
+
+    *temperature*, when given, sets the sampling temperature (clamped to
+    the API's supported range). Left as ``None`` the provider's own
+    default is used - which some reasoning models require."""
     b64 = (base64.b64encode(image_png).decode("ascii")
            if image_png else None)
+    temp = (_clamp_temperature(api, temperature)
+            if temperature is not None else None)
     if api == "anthropic":
         content: list[dict] = []
         if b64:
@@ -327,6 +360,8 @@ def build_request(api: str, endpoint: str, model: str, api_key: str,
         body = {"model": model, "max_tokens": MAX_TOKENS,
                 "system": system,
                 "messages": [{"role": "user", "content": content}]}
+        if temp is not None:
+            body["temperature"] = temp
         headers = {"content-type": "application/json",
                    "x-api-key": api_key,
                    "anthropic-version": ANTHROPIC_VERSION}
@@ -338,6 +373,8 @@ def build_request(api: str, endpoint: str, model: str, api_key: str,
                                           "data": b64}})
         body = {"system_instruction": {"parts": [{"text": system}]},
                 "contents": [{"role": "user", "parts": parts}]}
+        if temp is not None:
+            body["generationConfig"] = {"temperature": temp}
         headers = {"content-type": "application/json",
                    "x-goog-api-key": api_key}
         # The default endpoint is the models base; a pasted full URL
@@ -355,6 +392,8 @@ def build_request(api: str, endpoint: str, model: str, api_key: str,
         body = {"model": model,
                 "messages": [{"role": "system", "content": system},
                              {"role": "user", "content": user_content}]}
+        if temp is not None:
+            body["temperature"] = temp
         headers = {"content-type": "application/json"}
         if api_key:  # local OpenAI-compatible servers may not need one
             headers["authorization"] = f"Bearer {api_key}"
@@ -415,6 +454,7 @@ def _http_error_message(exc: urllib.error.HTTPError) -> str:
 def generate_code(api: str, endpoint: str, model: str, api_key: str,
                   system: str, user: str,
                   image_png: bytes | None = None,
+                  temperature: float | None = None,
                   timeout: float = DEFAULT_TIMEOUT) -> str:
     """Send one request to the provider and return the reply text.
 
@@ -422,7 +462,8 @@ def generate_code(api: str, endpoint: str, model: str, api_key: str,
     :class:`LLMError` with a readable message on any failure.
     """
     url, headers, body = build_request(api, endpoint, model, api_key,
-                                       system, user, image_png)
+                                       system, user, image_png,
+                                       temperature=temperature)
     if not url.lower().startswith(("http://", "https://")):
         raise LLMError(f"Not a valid endpoint URL: {url!r}")
     request = urllib.request.Request(

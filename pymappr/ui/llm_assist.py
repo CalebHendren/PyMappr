@@ -13,9 +13,12 @@ import threading
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
-from pymappr import codecheck, llm, projects
+from pymappr import codecheck, codegen, llm, projects
 
 WRAP = 520
+# Seed value for the (opt-in) sampling temperature control. Low, because a
+# faithful map-recreating script wants determinism over creativity.
+DEFAULT_TEMPERATURE = 0.2
 WARNING_BG = "#fff3cd"
 WARNING_FG = "#664d03"
 WARNING_TEXT = (
@@ -34,6 +37,14 @@ OTHER_LANGUAGE = "Other"
 OTHER_LANGUAGE_NOTE = (
     "\N{WARNING SIGN} Only Python and R are tested. Any other language is "
     "best-effort - the generated code may be wrong or may not run at all.")
+
+
+def _format_temperature(value) -> str:
+    """A stored temperature (float or str) as a tidy display string."""
+    try:
+        return f"{float(value):g}"
+    except (TypeError, ValueError):
+        return f"{DEFAULT_TEMPERATURE:g}"
 
 
 class LLMAssistDialog(tk.Toplevel):
@@ -174,6 +185,52 @@ class LLMAssistDialog(tk.Toplevel):
         if not self._sample_var.get():
             self._sample_spin.config(state="disabled")
 
+        # -------------------------------------------- advanced settings
+        advanced = ttk.LabelFrame(body, text="Advanced settings", padding=8)
+        advanced.pack(fill="x", pady=(8, 0))
+
+        temp_row = ttk.Frame(advanced)
+        temp_row.pack(fill="x")
+        self._temperature_enabled_var = tk.BooleanVar(
+            value=bool(stored.get("use_temperature", False)))
+        ttk.Checkbutton(temp_row, text="Set sampling temperature:",
+                        variable=self._temperature_enabled_var,
+                        command=self._on_temperature_toggle).pack(side="left")
+        self._temperature_var = tk.StringVar(
+            value=_format_temperature(stored.get("temperature",
+                                                 DEFAULT_TEMPERATURE)))
+        self._temperature_spin = ttk.Spinbox(
+            temp_row, from_=0.0, to=2.0, increment=0.1, width=6,
+            textvariable=self._temperature_var, command=self._save_settings)
+        self._temperature_spin.pack(side="left", padx=(6, 0))
+        self._temperature_spin.bind("<KeyRelease>",
+                                    lambda _e: self._save_settings())
+        ttk.Label(advanced,
+                  text="(higher = more varied, lower = more deterministic; "
+                       "capped at 1.0 for Anthropic and 2.0 for the others. "
+                       "When off, the provider's default is used - some "
+                       "reasoning models only accept that.)",
+                  foreground="#666666", wraplength=WRAP).pack(anchor="w")
+
+        self._send_code_var = tk.BooleanVar(
+            value=bool(stored.get("send_code", False)))
+        ttk.Checkbutton(
+            advanced,
+            text="Also send PyMappr's own generated code as a starting point",
+            variable=self._send_code_var,
+            command=self._save_settings).pack(anchor="w", pady=(6, 0))
+        ttk.Label(advanced,
+                  text="(sends the deterministic Python/R script PyMappr can "
+                       "export locally, for the model to build on instead of "
+                       "starting from scratch; only Python and R can be "
+                       "generated. Manually-entered datasets are embedded "
+                       "inline, so their real coordinates and values would "
+                       "be shared.)",
+                  foreground="#666666", wraplength=WRAP).pack(anchor="w")
+
+        if not self._temperature_enabled_var.get():
+            self._temperature_spin.config(state="disabled")
+
         ttk.Label(body, text="Add to the prompt (what the columns mean, "
                              "what to look out for, ...):").pack(
             anchor="w", pady=(6, 0))
@@ -281,6 +338,42 @@ class LLMAssistDialog(tk.Toplevel):
             state="normal" if self._sample_var.get() else "disabled")
         self._save_settings()
 
+    def _on_temperature_toggle(self) -> None:
+        # The temperature spinbox is only in play while the box is ticked;
+        # unticked means "let the provider use its own default".
+        self._temperature_spin.config(
+            state="normal" if self._temperature_enabled_var.get()
+            else "disabled")
+        self._save_settings()
+
+    def _temperature(self) -> float:
+        """The configured temperature, parsed and kept in a safe range."""
+        try:
+            return max(0.0, min(float(self._temperature_var.get()), 2.0))
+        except (TypeError, ValueError):
+            return DEFAULT_TEMPERATURE
+
+    def _effective_temperature(self) -> float | None:
+        """The temperature to send, or None to use the provider default."""
+        if not self._temperature_enabled_var.get():
+            return None
+        return self._temperature()
+
+    def _starter_code(self, state: dict) -> str:
+        """PyMappr's own deterministic script for the current map, when the
+        user opted to send it as a starting point. Only Python and R can be
+        generated offline; any other language (or a failure) yields ''."""
+        if not self._send_code_var.get():
+            return ""
+        language = self._effective_language()
+        if language not in codegen.LANGUAGES:
+            return ""
+        try:
+            return codegen.generate_code(state, self.app.entries, language,
+                                         self.app.project_name)
+        except Exception:  # noqa: BLE001 - never block on the starter script
+            return ""
+
     def _sample_count(self) -> int:
         """The configured sample size, clamped to a sane range."""
         try:
@@ -308,6 +401,9 @@ class LLMAssistDialog(tk.Toplevel):
             "send_image": self._image_var.get(),
             "send_sample": self._sample_var.get(),
             "sample_rows": self._sample_count(),
+            "use_temperature": self._temperature_enabled_var.get(),
+            "temperature": self._temperature(),
+            "send_code": self._send_code_var.get(),
             "extra": self._extra.get("1.0", "end").strip(),
             "providers": self._fields,
         }
@@ -317,12 +413,13 @@ class LLMAssistDialog(tk.Toplevel):
 
     def _build_prompt(self) -> tuple[str, str]:
         sample = self._effective_sample()
-        summary = llm.describe_map(self.app._collect_state(),
-                                   self.app.entries, sample=sample)
+        state = self.app._collect_state()
+        summary = llm.describe_map(state, self.app.entries, sample=sample)
         return llm.build_prompt(summary, self._effective_language(),
                                 extra=self._extra.get("1.0", "end"),
                                 with_image=self._image_var.get(),
-                                with_sample=sample > 0)
+                                with_sample=sample > 0,
+                                starter_code=self._starter_code(state))
 
     def _preview(self) -> None:
         system, user = self._build_prompt()
@@ -390,6 +487,7 @@ class LLMAssistDialog(tk.Toplevel):
         self._generate_button.config(state="disabled")
         self._generated_language = self._effective_language()
         self._generated_model = model
+        temperature = self._effective_temperature()
         self._status.config(
             text=f"Asking {model} via {name}\N{HORIZONTAL ELLIPSIS} "
                  "(this can take a few minutes)")
@@ -398,7 +496,8 @@ class LLMAssistDialog(tk.Toplevel):
             try:
                 reply = llm.generate_code(provider.api, endpoint, model,
                                           api_key, system, user,
-                                          image_png=image)
+                                          image_png=image,
+                                          temperature=temperature)
             except llm.LLMError as exc:
                 self._deliver(error=str(exc))
                 return

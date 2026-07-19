@@ -121,6 +121,19 @@ def test_build_prompt_sample_instruction():
     assert "deliberately NOT shared" in system_off
 
 
+def test_build_prompt_includes_starter_code():
+    summary = llm.describe_map(make_state(), [make_entry()])
+    system, user = llm.build_prompt(
+        summary, "Python", starter_code="import pandas as pd  # STARTER")
+    assert "STARTER" in user
+    assert "starting point" in user.lower()
+    assert "starter script" in system.lower()
+    # Off by default: no starter wording leaks into the prompt.
+    system_off, user_off = llm.build_prompt(summary, "Python")
+    assert "STARTER" not in user_off
+    assert "starter script" not in system_off.lower()
+
+
 def test_build_prompt_leaves_attribution_to_pymappr():
     # PyMappr adds the credit line itself, so the prompt no longer asks
     # the model to include one.
@@ -229,6 +242,55 @@ def test_build_request_unknown_api():
     with pytest.raises(llm.LLMError):
         llm.build_request("smoke-signals", "https://x", "m", "k",
                           "sys", "usr")
+
+
+def test_build_request_includes_temperature():
+    # OpenAI and Anthropic carry it at the top level; Gemini nests it.
+    _url, _headers, body = llm.build_request(
+        "openai", "https://api.openai.com/v1/chat/completions",
+        "gpt-5.6", "sk", "sys", "usr", temperature=0.7)
+    assert json.loads(body)["temperature"] == 0.7
+
+    _url, _headers, body = llm.build_request(
+        "anthropic", "https://api.anthropic.com/v1/messages",
+        "claude-opus-4-8", "sk", "sys", "usr", temperature=0.5)
+    assert json.loads(body)["temperature"] == 0.5
+
+    _url, _headers, body = llm.build_request(
+        "gemini", "https://generativelanguage.googleapis.com/v1beta/models",
+        "gemini-3.1-pro-preview", "k", "sys", "usr", temperature=0.3)
+    assert json.loads(body)["generationConfig"]["temperature"] == 0.3
+
+
+def test_build_request_omits_temperature_by_default():
+    for api, endpoint in (
+            ("openai", "https://x/v1/chat/completions"),
+            ("anthropic", "https://api.anthropic.com/v1/messages"),
+            ("gemini", "https://x/v1beta/models")):
+        _url, _headers, body = llm.build_request(
+            api, endpoint, "m", "k", "sys", "usr")
+        payload = json.loads(body)
+        assert "temperature" not in payload
+        assert "generationConfig" not in payload
+
+
+def test_build_request_clamps_temperature_to_api_ceiling():
+    # Anthropic tops out at 1.0; the others accept up to 2.0. Negatives
+    # clamp up to 0.0.
+    _url, _headers, body = llm.build_request(
+        "anthropic", "https://api.anthropic.com/v1/messages",
+        "m", "k", "sys", "usr", temperature=1.8)
+    assert json.loads(body)["temperature"] == 1.0
+
+    _url, _headers, body = llm.build_request(
+        "openai", "https://x/v1/chat/completions",
+        "m", "k", "sys", "usr", temperature=5.0)
+    assert json.loads(body)["temperature"] == 2.0
+
+    _url, _headers, body = llm.build_request(
+        "openai", "https://x/v1/chat/completions",
+        "m", "k", "sys", "usr", temperature=-1.0)
+    assert json.loads(body)["temperature"] == 0.0
 
 
 # ------------------------------------------------------------ responses
