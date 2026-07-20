@@ -133,16 +133,21 @@ offline desktop application.
   reproduce or adapt it in an IDE - it just works, with no setup.
   Selecting a language pastes pre-made function templates filled in with
   your map settings, generated locally and deterministically (no AI, no
-  network at export time). Take it away two ways: a single
-  **self-contained file** - point data embedded inline, and missing
-  packages installed automatically on first run - that you can paste into
-  PyCharm, RStudio, or VS Code and click Run; or a whole **working
-  directory** (the script, your point data as CSV, a `requirements.txt` /
-  `install.R`, a README, a `.gitignore`, and - for R - an RStudio
-  `.Rproj`) to point an IDE straight at. Either way the script downloads
-  its base layers from Natural Earth and recreates the projection,
-  extent, layers, styling, and legend. Reachable from *File > Export map
-  as code* or the Map tab's Export section.
+  network at export time). The Python script **replicates PyMappr's own
+  renderer** - the same view, figure geometry, layer resolutions, draw
+  order, colors, satellite basemap, bathymetry, graticule with degree
+  labels, map labels, compass, marker styling, and legend - so its
+  output matches the map in the app pixel for pixel; the R script
+  mirrors the same map as closely as sf + ggplot2 allow. Take it away
+  two ways: a single **self-contained file** - point data embedded
+  inline, and missing packages installed automatically on first run -
+  that you can paste into PyCharm, RStudio, or VS Code and click Run; or
+  a whole **working directory** (the script, your point data as CSV, a
+  `requirements.txt` / `install.R`, a README, a `.gitignore`, and - for
+  R - an RStudio `.Rproj`) to point an IDE straight at. Either way the
+  script downloads its map data from Natural Earth and caches it next to
+  itself. Reachable from *File > Export map as code* or the Map tab's
+  Export section.
 - **Update check**: at most once per day, on launch, PyMappr asks the GitHub
   releases API whether a newer version exists and offers to open the
   releases page (silent when offline). *Help > Check for updates* and the
