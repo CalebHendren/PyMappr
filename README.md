@@ -129,15 +129,20 @@ offline desktop application.
   appear in it (their colors and symbols stay stable while you toggle).
 - **Save map as PNG** at 100-300 DPI.
 - **Export as code**: turn the current map into a ready-to-run **Python
-  (pandas + geopandas + matplotlib) or R (sf + ggplot2) script** to
-  reproduce and adapt it in an IDE. Selecting a language pastes pre-made
-  function templates filled in with your map settings - generated
-  locally and deterministically, no AI and no network involved. The
-  script downloads its base layers from Natural Earth, loads your point
-  data from the original file (manually entered points are embedded
-  inline), and recreates the projection, extent, layers, styling, and
-  legend. Reachable from *File > Export map as code* or the Map tab's
-  Export section.
+  (pandas + geopandas + matplotlib) or R (sf + ggplot2) script** and
+  reproduce or adapt it in an IDE - it just works, with no setup.
+  Selecting a language pastes pre-made function templates filled in with
+  your map settings, generated locally and deterministically (no AI, no
+  network at export time). Take it away two ways: a single
+  **self-contained file** - point data embedded inline, and missing
+  packages installed automatically on first run - that you can paste into
+  PyCharm, RStudio, or VS Code and click Run; or a whole **working
+  directory** (the script, your point data as CSV, a `requirements.txt` /
+  `install.R`, a README, a `.gitignore`, and - for R - an RStudio
+  `.Rproj`) to point an IDE straight at. Either way the script downloads
+  its base layers from Natural Earth and recreates the projection,
+  extent, layers, styling, and legend. Reachable from *File > Export map
+  as code* or the Map tab's Export section.
 - **Update check**: at most once per day, on launch, PyMappr asks the GitHub
   releases API whether a newer version exists and offers to open the
   releases page (silent when offline). *Help > Check for updates* and the
