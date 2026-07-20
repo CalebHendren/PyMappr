@@ -1,3 +1,4 @@
+import math
 import shutil
 import subprocess
 import sys
@@ -8,7 +9,6 @@ import pytest
 
 from pymappr import codecheck, codegen
 from pymappr.data_loader import build_manual_dataset
-from pymappr.layers import CONTINENT_EXTENTS
 from pymappr.projections import get_projection
 from pymappr.projects import DatasetEntry, entry_from_dict
 from pymappr.styles import PointStyle
@@ -151,7 +151,7 @@ def test_python_config_reflects_map_settings():
     assert "MAP_CRS = '+proj=robin +lon_0=0 +datum=WGS84" in code
     assert "POINT_ALPHA = 0.85" in code
     assert "DPI = 300" in code
-    assert "GRID_INTERVAL = 5.0" in code
+    assert "GRATICULE = {'interval': 5.0" in code
     # Enabled layers, including derived ones and the ocean/lake fills.
     assert "'admin_0_countries'" in code
     assert "'rivers_lake_centerlines'" in code
@@ -176,9 +176,9 @@ def test_python_config_reflects_map_settings():
     assert "'title_fontsize': 12.0" in code
     assert "'marker_scale': 1.5" in code
     assert "'label_spacing': 0.8" in code
-    assert "markerscale=LEGEND[\"marker_scale\"]" in code
-    assert "labelspacing=LEGEND[\"label_spacing\"]" in code
-    assert "title_fontsize=LEGEND[\"title_fontsize\"]" in code
+    assert 'markerscale=LEGEND["marker_scale"]' in code
+    assert 'labelspacing=LEGEND["label_spacing"]' in code
+    assert 'title_fontsize=LEGEND["title_fontsize"]' in code
 
 
 def test_r_config_reflects_map_settings():
@@ -186,7 +186,6 @@ def test_r_config_reflects_map_settings():
     assert 'MAP_CRS <- "+proj=robin +lon_0=0 +datum=WGS84' in code
     assert "POINT_ALPHA <- 0.85" in code
     assert "DPI <- 300" in code
-    assert '"Wyoming" = "#123456"' in code
     assert '"Wyoming" = 8' in code  # Star -> pch 8
     assert '"group_col" = "State"' in code
     assert 'naturalearth.s3.amazonaws.com' in code
@@ -226,10 +225,16 @@ def test_lambert_origin_reaches_the_crs():
         assert "+lat_0=50.0 +lon_0=15.0" in code
 
 
-def test_equirectangular_uses_plain_crs():
+def test_equirectangular_uses_plain_lonlat():
+    # The app draws the plain projection without reprojecting at all; the
+    # export mirrors that with MAP_CRS = None (identity).
     code = codegen.generate_code(
         make_state(map={"projection": "Equirectangular"}), [], "Python")
-    assert "MAP_CRS = 'EPSG:4326'" in code
+    assert "MAP_CRS = None" in code
+    r = codegen.generate_code(
+        make_state(map={"projection": "Equirectangular"}), [], "R")
+    assert 'MAP_CRS <- "EPSG:4326"' in r
+    assert "GEOGRAPHIC <- TRUE" in r
 
 
 def test_globe_export_clips_to_the_visible_hemisphere():
@@ -240,11 +245,10 @@ def test_globe_export_clips_to_the_visible_hemisphere():
     assert codecheck.validate_code("Python", py) == []
     assert "+proj=ortho +lat_0=40.0 +lon_0=-100.0" in py
     assert "CLIP_CAP = (-100.0, 40.0, 88.0)" in py
-    assert "WORLD_BOUNDS = (" in py  # the projected disk to frame
+    assert "'hemisphere': True" in py
     r = codegen.generate_code(state, [file_entry()], "R")
     assert codecheck.validate_code("R", r) == []
     assert "CLIP_CAP <- c(-100.0, 40.0, 88.0)" in r
-    assert "WORLD_BOUNDS <- c(" in r
 
 
 def test_non_globe_export_leaves_clipping_off():
@@ -280,17 +284,24 @@ def test_globe_cap_polygon_runtime_clips_and_stays_finite():
     assert np.isfinite(coords).all()
 
 
-def test_notes_list_unreproduced_features():
+def test_notes_list_only_external_overlays():
+    # Bathymetry, the satellite raster, the compass, and map labels are
+    # now reproduced by the Python script; only the optional external
+    # overlays stay in the not-reproduced notes.
     state = make_state(map={"bathymetry": True, "basemap": "satellite",
+                            "compass": True,
                             "fills": {"biodiversity": True}})
     code = codegen.generate_code(state, [], "Python")
     assert "NOT reproduced" in code
-    assert "Bathymetry" in code
-    assert "satellite" in code
     assert "Biodiversity hotspots" in code
-    assert "compass" in code
-    # ... and nothing pretends to draw them.
-    assert "biodiversity" not in code.split("NE_LAYERS")[1].split("]")[0]
+    notes_block = code.split("NOT reproduced")[1].split('"""')[0]
+    assert "Bathymetry" not in notes_block
+    assert "satellite" not in notes_block
+    assert "compass" not in notes_block
+    # ... and the features themselves are configured for drawing.
+    assert "SATELLITE = True" in code
+    assert "bathymetry_all" in code
+    assert "COMPASS = True" in code
 
 
 def test_capitals_only_swaps_the_cities_layer():
@@ -300,41 +311,196 @@ def test_capitals_only_swaps_the_cities_layer():
     assert "'marker': '*'" in code  # the capitals star
 
 
-# ---------------------------------------------------------------- extent
+# ------------------------------------------------------- view and geometry
 
-def test_view_extent_geographic_partial_view():
-    state = make_state(map={"projection": "Equirectangular"},
-                       view={"xlim": [-30, 60], "ylim": [-10, 40]})
-    assert codegen.view_extent_lonlat(state) == (-30, 60, -10, 40)
-
-
-def test_view_extent_full_world_falls_back_to_continent():
-    state = make_state(map={"projection": "Equirectangular",
-                            "continent": "Europe"},
-                       view={"xlim": [-180, 180], "ylim": [-90, 90]})
-    assert codegen.view_extent_lonlat(state) == CONTINENT_EXTENTS["Europe"]
-
-
-def test_view_extent_projected_view_inverts_to_lonlat():
+def test_view_is_exported_verbatim():
+    # The stored view (projected map coordinates) reaches the script
+    # unchanged - the exported map frames exactly what the app showed.
     projection = get_projection("Robinson")
     x0, x1 = projection.forward([-30.0, 60.0], [0.0, 0.0])[0]
     y = projection.forward([0.0, 0.0], [-10.0, 40.0])[1]
     state = make_state(view={"xlim": [float(x0), float(x1)],
                              "ylim": [float(y[0]), float(y[1])]})
-    lon0, lon1, lat0, lat1 = codegen.view_extent_lonlat(state)
-    # The view is a rectangle in projected space, so its lon/lat bounds
-    # are somewhat wider than the equator span it was built from - but
-    # they must contain it and stay close.
-    assert lon0 == pytest.approx(-30, abs=8) and lon0 <= -30
-    assert lon1 == pytest.approx(60, abs=8) and lon1 >= 60
-    assert lat0 == pytest.approx(-10, abs=1)
-    assert lat1 == pytest.approx(40, abs=1)
+    code = codegen.generate_code(state, [], "Python")
+    assert f"VIEW = ({round(float(x0), 6)}" in code
+    r = codegen.generate_code(state, [], "R")
+    assert f"VIEW <- c({round(float(x0), 6)}" in r
 
 
-def test_view_extent_missing_view_falls_back():
-    state = make_state(view={})
-    assert codegen.view_extent_lonlat(state) == (-180.0, 180.0,
-                                                 -90.0, 90.0)
+def test_missing_view_falls_back_to_padded_continent_extent():
+    state = make_state(view={},
+                       map={"projection": "Equirectangular",
+                            "continent": "Europe"})
+    config = codegen.build_config(state, [])
+    x0, x1, y0, y1 = config["view"]
+    # Europe is (-25, 45, 34, 72); the box is padded to the canvas aspect
+    # so it must contain the preset.
+    assert x0 <= -25 and x1 >= 45
+    assert y0 <= 34 and y1 >= 72
+
+
+def test_zoom_matches_the_renderer_formula():
+    state = make_state(map={"projection": "Equirectangular"},
+                       view={"xlim": [-90, 0], "ylim": [-20, 40]})
+    config = codegen.build_config(state, [])
+    assert config["zoom"] == pytest.approx(math.log2(360.0 / 90.0), abs=1e-3)
+
+
+def test_figure_size_drives_export_geometry():
+    state = make_state(map={"projection": "Equirectangular"},
+                       view={"xlim": [-90, 0], "ylim": [-25, 20]})
+    config = codegen.build_config(state, [], figure_size=(15.68, 8.32))
+    width, height = config["figsize"]
+    assert width == pytest.approx(15.68)
+    # Square map units: axes width/height ratio equals the view ratio.
+    left, bottom, right, top = config["margins"]
+    axes_w = width * (right - left)
+    axes_h = height * (top - bottom)
+    assert axes_w / axes_h == pytest.approx(90.0 / 45.0, rel=1e-3)
+
+
+def test_graticule_labels_follow_the_app():
+    # Labeled ticks only on the plain projection with labels not hidden.
+    on = codegen.build_config(make_state(
+        map={"projection": "Equirectangular"}), [])
+    assert on["graticule"] == {"interval": 5.0, "labels": True}
+    assert on["margins"] == codegen.MARGINS_WITH_TICKS
+    hidden = codegen.build_config(make_state(
+        map={"projection": "Equirectangular",
+             "hide_grid_labels": True}), [])
+    assert hidden["graticule"]["labels"] is False
+    assert hidden["margins"] == codegen.MARGINS_PLAIN
+    curved = codegen.build_config(make_state(), [])  # Robinson
+    assert curved["graticule"]["labels"] is False
+
+
+# ------------------------------------------------- renderer fidelity bits
+
+def test_layers_carry_true_renderer_zorder():
+    code = codegen.generate_code(make_state(), [file_entry()], "Python")
+    ns = exec_python(code)
+    by_key = {}
+    for layer in ns["LAYERS"]:
+        by_key[layer["name"], layer.get("member")] = layer
+    zs = [layer["z"] for layer in ns["LAYERS"]]
+    assert zs == sorted(zs)
+    # Ocean fill below land fill below country lines, like the renderer.
+    kinds = {layer["kind"] for layer in ns["LAYERS"]}
+    assert {"fill", "line", "point"} <= kinds
+    fills = [layer for layer in ns["LAYERS"] if layer["kind"] == "fill"]
+    lines = [layer for layer in ns["LAYERS"] if layer["kind"] == "line"]
+    assert max(f["z"] for f in fills) < max(line["z"] for line in lines)
+
+
+def test_zoom_picks_the_layer_resolution():
+    # Zoomed to the world -> 110m countries; zoomed to a country -> 10m.
+    world = codegen.generate_code(
+        make_state(map={"projection": "Equirectangular"},
+                   view={"xlim": [-180, 180], "ylim": [-90, 90]}),
+        [], "Python")
+    assert "'scale': '110m', 'kind': 'line'" in world
+    zoomed = codegen.generate_code(
+        make_state(map={"projection": "Equirectangular"},
+                   view={"xlim": [-10, 10], "ylim": [40, 52]}),
+        [], "Python")
+    assert "'name': 'admin_0_countries', 'category': 'cultural', " \
+           "'scale': '10m'" in zoomed
+
+
+def test_countries_off_swaps_in_continent_outlines():
+    state = make_state(map={"lines": {"countries": False}})
+    code = codegen.generate_code(state, [], "Python")
+    assert "'kind': 'continents'" in code
+    on = codegen.generate_code(make_state(), [], "Python")
+    assert "'kind': 'continents'" not in on
+
+
+def test_city_markers_are_zoom_culled():
+    state = make_state(map={"projection": "Equirectangular"},
+                       view={"xlim": [-180, 180], "ylim": [-90, 90]})
+    code = codegen.generate_code(state, [], "Python")
+    ns = exec_python(code)
+    cities = [layer for layer in ns["LAYERS"]
+              if layer["kind"] == "point"][0]
+    # zoom 0 + bias 2.0, like the app's fade-in rule.
+    assert cities["min_zoom_max"] == pytest.approx(2.0, abs=1e-3)
+    # Capitals-only shows every capital (bias 99 disables culling).
+    caps = codegen.generate_code(
+        make_state(map={"capitals_only": True}), [], "Python")
+    ns2 = exec_python(caps)
+    capitals = [layer for layer in ns2["LAYERS"]
+                if layer["kind"] == "point"][0]
+    assert "min_zoom_max" not in capitals
+
+
+def test_bathymetry_becomes_stacked_fill_layers():
+    code = codegen.generate_code(
+        make_state(map={"bathymetry": True}), [], "Python")
+    ns = exec_python(code)
+    depths = [layer for layer in ns["LAYERS"]
+              if layer["name"] == "bathymetry_all"]
+    assert len(depths) == 12
+    assert depths[0]["member"] == "ne_10m_bathymetry_L_0"
+    assert depths[0]["color"] == "#e3f2fa"      # shallow
+    assert depths[-1]["color"] == "#103862"     # deep
+    assert depths[0]["z"] < depths[-1]["z"]
+
+
+def test_label_layers_reach_the_script():
+    state = make_state(map={"projection": "Equirectangular",
+                            "labels": {"countries": True, "cities": True},
+                            "points": {"cities": True}})
+    code = codegen.generate_code(state, [], "Python")
+    ns = exec_python(code)
+    keys = [spec["key"] for spec in ns["LABEL_LAYERS"]]
+    assert keys == ["countries", "cities"]
+    countries = ns["LABEL_LAYERS"][0]
+    assert countries["cap"] == 400
+    assert countries["font"]["fontweight"] == "bold"
+    cities = ns["LABEL_LAYERS"][1]
+    assert cities["point_layer"] is True
+    assert cities["feature_bias"] == 2.0
+
+
+def test_marker_styling_matches_the_app():
+    # Filled markers carry a white edge; open markers outline-only.
+    code = codegen.generate_code(make_state(), [manual_entry()], "Python")
+    assert 'face, edge, lw = style["color"], "white", 0.5' in code
+    assert 'face, edge, lw = "none", style["color"], 1.2' in code
+    assert "framealpha=0.85" in code
+
+
+def test_attribute_mode_emits_sectioned_legend():
+    entry = manual_entry(symbol_by="Label", group_by="")
+    code = codegen.generate_code(make_state(), [entry], "Python")
+    ns = exec_python(code)
+    sections = ns["LEGEND_SECTIONS"]
+    assert sections is not None
+    titles = [title for title, _entries in sections]
+    assert titles == ["Label"]
+    labels = [label for label, _style in sections[0][1]]
+    assert labels == ["Site A", "Site B"]
+    # Symbol-key entries use the neutral marker color, like the app.
+    assert sections[0][1][0][1]["color"] == "#555555"
+    # Plain mode has no sections.
+    plain = codegen.generate_code(make_state(), [manual_entry()], "Python")
+    assert "LEGEND_SECTIONS = None" in plain
+
+
+def test_satellite_basemap_is_reproduced():
+    code = codegen.generate_code(
+        make_state(map={"basemap": "satellite"}), [], "Python")
+    assert "SATELLITE = True" in code
+    assert "NE1_50M_SR_W" in code
+    assert "SATELLITE_SIZE = (5400, 2700)" in code  # PyMappr's resample
+    off = codegen.generate_code(make_state(), [], "Python")
+    assert "SATELLITE = False" in off
+
+
+def test_compass_is_reproduced():
+    code = codegen.generate_code(make_state(), [], "Python")
+    assert "COMPASS = True" in code
+    assert 'arrowstyle="-|>,head_width=0.28,head_length=0.55"' in code
 
 
 # -------------------------------------------- datasets, groups, and styles
@@ -440,27 +606,21 @@ def test_generated_python_attribute_labels_run():
     assert set(labels) <= set(ns["STYLES"])
 
 
-# ------------------------------------ with a real R interpreter, if any
+def test_generated_projection_forward_matches_the_app():
+    import numpy as np
 
-def _rscript():
-    path = shutil.which("Rscript")
-    if path is None:
-        pytest.skip("Rscript is not installed")
-    return path
-
-
-def test_generated_r_parses_with_real_r(tmp_path):
-    rscript = _rscript()
-    for entries in ([file_entry()], [manual_entry(symbol_by="Label")], []):
-        script = tmp_path / "recreate_map.R"
-        script.write_text(codegen.generate_code(make_state(), entries, "R"),
-                          encoding="utf-8")
-        subprocess.run([rscript, "-e",
-                        f"invisible(parse('{script.as_posix()}'))"],
-                       check=True, capture_output=True)
+    state = make_state()  # Robinson
+    code = codegen.generate_code(state, [], "Python")
+    ns = exec_python(code)
+    projection = get_projection("Robinson")
+    lons = np.array([-120.0, 0.0, 150.0])
+    lats = np.array([-45.0, 10.0, 60.0])
+    ax, ay = projection.forward(lons, lats)
+    sx, sy = ns["proj_forward"](lons, lats)
+    assert np.allclose(ax, sx) and np.allclose(ay, sy)
 
 
-# ------------------------------- run without setup (dependency bootstrap)
+# ------------------------------------------------------------ bootstrap
 
 def test_python_script_bootstraps_missing_packages():
     code = codegen.generate_code(make_state(), [file_entry()], "Python")
@@ -473,7 +633,6 @@ def test_python_script_bootstraps_missing_packages():
     assert boot < code.index("import geopandas as gpd")
     # Paths are resolved relative to the script, not the shell's cwd.
     assert "SCRIPT_DIR" in code
-    assert 'SCRIPT_DIR / "naturalearth_cache"' in code
 
 
 def test_r_script_bootstraps_missing_packages():
@@ -555,6 +714,26 @@ def test_working_directory_unknown_language_rejected():
         codegen.generate_working_directory(make_state(), [], "Julia")
 
 
+# ------------------------------------ with a real R interpreter, if any
+
+def _rscript():
+    path = shutil.which("Rscript")
+    if path is None:
+        pytest.skip("Rscript is not installed")
+    return path
+
+
+def test_generated_r_parses_with_real_r(tmp_path):
+    rscript = _rscript()
+    for entries in ([file_entry()], [manual_entry(symbol_by="Label")], []):
+        script = tmp_path / "recreate_map.R"
+        script.write_text(codegen.generate_code(make_state(), entries, "R"),
+                          encoding="utf-8")
+        subprocess.run([rscript, "-e",
+                        f"invisible(parse('{script.as_posix()}'))"],
+                       check=True, capture_output=True)
+
+
 def test_generated_r_functions_actually_run(tmp_path):
     """Run the R pre-made loaders on the embedded data (no sf/ggplot2
     needed: library lines and the main() call are stripped)."""
@@ -575,7 +754,7 @@ stopifnot(identical(df$`_lon`, c(-100, 140)))
 stopifnot(identical(df$`_lat`, c(38, -25)))
 labels <- point_labels(df, spec)
 stopifnot(identical(labels, c("spiders", "spiders")))
-stopifnot(STYLE_COLORS[["spiders"]] == "#123456")
+stopifnot(STYLE_FILLS[["spiders"]] == "#123456")
 gdf <- data.frame(FEATURECLA = c("Desert", "Plateau", "desert"),
                   adm0cap = c(1, 0, 1))
 kept <- filter_layer(gdf, "featurecla", c("Desert"), TRUE)
