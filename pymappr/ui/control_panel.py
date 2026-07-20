@@ -408,8 +408,8 @@ class ControlPanel(ttk.Frame):
         ttk.Button(sec, text="Export as code (Python/R)"
                             "\N{HORIZONTAL ELLIPSIS}",
                    command=self.app.on_export_code).pack(fill="x", pady=2)
-        ttk.Label(sec, text="(a ready-to-run script that recreates this "
-                            "map in an IDE)",
+        ttk.Label(sec, text="(a ready-to-run script or project folder that "
+                            "recreates this map in an IDE - no setup)",
                   foreground="#666666",
                   wraplength=PANEL_WIDTH - 60).pack(anchor="w")
 
