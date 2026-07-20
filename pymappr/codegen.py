@@ -23,6 +23,7 @@ This module is UI-free; the dialog lives in ``pymappr/ui/code_export.py``.
 from __future__ import annotations
 
 import math
+import re
 
 from pymappr import __version__
 from pymappr.layers import CONTINENT_EXTENTS
@@ -282,14 +283,41 @@ def _display_labels(raw_labels: list[str], entry_name: str, multi: bool,
     return mapping
 
 
-def _dataset_configs(entries) -> tuple[list[dict], dict[str, PointStyle]]:
-    """Per-dataset script configs plus the combined legend-label -> style
-    map, replicating how the app assigns styles at render time."""
+def _dataset_filename(name: str, used: set[str]) -> str:
+    """A filesystem-safe ``<name>.csv`` unique within *used*."""
+    stem = re.sub(r"[^A-Za-z0-9._-]+", "_", str(name)).strip("._-")
+    if stem.lower().endswith(".csv"):
+        stem = stem[:-4]
+    stem = stem or "dataset"
+    candidate = f"{stem}.csv"
+    counter = 2
+    while candidate in used:
+        candidate = f"{stem}_{counter}.csv"
+        counter += 1
+    used.add(candidate)
+    return candidate
+
+
+def _dataset_configs(entries, data_mode: str = "inline"
+                     ) -> tuple[list[dict], dict[str, PointStyle],
+                                dict[str, str]]:
+    """Per-dataset script configs, the combined legend-label -> style map,
+    and (in ``"files"`` mode) the point data to write as ``data/<name>.csv``.
+
+    Point data is always normalized to CSV with the dataset's own column
+    labels plus Longitude/Latitude, so the generated script is robust to
+    the original file's format, headers, and pre-parsed DMS coordinates.
+    In ``"inline"`` mode that CSV is embedded in the script (a
+    self-contained single file); in ``"files"`` mode it is written next to
+    the script and referenced by a relative ``data/`` path.
+    """
     visible = [e for e in entries if e.visible and len(e.dataset)]
     multi = len(visible) > 1
     used: set[str] = set()
+    used_files: set[str] = set()
     styles: dict[str, PointStyle] = {}
     configs: list[dict] = []
+    data_files: dict[str, str] = {}
     palette_offset = 0
     for entry in visible:
         frame = entry.dataset.frame
@@ -297,22 +325,30 @@ def _dataset_configs(entries) -> tuple[list[dict], dict[str, PointStyle]]:
                                 entry.dataset.name_keys))
         color_key = key_by_label.get(entry.color_by)
         symbol_key = key_by_label.get(entry.symbol_by)
+        # Every dataset is normalized to CSV (labels + Longitude/Latitude)
+        # so the script never depends on the original file's format.
+        csv_text = _inline_csv(entry)
         config = {
             "name": entry.name,
-            "path": entry.dataset.source_path or None,
+            "path": None,
             "inline_data": None,
-            "lon_col": None,   # auto-detected by the pre-made loader
-            "lat_col": None,
+            "lon_col": "Longitude",
+            "lat_col": "Latitude",
             "group_col": None,
             "color_col": None,
             "symbol_col": None,
             "default_label": entry.name,
             "label_map": {},
+            # Original source path, for a provenance comment only (not read
+            # by the generated loader).
+            "source": entry.dataset.source_path or None,
         }
-        if entry.manual is not None or not entry.dataset.source_path:
-            config["path"] = None
-            config["inline_data"] = _inline_csv(entry)
-            config["lon_col"], config["lat_col"] = "Longitude", "Latitude"
+        if data_mode == "files":
+            rel = "data/" + _dataset_filename(entry.name, used_files)
+            config["path"] = rel
+            data_files[rel] = csv_text
+        else:
+            config["inline_data"] = csv_text
         if symbol_key is not None:
             # Two-attribute styling: one style per (color, symbol) pair.
             config["color_col"] = entry.color_by or None
@@ -345,11 +381,12 @@ def _dataset_configs(entries) -> tuple[list[dict], dict[str, PointStyle]]:
                 config["group_col"] = entry.group_by
         config["label_map"] = display
         configs.append(config)
-    return configs, styles
+    return configs, styles, data_files
 
 
 def _inline_csv(entry) -> str:
-    """A manual/pathless dataset as CSV text, embedded in the script."""
+    """A dataset's points as normalized CSV text (label columns plus
+    Longitude/Latitude), embedded in the script or written to data/."""
     frame = entry.dataset.frame
     columns = dict(zip(entry.dataset.name_keys, entry.dataset.name_labels))
     columns.update({"lon": "Longitude", "lat": "Latitude"})
@@ -357,14 +394,20 @@ def _inline_csv(entry) -> str:
     return subset.rename(columns=columns).to_csv(index=False)
 
 
-def build_config(state: dict, entries, project_name: str = "map") -> dict:
-    """Everything the script templates need, from the app state."""
+def build_config(state: dict, entries, project_name: str = "map",
+                 data_mode: str = "inline") -> dict:
+    """Everything the script templates need, from the app state.
+
+    *data_mode* is ``"inline"`` (point data embedded in the script) or
+    ``"files"`` (point data written as ``data/<name>.csv`` and referenced
+    by a relative path). The latter feeds the working-directory export.
+    """
     m = dict(state.get("map", {}))
     legend = dict(state.get("legend", {}))
     layers, notes = _base_layers(m)
     if any(dict(m.get("labels", {})).values()):
         notes.append("Map labels (country/city/... name placement)")
-    datasets, styles = _dataset_configs(entries)
+    datasets, styles, data_files = _dataset_configs(entries, data_mode)
     lon0, lat0 = _origin(m)
     projection = str(m.get("projection", "Equirectangular"))
     title = str(legend.get("title", "")).strip()
@@ -390,6 +433,8 @@ def build_config(state: dict, entries, project_name: str = "map") -> dict:
         "world_bounds": world_bounds,
         "layers": layers,
         "datasets": datasets,
+        "data_mode": data_mode,
+        "data_files": data_files,
         "styles": styles,
         "legend": {
             "show": bool(legend.get("show", True)),
@@ -470,24 +515,31 @@ def _py_header(config: dict) -> str:
     if notes:
         notes = ("\n# Shown in PyMappr but NOT reproduced by this script:"
                  + notes)
+    if config["data_mode"] == "files":
+        data_note = ("Your point data is in the data/ folder as CSV - edit "
+                     "or replace those files\nto update the map.")
+    else:
+        data_note = ("Your point data is embedded below in DATASETS, so "
+                     "this single file is\nself-contained - nothing else "
+                     "to download or keep alongside it.")
     return f'''\
 #!/usr/bin/env python3
 # Made with {config["generator"]} - {REPO_URL}
 """Recreate the PyMappr map "{_safe_name(config["project"])}" outside PyMappr.
 
 Generated by {config["generator"]} from pre-made function templates and
-the map's saved settings - deterministically.
+the map's saved settings - deterministically (no AI, no network at
+generation time).
 
-Requires:  pip install pandas geopandas matplotlib
-Run:       python this_script.py
-Output:    map.png (also opens an interactive window)
+Just run it: open this file in an IDE (PyCharm, VS Code, ...) and click
+Run, or `python recreate_map.py` in a terminal. Any missing packages
+(pandas, geopandas, matplotlib) are installed automatically on first run,
+and the base map layers are downloaded from Natural Earth and cached in
+naturalearth_cache/ next to this script.
 
-Base layers are downloaded from Natural Earth on first run and cached
-in ./naturalearth_cache. Point data is loaded from the original file
-path(s) below (edit them if the files moved); longitude/latitude
-columns are auto-detected from their names and can be pinned in
-DATASETS. PyMappr parsed DMS coordinates on import - if your file
-stores DMS (e.g. 97\N{DEGREE SIGN}44'W), convert to decimal degrees first.
+Output:  map.png (also opens an interactive window).
+
+{data_note}
 """
 # Projection: {config["projection"]}{notes}
 '''
@@ -538,10 +590,13 @@ def _py_config(config: dict) -> str:
         lines.append(f"    {{{body}}},")
     lines.append("]")
     lines.append("")
-    lines.append("# One entry per dataset. lon_col/lat_col None = "
-                 "auto-detect by column name.")
+    lines.append("# One entry per dataset. lon_col/lat_col name the "
+                 "coordinate columns")
+    lines.append("# (None = auto-detect by column name).")
     lines.append("DATASETS = [")
     for spec in config["datasets"]:
+        if spec.get("source"):
+            lines.append(f"    # originally imported from: {spec['source']}")
         lines.append("    {")
         for key in ("name", "path", "inline_data", "lon_col", "lat_col",
                     "group_col", "color_col", "symbol_col",
@@ -572,15 +627,52 @@ _PY_FUNCTIONS = '''
 
 # ------------------- pre-made functions (identical for every export) -----
 
+import importlib
 import io
+import subprocess
+import sys
 import zipfile
 from pathlib import Path
 from urllib.request import urlretrieve
+
+
+def ensure_dependencies():
+    """Install any missing third-party packages into this interpreter, so
+    the script runs on a fresh Python with nothing set up - paste it into
+    an IDE and click Run. Installs with pip in the current environment."""
+    required = {"numpy": "numpy", "pandas": "pandas",
+                "geopandas": "geopandas", "matplotlib": "matplotlib"}
+    missing = []
+    for module, package in required.items():
+        try:
+            importlib.import_module(module)
+        except ImportError:
+            missing.append(package)
+    if not missing:
+        return
+    print("Installing missing packages: " + ", ".join(missing) + " ...")
+    try:
+        subprocess.check_call([sys.executable, "-m", "pip", "install",
+                               *missing])
+    except Exception as exc:  # no pip, offline, no permission, ...
+        raise SystemExit(
+            "Could not auto-install " + ", ".join(missing) + " (" + str(exc)
+            + ").\\nInstall them yourself, then rerun:\\n    "
+            + sys.executable + " -m pip install " + " ".join(missing))
+    importlib.invalidate_caches()
+
+
+ensure_dependencies()
 
 import numpy as np
 import pandas as pd
 import geopandas as gpd
 import matplotlib.pyplot as plt
+
+# Resolve the cache and any data/ files next to this script, so it runs
+# the same no matter which directory it is launched from.
+SCRIPT_DIR = (Path(__file__).resolve().parent
+              if "__file__" in globals() else Path.cwd())
 
 LON_HINTS = ("lon", "lng", "long", "longitude", "x")
 LAT_HINTS = ("lat", "latitude", "y")
@@ -589,8 +681,8 @@ FALLBACK_STYLE = {"color": "#7f7f7f", "marker": "o", "size": 30.0,
 
 
 def load_natural_earth(name, category, scale, member=None):
-    """Download a Natural Earth layer (cached in ./naturalearth_cache)."""
-    cache = Path("naturalearth_cache")
+    """Download a Natural Earth layer (cached next to this script)."""
+    cache = SCRIPT_DIR / "naturalearth_cache"
     cache.mkdir(exist_ok=True)
     stem = f"ne_{scale}_{name}"
     zip_path = cache / f"{stem}.zip"
@@ -692,8 +784,10 @@ def load_points(spec):
     if spec["inline_data"] is not None:
         df = pd.read_csv(io.StringIO(spec["inline_data"]))
     else:
-        path = spec["path"]
-        suffix = Path(path).suffix.lower()
+        path = Path(spec["path"])
+        if not path.is_absolute():
+            path = SCRIPT_DIR / path
+        suffix = path.suffix.lower()
         if suffix in (".xlsx", ".xlsm", ".xltx", ".xltm", ".xls", ".ods"):
             df = pd.read_excel(path)
         elif suffix in (".tsv", ".txt"):
@@ -856,9 +950,9 @@ def main():
     set_extent(ax)
     add_legend(ax)
     ax.set_axis_off()
-    fig.savefig(OUTPUT_FILE, dpi=DPI, facecolor="white",
-                bbox_inches="tight")
-    print(f"Saved {OUTPUT_FILE}")
+    output = SCRIPT_DIR / OUTPUT_FILE
+    fig.savefig(output, dpi=DPI, facecolor="white", bbox_inches="tight")
+    print(f"Saved {output}")
     plt.show()
 
 
@@ -878,6 +972,12 @@ def _r_header(config: dict) -> str:
     if notes:
         notes = ("\n# Shown in PyMappr but NOT reproduced by this script:"
                  + notes)
+    if config["data_mode"] == "files":
+        data_note = ("# Your point data is in the data/ folder as CSV - "
+                     "edit or replace those\n# files to update the map.")
+    else:
+        data_note = ("# Your point data is embedded below in DATASETS, so "
+                     "this single file is\n# self-contained.")
     return f'''\
 # Made with {config["generator"]} - {REPO_URL}
 # Recreate the PyMappr map {_r(config["project"])} outside PyMappr.
@@ -885,20 +985,30 @@ def _r_header(config: dict) -> str:
 # Generated by {config["generator"]} from pre-made function templates and
 # the map's saved settings - deterministically.
 #
-# Requires:  install.packages(c("sf", "ggplot2"))
-# Run:       Rscript this_script.R
-# Output:    map.png
+# Just run it: open this file in RStudio and click Source, or run
+# `Rscript recreate_map.R` in a terminal. Missing packages (sf, ggplot2)
+# are installed automatically on first run, and the base map layers are
+# downloaded from Natural Earth and cached in naturalearth_cache/ next to
+# this script.
 #
-# Base layers are downloaded from Natural Earth on first run and cached
-# in ./naturalearth_cache. Point data is loaded from the original file
-# path(s) below (edit them if the files moved); longitude/latitude
-# columns are auto-detected from their names and can be pinned in
-# DATASETS. PyMappr parsed DMS coordinates on import - if your file
-# stores DMS (e.g. 97d44'W), convert to decimal degrees first.
+# Output: map.png
+#
+{data_note}
 # Some marker shapes and legend placement are approximated (base R has
 # no pentagon/hexagon/octagon point shapes).
 #
 # Projection: {config["projection"]}{notes}
+
+ensure_packages <- function(pkgs) {{
+  missing <- pkgs[!vapply(pkgs, requireNamespace, logical(1),
+                          quietly = TRUE)]
+  if (length(missing) > 0) {{
+    message("Installing missing packages: ",
+            paste(missing, collapse = ", "))
+    install.packages(missing, repos = "https://cloud.r-project.org")
+  }}
+}}
+ensure_packages(c("sf", "ggplot2"))
 
 library(sf)
 library(ggplot2)
@@ -982,8 +1092,9 @@ def _r_config(config: dict) -> str:
     lines.append(",\n".join(_r_layer(layer) for layer in config["layers"]))
     lines.append(")")
     lines.append("")
-    lines.append("# One entry per dataset. lon_col/lat_col NULL = "
-                 "auto-detect by column name.")
+    lines.append("# One entry per dataset. lon_col/lat_col name the "
+                 "coordinate columns")
+    lines.append("# (NULL = auto-detect by column name).")
     lines.append("DATASETS <- list(")
     dataset_blocks = []
     for spec in config["datasets"]:
@@ -998,7 +1109,10 @@ def _r_config(config: dict) -> str:
             pairs.append(("label_map", f"c({body})"))
         else:
             pairs.append(("label_map", "c()"))
-        dataset_blocks.append(f"  list({_r_named(pairs, '    ')})")
+        block = f"  list({_r_named(pairs, '    ')})"
+        if spec.get("source"):
+            block = f"  # originally imported from: {spec['source']}\n" + block
+        dataset_blocks.append(block)
     lines.append(",\n".join(dataset_blocks))
     lines.append(")")
     lines.append("")
@@ -1029,6 +1143,22 @@ def _r_config(config: dict) -> str:
 _R_FUNCTIONS = '''
 
 # ------------------- pre-made functions (identical for every export) -----
+
+# Run from this script's own folder, so the cache and any data/ files
+# resolve the same no matter where the script is launched from.
+local({
+  args <- commandArgs(trailingOnly = FALSE)
+  file_arg <- grep("^--file=", args, value = TRUE)
+  path <- if (length(file_arg) > 0) {
+    sub("^--file=", "", file_arg[1])
+  } else if (requireNamespace("rstudioapi", quietly = TRUE) &&
+             rstudioapi::isAvailable()) {
+    rstudioapi::getSourceEditorContext()$path
+  } else {
+    ""
+  }
+  if (nzchar(path)) setwd(dirname(normalizePath(path)))
+})
 
 LON_HINTS <- c("lon", "lng", "long", "longitude", "x")
 LAT_HINTS <- c("lat", "latitude", "y")
@@ -1299,11 +1429,132 @@ def _r_script(config: dict) -> str:
     return _r_header(config) + _r_config(config) + _R_FUNCTIONS
 
 
+# -------------------------------------------------- working directory export
+
+_PY_REQUIREMENTS = ("geopandas>=1.0\n"
+                    "matplotlib>=3.8\n"
+                    "numpy>=1.26\n"
+                    "pandas>=2.1\n")
+
+_PY_GITIGNORE = "naturalearth_cache/\nmap.png\n__pycache__/\n"
+
+_R_INSTALL = ('install.packages(c("sf", "ggplot2"),\n'
+              '                 repos = "https://cloud.r-project.org")\n')
+
+_R_GITIGNORE = ("naturalearth_cache/\nmap.png\n.Rproj.user/\n"
+                ".Rhistory\n.RData\n")
+
+# A minimal RStudio project file, so "open this folder in RStudio" works.
+_RPROJ = ("Version: 1.0\n\n"
+          "RestoreWorkspace: Default\n"
+          "SaveWorkspace: Default\n"
+          "AlwaysSaveHistory: Default\n\n"
+          "EnableCodeIndexing: Yes\n"
+          "UseSpacesForTab: Yes\n"
+          "NumSpacesForTab: 2\n"
+          "Encoding: UTF-8\n")
+
+
+def _slug(name: str) -> str:
+    """A filesystem-safe slug for a project/folder name."""
+    slug = re.sub(r"[^A-Za-z0-9._-]+", "_", str(name)).strip("._-")
+    return slug or "map"
+
+
+def _py_readme(project: str) -> str:
+    return f'''# {project} - PyMappr map export
+
+A ready-to-run Python recreation of the PyMappr map "{project}"
+(pandas + geopandas + matplotlib).
+
+## Run it
+
+Open this folder in your IDE (PyCharm, VS Code, ...) and run
+`recreate_map.py`. Or, from a terminal in this folder:
+
+    python recreate_map.py
+
+The script installs any missing packages on first run - or set up the
+environment yourself with:
+
+    pip install -r requirements.txt
+
+It downloads its base map layers from Natural Earth into
+`naturalearth_cache/` and reads your point data from the CSV files in
+`data/`. The finished map is written to `map.png`.
+'''
+
+
+def _r_readme(project: str, slug: str) -> str:
+    return f'''# {project} - PyMappr map export
+
+A ready-to-run R recreation of the PyMappr map "{project}"
+(sf + ggplot2).
+
+## Run it
+
+Open `{slug}.Rproj` in RStudio, open `recreate_map.R`, and click Source.
+Or, from a terminal in this folder:
+
+    Rscript recreate_map.R
+
+The script installs sf and ggplot2 if they are missing - or install them
+yourself with:
+
+    Rscript install.R
+
+It downloads its base map layers from Natural Earth into
+`naturalearth_cache/` and reads your point data from the CSV files in
+`data/`. The finished map is written to `map.png`.
+'''
+
+
+def generate_working_directory(state: dict, entries, language: str,
+                               project_name: str = "Untitled"
+                               ) -> dict[str, str]:
+    """A ready-to-run project folder recreating the map, as a mapping of
+    relative path -> text content.
+
+    Alongside the script it includes the point data as CSV under
+    ``data/``, a dependency manifest (``requirements.txt`` or
+    ``install.R``), a ``README.md``, a ``.gitignore``, and - for R - an
+    RStudio ``.Rproj`` file. Point an IDE at the folder and run.
+    """
+    if language not in LANGUAGES:
+        raise ValueError(f"Unknown language: {language!r}")
+    config = build_config(state, entries, project_name, data_mode="files")
+    project = _safe_name(project_name)
+    if language == "Python":
+        files = {
+            "recreate_map.py": _python_script(config),
+            "requirements.txt": _PY_REQUIREMENTS,
+            "README.md": _py_readme(project),
+            ".gitignore": _PY_GITIGNORE,
+        }
+    else:
+        slug = _slug(project)
+        files = {
+            "recreate_map.R": _r_script(config),
+            "install.R": _R_INSTALL,
+            f"{slug}.Rproj": _RPROJ,
+            "README.md": _r_readme(project, slug),
+            ".gitignore": _R_GITIGNORE,
+        }
+    files.update(config["data_files"])  # data/<name>.csv -> CSV text
+    return files
+
+
 # ----------------------------------------------------------------- entry
 
 def generate_code(state: dict, entries, language: str,
                   project_name: str = "Untitled") -> str:
-    """The complete Python or R script recreating the given map state."""
+    """The complete Python or R script recreating the given map state.
+
+    The script is self-contained: point data is embedded inline and
+    missing packages install themselves on first run, so it can be pasted
+    into an IDE and run as-is. Use :func:`generate_working_directory` for
+    a folder-based export with the data kept as separate CSV files.
+    """
     if language not in LANGUAGES:
         raise ValueError(f"Unknown language: {language!r}")
     config = build_config(state, entries, project_name)

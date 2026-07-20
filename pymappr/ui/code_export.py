@@ -3,22 +3,32 @@
 Unlike the experimental LLM Assist, this is a normal, always-available
 feature with no network use: selecting a language box pastes the
 pre-made functions from ``pymappr/codegen.py`` (filled in with the
-current map settings) into the preview, and "Save code as" writes them
-to a ``.py`` or ``.R`` file ready to open in an IDE.
+current map settings) into the preview.
+
+Two ways to take it away, both ready to run with no setup:
+
+* **Save code as** writes a single, self-contained ``.py``/``.R`` file -
+  point data embedded, missing packages installed on first run - so you
+  can paste it into an IDE and click Run.
+* **Save as working directory** writes a whole runnable project folder
+  (the script, the point data as CSV, a dependency manifest, a README,
+  and a ``.gitignore``) to point an IDE at.
 """
 
 from __future__ import annotations
 
 import tkinter as tk
-from tkinter import filedialog, ttk
+from pathlib import Path
+from tkinter import filedialog, messagebox, ttk
 
 from pymappr import codegen, projects
 
 WRAP = 560
 NOTE = ("Generated locally from your current map settings - no AI, no "
-        "network. The script downloads its base layers from Natural "
-        "Earth and loads your point data from the original file, so you "
-        "can rerun and adapt the map in an IDE.")
+        "network at export time. The script installs any missing packages "
+        "on first run and downloads its base layers from Natural Earth, so "
+        "you can just open it in an IDE and click Run. Save a single "
+        "self-contained file, or a whole runnable project folder.")
 
 
 class CodeExportDialog(tk.Toplevel):
@@ -71,6 +81,10 @@ class CodeExportDialog(tk.Toplevel):
                    command=self._copy).pack(side="left")
         ttk.Button(row, text="Save code as\N{HORIZONTAL ELLIPSIS}",
                    command=self._save).pack(side="left", padx=(6, 0))
+        ttk.Button(row, text="Save as working directory"
+                            "\N{HORIZONTAL ELLIPSIS}",
+                   command=self._save_directory).pack(side="left",
+                                                      padx=(6, 0))
         ttk.Button(row, text="Close",
                    command=self.destroy).pack(side="right")
 
@@ -137,3 +151,37 @@ class CodeExportDialog(tk.Toplevel):
             self._status.config(text=f"Could not save: {exc}")
             return
         self._status.config(text=f"Saved to {path}")
+
+    def _save_directory(self) -> None:
+        """Write a whole runnable project folder (script + data + README +
+        dependency manifest) that an IDE can be pointed at directly."""
+        language = self._language_var.get()
+        try:
+            files = codegen.generate_working_directory(
+                self.app._collect_state(), self.app.entries, language,
+                self.app.project_name)
+        except Exception as exc:  # noqa: BLE001 - show any build error
+            self._status.config(text=f"Could not build the project: {exc}")
+            return
+        target = filedialog.askdirectory(
+            parent=self, mustexist=True,
+            title="Choose a folder for the runnable project")
+        if not target:
+            return
+        folder = Path(target)
+        clashes = [rel for rel in files if (folder / rel).exists()]
+        if clashes and not messagebox.askyesno(
+                "Overwrite files?",
+                f"{len(clashes)} file(s) already exist in\n{folder}\n"
+                f"(e.g. {clashes[0]}).\n\nOverwrite them?", parent=self):
+            return
+        try:
+            for rel, content in files.items():
+                dest = folder / rel
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                dest.write_text(content, encoding="utf-8")
+        except OSError as exc:
+            self._status.config(text=f"Could not save the project: {exc}")
+            return
+        self._status.config(
+            text=f"Saved a runnable {language} project to {folder}")
