@@ -162,8 +162,11 @@ def test_python_config_reflects_map_settings():
     # Disabled layers stay out.
     assert "boundary_lines_maritime" not in code
     assert "'disputed'" not in code
-    # Dataset + styling.
-    assert "'C:/data/us_cities.csv'" in code
+    # Dataset + styling: file data is embedded inline (self-contained),
+    # with the original path kept only as a provenance comment.
+    assert "'path': None" in code
+    assert "State,Longitude,Latitude" in code  # normalized inline CSV
+    assert "# originally imported from: C:/data/us_cities.csv" in code
     assert "'group_col': 'State'" in code
     assert "'#123456'" in code and "'marker': '*'" in code
     assert "'Colorado'" in code  # default style assigned to the 2nd group
@@ -344,6 +347,21 @@ def test_manual_dataset_is_embedded_inline():
     assert "Legend,Label,Longitude,Latitude" in code_r
 
 
+def test_file_dataset_is_embedded_inline_for_single_file_export():
+    # The single-file export is self-contained: file-based data is
+    # embedded inline (normalized to labels + Longitude/Latitude) instead
+    # of pointing at a path that may not exist when the script is moved.
+    for language in codegen.LANGUAGES:
+        code = codegen.generate_code(make_state(), [file_entry()], language)
+        assert "State,Longitude,Latitude" in code
+        assert "Wyoming,-107.5,43.0" in code
+        # The original path survives only as a provenance comment.
+        assert "originally imported from: C:/data/us_cities.csv" in code
+    py = codegen.generate_code(make_state(), [file_entry()], "Python")
+    assert "'path': None" in py
+    assert "'lon_col': 'Longitude'" in py and "'lat_col': 'Latitude'" in py
+
+
 def test_hidden_and_empty_datasets_are_skipped():
     hidden = file_entry()
     hidden.visible = False
@@ -442,13 +460,112 @@ def test_generated_r_parses_with_real_r(tmp_path):
                        check=True, capture_output=True)
 
 
+# ------------------------------- run without setup (dependency bootstrap)
+
+def test_python_script_bootstraps_missing_packages():
+    code = codegen.generate_code(make_state(), [file_entry()], "Python")
+    # A pip-based bootstrap runs before the third-party imports, so a
+    # fresh interpreter installs what it needs on first run.
+    assert "def ensure_dependencies():" in code
+    assert "ensure_dependencies()" in code
+    assert '"-m", "pip", "install"' in code
+    boot = code.index("ensure_dependencies()\n")
+    assert boot < code.index("import geopandas as gpd")
+    # Paths are resolved relative to the script, not the shell's cwd.
+    assert "SCRIPT_DIR" in code
+    assert 'SCRIPT_DIR / "naturalearth_cache"' in code
+
+
+def test_r_script_bootstraps_missing_packages():
+    code = codegen.generate_code(make_state(), [file_entry()], "R")
+    assert "ensure_packages <- function(pkgs)" in code
+    assert 'ensure_packages(c("sf", "ggplot2"))' in code
+    assert "install.packages(missing" in code
+    # The bootstrap runs before the libraries it guards.
+    assert (code.index('ensure_packages(c("sf", "ggplot2"))')
+            < code.index("library(sf)"))
+
+
+def test_bootstrapped_python_still_valid_and_runs():
+    # The bootstrap must not break syntax or the pre-made loaders.
+    code = codegen.generate_code(make_state(), [manual_entry()], "Python")
+    assert codecheck.validate_code("Python", code) == []
+    ns = exec_python(code)  # top-level ensure_dependencies() runs here
+    assert "ensure_dependencies" in ns
+    df = ns["load_points"](ns["DATASETS"][0])
+    assert len(df) == 2
+
+
+# --------------------------------------------- export as working directory
+
+def test_working_directory_python_layout():
+    files = codegen.generate_working_directory(
+        make_state(), [file_entry()], "Python", "My Project")
+    assert set(files) >= {"recreate_map.py", "requirements.txt",
+                          "README.md", ".gitignore"}
+    # Point data lives in data/ as CSV, referenced by a relative path.
+    data = [name for name in files if name.startswith("data/")]
+    assert data == ["data/us_cities.csv"]
+    assert "State,Longitude,Latitude" in files["data/us_cities.csv"]
+    script = files["recreate_map.py"]
+    compile(script, "recreate_map.py", "exec")
+    assert codecheck.validate_code("Python", script) == []
+    assert "'path': 'data/us_cities.csv'" in script
+    assert "'inline_data': None" in script
+    assert "geopandas" in files["requirements.txt"]
+    assert "pip install -r requirements.txt" in files["README.md"]
+
+
+def test_working_directory_r_layout():
+    files = codegen.generate_working_directory(
+        make_state(), [file_entry()], "R", "My Project")
+    assert set(files) >= {"recreate_map.R", "install.R", "README.md",
+                          ".gitignore", "My_Project.Rproj"}
+    assert "data/us_cities.csv" in files
+    script = files["recreate_map.R"]
+    assert codecheck.validate_code("R", script) == []
+    assert '"path" = "data/us_cities.csv"' in script
+    assert 'install.packages(c("sf", "ggplot2")' in files["install.R"]
+    assert "Version: 1.0" in files["My_Project.Rproj"]
+
+
+def test_working_directory_dedupes_data_filenames():
+    # Two datasets exporting to the same slug get distinct CSV files.
+    a = manual_entry("Sites")
+    b = manual_entry("Sites")
+    files = codegen.generate_working_directory(make_state(), [a, b],
+                                               "Python", "P")
+    data = sorted(name for name in files if name.startswith("data/"))
+    assert data == ["data/Sites.csv", "data/Sites_2.csv"]
+    script = files["recreate_map.py"]
+    assert "'path': 'data/Sites.csv'" in script
+    assert "'path': 'data/Sites_2.csv'" in script
+
+
+def test_working_directory_manual_data_is_written_as_csv():
+    files = codegen.generate_working_directory(
+        make_state(), [manual_entry()], "Python", "P")
+    data = [name for name in files if name.startswith("data/")]
+    assert len(data) == 1
+    assert "Legend,Label,Longitude,Latitude" in files[data[0]]
+
+
+def test_working_directory_unknown_language_rejected():
+    with pytest.raises(ValueError):
+        codegen.generate_working_directory(make_state(), [], "Julia")
+
+
 def test_generated_r_functions_actually_run(tmp_path):
     """Run the R pre-made loaders on the embedded data (no sf/ggplot2
     needed: library lines and the main() call are stripped)."""
     rscript = _rscript()
     code = codegen.generate_code(make_state(), [manual_entry()], "R")
+    # Drop the library() lines, the ensure_packages() bootstrap call (it
+    # would try to install over the network), and the final main() call;
+    # what remains are the loader functions this harness exercises.
     body = "\n".join(line for line in code.splitlines()
                      if not line.startswith("library(")
+                     and not line.startswith("ensure_packages(")
                      and line != "main()")
     harness = body + """
 spec <- DATASETS[[1]]
