@@ -1,13 +1,3 @@
-"""PyMappr main window: menu, matplotlib canvas, toolbar, control panel.
-
-Work is organized into *projects*: any number of datasets (imported
-files or typed-in points) plotted together on one configured map. The
-whole project - data included - saves to a ``.pymappr`` file in the
-user's projects folder and can be exported/imported for collaboration.
-The current state also autosaves on exit and is restored on the next
-launch, so closing the app never loses work.
-"""
-
 from __future__ import annotations
 
 import json
@@ -161,6 +151,8 @@ class PyMapprApp:
         file_menu.add_command(label="Save map as PNG\N{HORIZONTAL ELLIPSIS}",
                               accelerator="Ctrl+E",
                               command=self.on_save_png)
+        file_menu.add_command(label="Save map as TIFF\N{HORIZONTAL ELLIPSIS}",
+                              command=self.on_save_tif)
         file_menu.add_command(label="Export map as code (Python/R)"
                               "\N{HORIZONTAL ELLIPSIS}",
                               command=self.on_export_code)
@@ -1225,6 +1217,27 @@ class PyMapprApp:
         except Exception as exc:  # noqa: BLE001 - show any save error
             self._busy(False)
             messagebox.showerror("Could not save PNG", str(exc),
+                                 parent=self.root)
+            return
+        self._busy(False)
+        self.set_status(f"Saved map to {path}")
+
+    def on_save_tif(self) -> None:
+        path = filedialog.asksaveasfilename(
+            parent=self.root, title="Save map as TIFF",
+            defaultextension=".tif", initialfile="map.tif",
+            filetypes=[("TIFF image", "*.tif *.tiff")])
+        if not path:
+            return
+        dpi = int(self.panel.dpi_var.get())
+        if dpi < 300:
+            dpi = 300
+        self._busy(True)
+        try:
+            self.renderer.save_tif(path, dpi=dpi)
+        except Exception as exc:  # noqa: BLE001 - show any save error
+            self._busy(False)
+            messagebox.showerror("Could not save TIFF", str(exc),
                                  parent=self.root)
             return
         self._busy(False)

@@ -1,27 +1,3 @@
-"""Matplotlib map rendering for PyMappr.
-
-The renderer owns one Figure/Axes pair. Every map layer becomes a small set
-of matplotlib artists, created lazily the first time it is switched on and
-then toggled with ``set_visible`` - this keeps interaction real-time instead
-of re-plotting shapefiles on every change.
-
-Three cross-cutting features shape the implementation:
-
-* **Wrap-around panning** - every layer is drawn three times, at horizontal
-  offsets of one world-width left and right of the primary copy, and the
-  view is re-centered whenever a pan crosses the antimeridian. Panning east
-  or west therefore loops around the globe seamlessly.
-* **Projections** - all drawing goes through a `Projection` (see
-  ``pymappr.projections``). The default Equirectangular projection is the
-  identity; the others reproject vectors, points, labels, and the basemap.
-* **Zoom-dependent detail** - multi-resolution layers (countries, lakes,
-  rivers, ocean, land) are drawn from the Natural Earth resolution matching
-  the current zoom, with one artist set per resolution so crossing a zoom
-  threshold only toggles visibility after the first build. City, airport,
-  and port markers/labels are culled per feature by Natural Earth's curated
-  ``min_zoom``/``scalerank``, so places fade in as the user zooms.
-"""
-
 from __future__ import annotations
 
 from contextlib import contextmanager
@@ -1188,3 +1164,14 @@ class MapRenderer:
 
     def save_png(self, path: str, dpi: int = 200) -> None:
         self.fig.savefig(path, dpi=dpi, facecolor="white")
+
+    def save_tif(self, path: str, dpi: int = 300) -> None:
+        import io
+
+        from PIL import Image
+
+        buf = io.BytesIO()
+        self.fig.savefig(buf, format="png", dpi=dpi, facecolor="white")
+        buf.seek(0)
+        img = Image.open(buf)
+        img.save(path, format="TIFF", dpi=(dpi, dpi))
