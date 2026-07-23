@@ -18,6 +18,7 @@ output/
 Output/
 
 # Editors / OS
+.claude/
 .vscode/
 .idea/
 *.swp

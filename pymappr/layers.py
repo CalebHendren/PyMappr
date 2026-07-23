@@ -1,22 +1,3 @@
-"""Natural Earth layer access: lazy loading, label points, continent extents.
-
-Layers live in ``data/`` (populated by ``scripts/fetch_data.py``). In a
-PyInstaller build the same tree is bundled next to the executable.
-
-Three cross-cutting features live here:
-
-* **Multiple resolutions** - core layers (countries, lakes, rivers, ocean,
-  land) exist at 110m, 50m, and 10m. A ``LayerSpec`` lists its resolutions
-  as (min zoom, directory) steps and ``directory_for_zoom`` picks the right
-  one, so the renderer can swap detail in as the user zooms.
-* **Derived layers** - continent outlines, dependencies, deserts, wadis,
-  capitals, maritime/EEZ splits, and the stacked bathymetry are filtered or
-  assembled views of the downloaded shapefiles, described in ``DERIVED``.
-* **Disk cache** - parsing a big shapefile costs 1-2 s; a parsed frame is
-  pickled (columns trimmed to what PyMappr uses) into ``data/cache/`` so
-  every later load - including every later app start - is near-instant.
-"""
-
 from __future__ import annotations
 
 import os
@@ -227,7 +208,7 @@ class LayerStore:
         self._derived_frames: dict[str, "object"] = {}  # derived key -> frame
         self._projected: dict[tuple[str, str], "object"] = {}
         self._labels: dict[str, pd.DataFrame] = {}
-        self._basemap: np.ndarray | None = None
+        self._basemaps: dict[str, np.ndarray] = {}
         self._cache_root: Path | None | bool = False  # False = not probed yet
 
     def _cache_dir(self) -> Path | None:
@@ -506,15 +487,31 @@ class LayerStore:
 
     # -------------------------------------------------------------- basemap
 
-    def basemap_image(self) -> np.ndarray:
-        """Full-color world basemap as an RGB array (extent is the globe)."""
-        if self._basemap is None:
+    # Raster basemap modes -> filename in the data/basemap/ directory.
+    BASEMAP_FILES = {
+        "relief": "ne1_world.jpg",
+        "relief_alt": "ne2_world.jpg",
+        "relief_grey": "gray_world.jpg",
+        "blue_marble": "hyp_world.jpg",
+    }
+
+    def basemap_image(self, mode: str = "relief") -> np.ndarray:
+        """World basemap as an RGB array (extent is the globe)."""
+        if mode not in self._basemaps:
             from PIL import Image
 
-            path = self.data_dir / "basemap" / "ne1_world.jpg"
+            filename = self.BASEMAP_FILES.get(mode, "ne1_world.jpg")
+            path = self.data_dir / "basemap" / filename
             with Image.open(path) as img:
-                self._basemap = np.asarray(img.convert("RGB"))
-        return self._basemap
+                self._basemaps[mode] = np.asarray(img.convert("RGB"))
+        return self._basemaps[mode]
+
+    def has_basemap(self, mode: str) -> bool:
+        """Check whether the raster file for *mode* is downloaded."""
+        filename = self.BASEMAP_FILES.get(mode)
+        if filename is None:
+            return False
+        return (self.data_dir / "basemap" / filename).exists()
 
     def icon_path(self) -> Path | None:
         path = self.data_dir / "icon" / "pymappr.ico"

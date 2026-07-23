@@ -1,16 +1,3 @@
-"""Tabular data loading and column mapping for point datasets.
-
-A data file (CSV, TSV, Excel, OpenDocument, ...) needs a longitude and a
-latitude column plus any number of name columns (Name 1, Name 2, Name 3,
-...). Column order does not matter: headers are guessed and the user
-confirms or remaps them in the UI before import - picking the
-latitude/longitude columns is always required. The first row is *not*
-assumed to be headers: the import dialog lets the user say whether it is
-data or headers (with a guess made here). Coordinates may be decimal
-degrees or DMS. Points can also be typed in by hand as "lat, lon" lines
-(:func:`build_manual_dataset`).
-"""
-
 from __future__ import annotations
 
 from dataclasses import dataclass, field

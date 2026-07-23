@@ -1,25 +1,3 @@
-"""Static validation for Python/R map scripts, LLM-free.
-
-Used two ways: the tests validate every script the deterministic code
-export (``pymappr/codegen.py``) produces, and the experimental LLM
-Assist dialog offers a "Validate code" button so users can sanity-check
-a model's reply before running it.
-
-The checks are deliberately modest and fully offline:
-
-* **Python** - a real syntax check via :func:`ast.parse`, plus a warning
-  when a "script" contains no imports at all.
-* **R** - a small scanner that understands comments, strings (including
-  R 4 raw strings), and bracket nesting, catching the failure modes LLMs
-  actually produce: truncated replies, unbalanced brackets, unclosed
-  strings.
-* **Both** - leftover placeholders (TODO, ``<your file>``, path/to, ...)
-  that the user still needs to fill in.
-
-Passing means "this parses", never "this is correct": the user still has
-to run the code and compare its output to the map.
-"""
-
 from __future__ import annotations
 
 import ast
