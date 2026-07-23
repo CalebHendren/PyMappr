@@ -285,21 +285,22 @@ def test_globe_cap_polygon_runtime_clips_and_stays_finite():
 
 
 def test_notes_list_only_external_overlays():
-    # Bathymetry, the satellite raster, the compass, and map labels are
+    # Bathymetry, the raster basemap, the compass, and map labels are
     # now reproduced by the Python script; only the optional external
     # overlays stay in the not-reproduced notes.
-    state = make_state(map={"bathymetry": True, "basemap": "satellite",
+    state = make_state(map={"bathymetry": True, "basemap": "relief",
                             "compass": True,
                             "fills": {"biodiversity": True}})
     code = codegen.generate_code(state, [], "Python")
     assert "NOT reproduced" in code
     assert "Biodiversity hotspots" in code
-    notes_block = code.split("NOT reproduced")[1].split('"""')[0]
+    # Isolate just the note comment lines, before the map-configuration block.
+    notes_block = code.split("NOT reproduced")[1].split("map configuration")[0]
     assert "Bathymetry" not in notes_block
-    assert "satellite" not in notes_block
-    assert "compass" not in notes_block
+    assert "basemap" not in notes_block.lower()
+    assert "compass" not in notes_block.lower()
     # ... and the features themselves are configured for drawing.
-    assert "SATELLITE = True" in code
+    assert "BASEMAP = 'relief'" in code
     assert "bathymetry_all" in code
     assert "COMPASS = True" in code
 
@@ -487,14 +488,14 @@ def test_attribute_mode_emits_sectioned_legend():
     assert "LEGEND_SECTIONS = None" in plain
 
 
-def test_satellite_basemap_is_reproduced():
+def test_raster_basemap_is_reproduced():
     code = codegen.generate_code(
-        make_state(map={"basemap": "satellite"}), [], "Python")
-    assert "SATELLITE = True" in code
+        make_state(map={"basemap": "relief"}), [], "Python")
+    assert "BASEMAP = 'relief'" in code
     assert "NE1_50M_SR_W" in code
-    assert "SATELLITE_SIZE = (5400, 2700)" in code  # PyMappr's resample
+    assert "BASEMAP_IMG_SIZE = (5400, 2700)" in code  # PyMappr's resample
     off = codegen.generate_code(make_state(), [], "Python")
-    assert "SATELLITE = False" in off
+    assert "BASEMAP = 'simple'" in off
 
 
 def test_compass_is_reproduced():
