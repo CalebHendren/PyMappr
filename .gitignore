@@ -1,4 +1,3 @@
-# Python
 __pycache__/
 *.py[cod]
 *.egg-info/
@@ -8,25 +7,15 @@ dist/
 .venv/
 venv/
 .pytest_cache/
-
-# Map data (downloaded by scripts/fetch_data.py)
 data/
-
-# Build outputs
 *.spec.bak
 output/
 Output/
-
-# Editors / OS
 .claude/
 .vscode/
 .idea/
 *.swp
 .DS_Store
 Thumbs.db
-
-# Local personal instructions file (not shared)
 /CLAUDE.md
-
-# Headless render smoke-test output (scripts/render_preview.py)
 preview/
