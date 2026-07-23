@@ -1,13 +1,3 @@
-"""Render the README images into docs/images/ (headless).
-
-Usage: python scripts/make_screenshots.py
-
-Exercises the same renderer the app uses, on the bundled sample datasets:
-US cities, Wyoming cities (four name columns), the felines & canines
-dataset, and the insect taxonomy (color-by + symbol-by). Requires the map
-data (python scripts/fetch_data.py).
-"""
-
 from __future__ import annotations
 
 import sys

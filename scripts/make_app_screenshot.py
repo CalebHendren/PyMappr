@@ -1,15 +1,3 @@
-"""Capture the app-window screenshots for the README (needs a display).
-
-Usage:
-    python scripts/make_app_screenshot.py            # on a desktop
-    xvfb-run -s "-screen 0 1560x1000x24" python scripts/make_app_screenshot.py
-
-Loads a sample dataset the same way the Open CSV dialog would, switches a
-few layers on, and saves PNG grabs of the whole window into docs/images/:
-``app_points.png`` (Data tab, grouped points and legend) and
-``app_layers.png`` (Layers tab, physical layers on a world view).
-"""
-
 from __future__ import annotations
 
 import sys
