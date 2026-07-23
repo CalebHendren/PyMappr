@@ -1166,6 +1166,9 @@ class MapRenderer:
         self.fig.savefig(path, dpi=dpi, facecolor="white")
 
     def save_tif(self, path: str, dpi: int = 300) -> None:
+        # Render to PNG in memory first; matplotlib's Agg backend does not
+        # embed DPI metadata in TIFF files, so we hand off to Pillow which
+        # writes the correct XResolution/YResolution TIFF tags.
         import io
 
         from PIL import Image
