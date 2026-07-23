@@ -1,17 +1,3 @@
-"""Parsing of geographic coordinates in decimal degrees or DMS notation.
-
-Accepted forms (whitespace-tolerant, case-insensitive hemisphere letters):
-
-    -122.4194                decimal degrees
-    122.4194 W               decimal degrees with hemisphere
-    122°25'10.5"W            degrees minutes seconds
-    W 122° 25' 10.5"         hemisphere prefix
-    122d 25m 10.5s W         d/m/s letter markers
-    122 25 10.5 W            bare numbers
-    122:25:10.5W             colon separated
-    37°46.493'N              degrees + decimal minutes
-"""
-
 from __future__ import annotations
 
 import re

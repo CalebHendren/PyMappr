@@ -201,7 +201,7 @@ class MapRenderer:
         self._label_texts: dict[str, list] = {}
         self._label_xy_cache: dict[tuple[str, str], tuple[np.ndarray, np.ndarray]] = {}
         self._point_xy_cache: dict[tuple[str, str], tuple[np.ndarray, np.ndarray]] = {}
-        self._warp_cache: dict[str, tuple[np.ndarray, tuple]] = {}
+        self._warp_cache: dict[tuple, tuple[np.ndarray, tuple]] = {}
         self._in_wrap = False
         self._in_limits_refresh = False
 
@@ -209,6 +209,7 @@ class MapRenderer:
         # in map coordinates, set by dragging a label with the mouse.
         self._label_offsets: dict[tuple[str, str], tuple[float, float]] = {}
         self._label_drag: dict | None = None
+        self._label_dragging_enabled = False
 
         self.set_extent("World")
         self._apply_graticule()
@@ -394,8 +395,8 @@ class MapRenderer:
         # everything downstream (graticule locators, label culling) reads
         # the axis limits.
         self.set_extent(self._extent_request)
-        if self._basemap == "satellite":
-            self.set_basemap("satellite")
+        if self._basemap != "simple":
+            self.set_basemap(self._basemap)
         for key in list(self._line_visible):
             self._show_line_layer(key)
         self._sync_continents()
@@ -437,12 +438,17 @@ class MapRenderer:
 
     # --------------------------------------------------------------- basemap
 
+    _RASTER_MODES = {"relief", "relief_alt", "relief_grey", "blue_marble"}
+
     def set_basemap(self, mode: str) -> None:
-        """``"simple"`` (white, line work) or ``"satellite"`` (color raster)."""
+        """``"simple"`` or a raster mode (``"relief"``, ``"relief_alt"``,
+        ``"relief_grey"``, ``"blue_marble"``)."""
         self._basemap = mode
-        if mode == "satellite" and "satellite" not in self._artists:
+        is_raster = mode in self._RASTER_MODES
+        artist_key = f"raster_{mode}"
+        if is_raster and artist_key not in self._artists:
             with self._preserving_view():
-                img, extent = self._warped_basemap()
+                img, extent = self._warped_basemap(mode)
                 artists = []
                 for off in self._offsets():
                     x0, x1, y0, y1 = extent
@@ -452,17 +458,21 @@ class MapRenderer:
                         zorder=Z_SATELLITE)
                     artist._pym_offset = off
                     artists.append(artist)
-                self._artists["satellite"] = artists
-        for artist in self._artists.get("satellite", []):
-            artist.set_visible(mode == "satellite")
+                self._artists[artist_key] = artists
+        # Show only the active raster; hide all others.
+        for rmode in self._RASTER_MODES:
+            rkey = f"raster_{rmode}"
+            for artist in self._artists.get(rkey, []):
+                artist.set_visible(rmode == mode)
         self._sync_wrap_copies()
 
-    def _warped_basemap(self) -> tuple[np.ndarray, tuple]:
+    def _warped_basemap(self, mode: str) -> tuple[np.ndarray, tuple]:
         """The basemap image in the current projection, plus its extent."""
-        img = self.store.basemap_image()
+        img = self.store.basemap_image(mode)
         if self.proj.is_geographic:
             return img, (-180, 180, -90, 90)
-        if self.proj.key not in self._warp_cache:
+        cache_key = (self.proj.key, mode)
+        if cache_key not in self._warp_cache:
             wx0, wx1, wy0, wy1 = self.proj.bounds
             nx, ny = _WARP_GRID
             xs = np.linspace(wx0, wx1, nx)
@@ -473,8 +483,6 @@ class MapRenderer:
             valid = (np.isfinite(lons) & np.isfinite(lats)
                      & (np.abs(lons) <= 180.001) & (np.abs(lats) <= 90.001))
             h, w = img.shape[:2]
-            # Out-of-globe grid cells invert to NaN/inf or wild values;
-            # neutralise them (they are masked via *valid* below).
             lons = np.clip(np.nan_to_num(lons, nan=0.0, posinf=0.0,
                                          neginf=0.0), -360.0, 360.0)
             lats = np.clip(np.nan_to_num(lats, nan=0.0, posinf=0.0,
@@ -484,8 +492,8 @@ class MapRenderer:
             warped = np.zeros((ny, nx, 4), dtype=np.uint8)
             warped[..., :3] = img[rows, cols]
             warped[..., 3] = np.where(valid, 255, 0)
-            self._warp_cache[self.proj.key] = (warped, (wx0, wx1, wy0, wy1))
-        return self._warp_cache[self.proj.key]
+            self._warp_cache[cache_key] = (warped, (wx0, wx1, wy0, wy1))
+        return self._warp_cache[cache_key]
 
     # ------------------------------------------------- multi-resolution core
 
@@ -930,7 +938,24 @@ class MapRenderer:
                     return text
         return None
 
+    def set_label_dragging(self, enabled: bool) -> None:
+        self._label_dragging_enabled = enabled
+
+    def _clamp_label_offset(self, bx: float, by: float,
+                            dx: float, dy: float) -> tuple[float, float]:
+        """Limit *dx, dy* so the label stays within 1% of the current
+        view extent from its original position."""
+        x0, x1 = self.ax.get_xlim()
+        y0, y1 = self.ax.get_ylim()
+        max_dx = abs(x1 - x0) * 0.01
+        max_dy = abs(y1 - y0) * 0.01
+        dx = max(-max_dx, min(max_dx, dx))
+        dy = max(-max_dy, min(max_dy, dy))
+        return dx, dy
+
     def _on_label_press(self, event) -> None:
+        if not self._label_dragging_enabled:
+            return
         if event.inaxes is not self.ax or self._toolbar_busy():
             return
         text = self._label_under(event)
@@ -949,9 +974,13 @@ class MapRenderer:
     def _on_label_motion(self, event) -> None:
         if self._label_drag is None or event.inaxes is not self.ax:
             return
+        text = self._label_drag["text"]
         gx, gy = self._label_drag["grab"]
-        self._label_drag["text"].set_position((event.xdata + gx,
-                                               event.ydata + gy))
+        bx, by = text._pym_base
+        raw_dx = event.xdata + gx - bx
+        raw_dy = event.ydata + gy - by
+        dx, dy = self._clamp_label_offset(bx, by, raw_dx, raw_dy)
+        text.set_position((bx + dx, by + dy))
         self.redraw()
 
     def _on_label_release(self, event) -> None:
@@ -961,7 +990,8 @@ class MapRenderer:
         self._label_drag = None
         tx, ty = text.get_position()
         bx, by = text._pym_base
-        self._label_offsets[text._pym_key] = (tx - bx, ty - by)
+        dx, dy = self._clamp_label_offset(bx, by, tx - bx, ty - by)
+        self._label_offsets[text._pym_key] = (dx, dy)
 
     # ------------------------------------------------------------ graticule
 

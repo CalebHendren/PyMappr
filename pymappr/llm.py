@@ -1,24 +1,3 @@
-"""Experimental LLM assist (dev-only, hidden behind the experimental
-features toggle - deliberately not mentioned in the README).
-
-Asks an LLM of the user's choice to write a standalone Python or R
-script that recreates the current map, so the mapping workflow can be
-audited and reproduced later. Only the map settings and the datasets'
-column names are ever sent - no data rows, no coordinates, no category
-values. The user supplies their own API key and requests go straight to
-the chosen provider. A PNG snapshot of the map can optionally be
-attached (off by default).
-
-The generated code is a starting point, not a result: the user must
-read it, run it themselves, and compare its output to their map.
-
-This module is UI-free (the dialog lives in pymappr/ui/llm_assist.py)
-and uses plain HTTPS JSON via urllib, like the update checker, so the
-packaged app gains no dependencies. Three wire formats cover every
-provider: Anthropic's Messages API, Google's Gemini API, and the
-OpenAI-compatible chat completions API used by everyone else.
-"""
-
 from __future__ import annotations
 
 import base64

@@ -1,22 +1,3 @@
-"""Project persistence: save/load named projects, settings, and sessions.
-
-A *project* is everything needed to reproduce the current map: every
-loaded dataset (data included, so a project file is self-contained and
-can be shared with collaborators), per-dataset styling, the visible
-layers, projection, view, legend, and export options.
-
-Projects are JSON documents with a ``.pymappr`` extension, stored in a
-user-selectable projects folder (Documents/PyMappr Projects by default).
-Because they live in per-user directories - never inside the install
-directory - they survive application updates. Import/export is the same
-format: an exported file dropped in someone else's projects folder (or
-imported through the File menu) opens identically for them.
-
-The *session* is an automatic project saved to the per-user config
-directory when the app closes and restored on the next launch, so users
-pick up right where they left off.
-"""
-
 from __future__ import annotations
 
 import json

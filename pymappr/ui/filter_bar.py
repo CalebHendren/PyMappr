@@ -46,8 +46,9 @@ class FilterBar(ttk.Frame):
 
         # Value checkbuttons live in a horizontally scrollable strip so
         # datasets with many values (e.g. ~90 dog breeds) stay usable.
+        bg = ttk.Style().lookup("TFrame", "background") or "white"
         self._canvas = tk.Canvas(row, height=STRIP_HEIGHT,
-                                 highlightthickness=0)
+                                 highlightthickness=0, background=bg)
         self._canvas.pack(side="left", fill="x", expand=True)
         self._strip = ttk.Frame(self._canvas)
         self._canvas.create_window((0, 0), window=self._strip, anchor="w",

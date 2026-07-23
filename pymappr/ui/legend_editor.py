@@ -31,8 +31,9 @@ class LegendEditorDialog(tk.Toplevel):
                 row=0, column=col, sticky="w", padx=4)
 
         # Scrollable list of style rows.
+        bg = ttk.Style().lookup("TFrame", "background") or "white"
         canvas = tk.Canvas(outer, height=min(34 * max(len(styles), 1), 400),
-                           highlightthickness=0)
+                           highlightthickness=0, background=bg)
         scroll = ttk.Scrollbar(outer, orient="vertical", command=canvas.yview)
         rows = ttk.Frame(canvas)
         rows.bind("<Configure>",
