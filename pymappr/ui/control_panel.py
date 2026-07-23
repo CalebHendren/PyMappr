@@ -21,6 +21,8 @@ PANEL_WIDTH = 320
 
 GRATICULE_CHOICES = {"Off": None, "1\N{DEGREE SIGN}": 1.0,
                      "5\N{DEGREE SIGN}": 5.0, "10\N{DEGREE SIGN}": 10.0}
+# Display label -> renderer orientation key.
+ORIENTATION_LABELS = {"Landscape": "landscape", "Portrait": "portrait"}
 KOFI_URL = "https://ko-fi.com/calebhendren"
 LEGEND_LOCATIONS = ["best", "upper right", "upper left", "lower left",
                     "lower right", "center right"]
@@ -336,6 +338,13 @@ class ControlPanel(ttk.Frame):
         self._combo_row(sec, "Limit to:", self.continent_var,
                         CONTINENT_EXTENTS, self.app.on_continent, width=16)
 
+        # Landscape fills the canvas; portrait frames tall regions (e.g.
+        # South America) in a narrow box instead of a band of ocean.
+        self.orientation_var = tk.StringVar(value="Landscape")
+        self._combo_row(sec, "Orientation:", self.orientation_var,
+                        list(ORIENTATION_LABELS), self.app.on_orientation,
+                        width=16)
+
         self.projection_var = tk.StringVar(value="Equirectangular")
         self._combo_row(sec, "Projection:", self.projection_var,
                         PROJECTIONS, self.app.on_projection, width=16)
@@ -606,6 +615,10 @@ class ControlPanel(ttk.Frame):
 
     def graticule_interval(self) -> float | None:
         return GRATICULE_CHOICES[self.graticule_var.get()]
+
+    def orientation(self) -> str:
+        """The renderer orientation key for the selected label."""
+        return ORIENTATION_LABELS.get(self.orientation_var.get(), "landscape")
 
     def legend_fontsize(self) -> float:
         try:

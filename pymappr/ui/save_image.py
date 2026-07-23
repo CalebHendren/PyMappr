@@ -95,8 +95,10 @@ class SaveImageDialog(tk.Toplevel):
         return dpi if dpi > 0 else None
 
     def _figure_size(self) -> tuple[float, float] | None:
+        # The saved image size, cropped to the map for a portrait
+        # (letterboxed) orientation rather than the on-screen figure.
         try:
-            width, height = self.app.renderer.fig.get_size_inches()
+            width, height = self.app.renderer.export_size_inches()
             return float(width), float(height)
         except Exception:  # noqa: BLE001 - no renderer / unusual state
             return None
