@@ -1,28 +1,3 @@
-"""Map projections for the renderer, built on pyproj.
-
-Every projection maps geographic lon/lat (EPSG:4326) into a projected plane.
-``Equirectangular`` is the identity (plain degrees) and is the default; the
-others reproject all vector layers, points, labels, and the basemap raster.
-
-Three families live here:
-
-* **World projections** (Mercator, Robinson, ...) cover the whole globe and
-  are keyed by name alone.
-* **The Globe** (orthographic) shows the Earth as seen from space: one
-  hemisphere on a disk, centred on a customizable point. Only the near
-  hemisphere exists in an orthographic projection - the far side projects
-  to infinity - so vector layers are clipped to the visible spherical cap
-  before reprojection (:meth:`Projection.clip_shape`) and stray far-side
-  coordinates come back as NaN from :meth:`Projection.forward`.
-* **Lambert projections** (Lambert Conformal Conic and Lambert Azimuthal
-  Equal Area) are regional. Each preset centres on a region but exposes a
-  **customizable point of natural origin** (central meridian ``lon_0`` and
-  latitude of origin ``lat_0``); ``get_projection`` rebuilds the CRS when the
-  origin changes. Regional projections clip data to a latitude band and a
-  longitude span around the origin so the far side of the globe (where a
-  conic projection fans out to infinity) never distorts the map.
-"""
-
 from __future__ import annotations
 
 from dataclasses import dataclass
