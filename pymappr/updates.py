@@ -1,11 +1,3 @@
-"""Update check against the GitHub releases API.
-
-On launch the app calls :func:`check_daily_async`, which queries the
-newest release at most once per day (the last-check time is stored in a
-small per-user state file) and reports back when a newer version exists.
-The Help menu's "Check for updates" runs :func:`check_now` directly.
-"""
-
 from __future__ import annotations
 
 import json
