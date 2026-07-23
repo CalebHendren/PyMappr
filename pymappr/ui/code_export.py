@@ -1,9 +1,8 @@
 """Export-as-code dialog: show and save the Python/R map script.
 
-Unlike the experimental LLM Assist, this is a normal, always-available
-feature with no network use: selecting a language box pastes the
-pre-made functions from ``pymappr/codegen.py`` (filled in with the
-current map settings) into the preview.
+Selecting a language box pastes the pre-made functions from
+``pymappr/codegen.py`` (filled in with the current map settings) into the
+preview.
 
 Two ways to take it away, both ready to run with no setup:
 
@@ -24,11 +23,14 @@ from tkinter import filedialog, messagebox, ttk
 from pymappr import codegen, projects
 
 WRAP = 560
-NOTE = ("Generated locally from your current map settings - no AI, no "
-        "network at export time. The script installs any missing packages "
-        "on first run and downloads its base layers from Natural Earth, so "
-        "you can just open it in an IDE and click Run. Save a single "
-        "self-contained file, or a whole runnable project folder.")
+NOTE = ("The script installs any missing packages on first run and "
+        "downloads its base layers from Natural Earth, so you can just "
+        "open it in an IDE and click Run. Save a single self-contained "
+        "file, or a whole runnable project folder.")
+
+# The R export reuses the Python code paths where it can, but some styling
+# details do not map one-to-one; flag it as best effort in the picker.
+LANGUAGE_LABELS = {"R": "R (best effort)"}
 
 
 class CodeExportDialog(tk.Toplevel):
@@ -54,7 +56,8 @@ class CodeExportDialog(tk.Toplevel):
         self._language_var = tk.StringVar(
             value=stored if stored in codegen.LANGUAGES else "Python")
         for language in codegen.LANGUAGES:
-            ttk.Radiobutton(row, text=language, value=language,
+            ttk.Radiobutton(row, text=LANGUAGE_LABELS.get(language, language),
+                            value=language,
                             variable=self._language_var,
                             command=self._refresh).pack(side="left",
                                                         padx=(8, 0))
