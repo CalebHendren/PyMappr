@@ -235,6 +235,8 @@ class PyMapprApp:
         style = ttk.Style()
         bg = style.lookup("TFrame", "background") or "white"
         fg = style.lookup("TLabel", "foreground") or "black"
+        # Portrait side bars use the UI background so the map sits on a mat.
+        self.renderer.set_mat_color(bg)
         self.toolbar.configure(background=bg)
         for child in self.toolbar.winfo_children():
             try:

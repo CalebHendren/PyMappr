@@ -259,6 +259,12 @@ class MapRenderer:
         # Base axes margins currently in effect (with or without room for
         # tick labels); the orientation narrows this into the axes box.
         self._axes_margins = _MARGINS_PLAIN
+        # In portrait the map is a tall box centred on the figure; the blank
+        # side bars are painted this "mat" colour (the app's background) so
+        # the framing reads as a centred page instead of stray whitespace.
+        # The map itself keeps a white background regardless.
+        self._mat_color = "#e6e6e6"
+        self.ax.set_facecolor("white")
 
         # (label, PointStyle, lons, lats) per group
         self._point_groups: list[tuple[str, PointStyle, np.ndarray, np.ndarray]] = []
@@ -375,7 +381,19 @@ class MapRenderer:
         if name == self._orientation:
             return
         self._orientation = name
+        self._apply_mat()
         self._refit_view_to_box()
+
+    def set_mat_color(self, color: str) -> None:
+        """Set the colour of the portrait side bars (the app's background),
+        so the letterbox matches the surrounding UI. A no-op on the map
+        itself, which always stays white."""
+        self._mat_color = color or "#e6e6e6"
+        self._apply_mat()
+
+    def _apply_mat(self) -> None:
+        portrait = ORIENTATION_ASPECT.get(self._orientation) is not None
+        self.fig.set_facecolor(self._mat_color if portrait else "white")
 
     def _apply_axes_position(self) -> None:
         """Place the map axes for the current margins and orientation."""
