@@ -521,6 +521,7 @@ class PyMapprApp:
                 "proj_lat0": p.proj_lat0_var.get(),
                 "basemap": p.basemap_var.get(),
                 "continent": p.continent_var.get(),
+                "orientation": p.orientation_var.get(),
                 "compass": p.compass_var.get(),
                 "graticule": p.graticule_var.get(),
                 "hide_grid_labels": p.hide_grid_labels_var.get(),
@@ -574,6 +575,7 @@ class PyMapprApp:
             basemap = "relief"  # migrate legacy value
         p.basemap_var.set(basemap)
         p.continent_var.set(m["continent"])
+        p.orientation_var.set(m.get("orientation", "Landscape"))
         p.compass_var.set(m["compass"])
         p.graticule_var.set(m["graticule"])
         p.hide_grid_labels_var.set(m["hide_grid_labels"])
@@ -608,6 +610,7 @@ class PyMapprApp:
             lon0, lat0 = p.projection_origin()
             renderer.set_projection(p.projection_var.get(), lon0, lat0)
             renderer.set_basemap(p.basemap_var.get())
+            renderer.set_orientation(p.orientation())
             renderer.set_extent(p.continent_var.get())
             for key, var in p.layer_vars.items():
                 self._restore_layer(renderer.set_layer, key, var)
@@ -1111,6 +1114,11 @@ class PyMapprApp:
     def on_continent(self) -> None:
         self.renderer.set_extent(self.panel.continent_var.get())
         self.toolbar.update()
+        self.renderer.redraw()
+
+    def on_orientation(self) -> None:
+        self.renderer.set_orientation(self.panel.orientation())
+        self.toolbar.update()  # re-frame becomes the toolbar's Home
         self.renderer.redraw()
 
     def on_projection(self) -> None:
