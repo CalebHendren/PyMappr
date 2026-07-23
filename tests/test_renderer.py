@@ -11,7 +11,7 @@ import pytest
 
 from pymappr.renderer import (_MARGINS_PLAIN, _MARGINS_WITH_TICKS,
                               ORIENTATION_ASPECT, _export_geometry,
-                              _oriented_axes_rect)
+                              _oriented_axes_rect, _refit_xlim)
 
 
 def _box_aspect(rect, fig_w, fig_h):
@@ -51,6 +51,41 @@ def test_portrait_shortens_a_tall_canvas():
     assert width == pytest.approx(_MARGINS_PLAIN[2] - _MARGINS_PLAIN[0])
     base_bottom, base_top = _MARGINS_PLAIN[1], _MARGINS_PLAIN[3]
     assert bottom + height / 2 == pytest.approx((base_bottom + base_top) / 2)
+
+
+def test_portrait_refit_crops_the_sides_keeping_the_vertical_span():
+    # A South-America-ish view (65 wide, 73 tall) fit to a portrait box
+    # narrows horizontally about its centre; the y-span is untouched.
+    xlim, ylim = (-95.0, -30.0), (-58.0, 15.0)
+    box_ratio = ORIENTATION_ASPECT["portrait"]
+    new_x0, new_x1 = _refit_xlim(box_ratio, xlim, ylim, 360.0, clamp=True)
+    assert (new_x0 + new_x1) / 2 == pytest.approx((xlim[0] + xlim[1]) / 2)
+    assert (new_x1 - new_x0) < (xlim[1] - xlim[0])          # cropped
+    height = ylim[1] - ylim[0]
+    assert (new_x1 - new_x0) == pytest.approx(height * box_ratio)
+
+
+def test_landscape_refit_widens_and_is_reversible():
+    xlim, ylim = (-88.9, -36.1), (-58.0, 15.0)   # a portrait view
+    height = ylim[1] - ylim[0]
+    wide = _refit_xlim(1.4, xlim, ylim, 360.0, clamp=True)
+    assert (wide[1] - wide[0]) > (xlim[1] - xlim[0])        # widened
+    # Round-tripping back to the same ratio restores the same width.
+    back = _refit_xlim(ORIENTATION_ASPECT["portrait"], wide, ylim, 360.0,
+                       clamp=True)
+    assert (back[1] - back[0]) == pytest.approx(
+        height * ORIENTATION_ASPECT["portrait"])
+
+
+def test_refit_clamps_landscape_to_the_world_width():
+    # A full-height view whose fitted width would exceed the world is
+    # clamped (here 180 * 2.5 = 450 -> 360).
+    xlim, ylim = (-30.0, 30.0), (-90.0, 90.0)
+    wide = _refit_xlim(2.5, xlim, ylim, 360.0, clamp=True)
+    assert (wide[1] - wide[0]) == pytest.approx(360.0)
+    # A hemisphere (globe) view isn't clamped.
+    unclamped = _refit_xlim(2.5, xlim, ylim, 360.0, clamp=False)
+    assert (unclamped[1] - unclamped[0]) == pytest.approx(180.0 * 2.5)
 
 
 def test_export_leaves_a_full_canvas_unchanged():
