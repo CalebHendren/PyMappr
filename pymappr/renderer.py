@@ -166,6 +166,23 @@ def _oriented_axes_rect(margins: tuple[float, float, float, float],
     return left, bottom, width, height
 
 
+def _refit_xlim(box_ratio: float, xlim: tuple[float, float],
+                ylim: tuple[float, float], world_width: float,
+                clamp: bool) -> tuple[float, float]:
+    """New x-limits that fit the current view to *box_ratio* (axes
+    width / height) by keeping the centre and vertical span and adjusting
+    the horizontal span - narrowing for portrait, widening for landscape.
+    When *clamp*, the span never exceeds *world_width*."""
+    x0, x1 = xlim
+    y0, y1 = ylim
+    cx = (x0 + x1) / 2.0
+    new_w = abs(y1 - y0) * box_ratio
+    if clamp:
+        new_w = min(new_w, world_width)
+    half = new_w / 2.0 if x1 >= x0 else -new_w / 2.0
+    return cx - half, cx + half
+
+
 def _export_geometry(pos_bounds: tuple[float, float, float, float],
                      fig_w: float, fig_h: float,
                      margins: tuple[float, float, float, float]
@@ -349,13 +366,16 @@ class MapRenderer:
 
     def set_orientation(self, name: str) -> None:
         """Switch the map between ``"landscape"`` (fill the canvas) and
-        ``"portrait"`` (a tall, centred box). The last requested extent is
-        re-framed to the new box so the visible region stays put."""
+        ``"portrait"`` (a tall box). The region on screen is kept: its
+        vertical span stays put and the horizontal span is re-fit to the new
+        box - cropping the sides for portrait, widening them for landscape -
+        so a tall region loses its flanking ocean instead of the whole view
+        jumping back to a preset."""
         name = name if name in ORIENTATION_ASPECT else "landscape"
         if name == self._orientation:
             return
         self._orientation = name
-        self.set_extent(self._extent_request)
+        self._refit_view_to_box()
 
     def _apply_axes_position(self) -> None:
         """Place the map axes for the current margins and orientation."""
@@ -364,6 +384,21 @@ class MapRenderer:
             self._axes_margins, float(fig_w), float(fig_h),
             ORIENTATION_ASPECT.get(self._orientation))
         self.ax.set_position(list(rect))
+
+    def _refit_view_to_box(self) -> None:
+        """Re-fit the current view to the current orientation's axes box.
+
+        The view centre and its vertical span are kept; the horizontal span
+        is set to match the box aspect, so map units stay square. Landscape
+        never widens past the world; portrait only ever narrows."""
+        self._apply_axes_position()
+        pos = self.ax.get_position()
+        fig_w, fig_h = self.fig.get_size_inches()
+        box_ratio = max((pos.width * fig_w) / (pos.height * fig_h), 1e-6)
+        x0, x1 = _refit_xlim(box_ratio, self.ax.get_xlim(),
+                             self.ax.get_ylim(), self.proj.world_width,
+                             clamp=not self.proj.hemisphere)
+        self.ax.set_xlim(x0, x1)
 
     def get_view(self) -> tuple[tuple[float, float], tuple[float, float]]:
         """Current axis limits (map coordinates) for project persistence."""
