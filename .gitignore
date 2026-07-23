@@ -25,5 +25,8 @@ Output/
 .DS_Store
 Thumbs.db
 
+# Local personal instructions file (not shared)
+/CLAUDE.md
+
 # Headless render smoke-test output (scripts/render_preview.py)
 preview/
