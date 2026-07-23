@@ -10,7 +10,7 @@ app's handler methods; the app owns the renderer and the data.
 from __future__ import annotations
 
 import tkinter as tk
-from tkinter import messagebox, simpledialog, ttk
+from tkinter import ttk
 
 from pymappr import projects
 from pymappr.layers import CONTINENT_EXTENTS
@@ -24,12 +24,6 @@ GRATICULE_CHOICES = {"Off": None, "1\N{DEGREE SIGN}": 1.0,
 KOFI_URL = "https://ko-fi.com/calebhendren"
 LEGEND_LOCATIONS = ["best", "upper right", "upper left", "lower left",
                     "lower right", "center right"]
-DPI_CHOICES = ["100", "150", "200", "300"]
-
-# Gate for the experimental (dev-only) features. Deliberately a plain
-# constant: anyone reading the source is qualified to flip the switch.
-# If you found this, you're welcome to use it.
-EXPERIMENTAL_PASSWORD = "admin"
 
 # Layer toggles, grouped by panel section. Each row is (key, text, kind)
 # where kind picks the renderer call: "line" (vector outlines), "fill"
@@ -97,9 +91,9 @@ class ControlPanel(ttk.Frame):
         self.label_vars: dict[str, tk.BooleanVar] = {}
 
         self.notebook = ttk.Notebook(self, width=PANEL_WIDTH)
-        # The experimental bar packs to the bottom edge first so the
-        # notebook fills whatever height remains above it.
-        self._build_experimental_bar()
+        # The footer packs to the bottom edge first so the notebook fills
+        # whatever height remains above it.
+        self._build_footer()
         self.notebook.pack(fill="both", expand=True)
 
         data_tab = self._scroll_tab("Data")
@@ -109,7 +103,6 @@ class ControlPanel(ttk.Frame):
 
         self._build_data_section(data_tab)
         self._build_legend_section(data_tab)
-        self._build_support_section(data_tab)
 
         self._build_view_section(map_tab)
         self._build_graticule_section(map_tab)
@@ -330,15 +323,6 @@ class ControlPanel(ttk.Frame):
         ttk.Button(sec, text="Customize legend\N{HORIZONTAL ELLIPSIS}",
                    command=self.app.on_edit_styles).pack(fill="x", pady=2)
 
-    def _build_support_section(self, tab) -> None:
-        sec = self._section(tab, "Support Me")
-        ttk.Label(sec, text="Enjoying PyMappr? Support development:",
-                  wraplength=PANEL_WIDTH - 60).pack(anchor="w")
-        ttk.Button(sec, text="\N{BLACK HEART SUIT} Support on Ko-fi",
-                   command=self._open_kofi).pack(fill="x", pady=2)
-        ttk.Button(sec, text="Check for updates\N{HORIZONTAL ELLIPSIS}",
-                   command=self.app.on_check_updates).pack(fill="x", pady=2)
-
     def _open_kofi(self) -> None:
         import webbrowser
 
@@ -411,14 +395,12 @@ class ControlPanel(ttk.Frame):
 
     def _build_export_section(self, tab) -> None:
         sec = self._section(tab, "Export")
-        row = ttk.Frame(sec)
-        row.pack(fill="x", pady=2)
-        ttk.Label(row, text="Resolution (DPI):").pack(side="left")
+        # Persisted default DPI (also saved in the project). The picker in
+        # the "Save map as..." dialog reads and updates it; format,
+        # resolution and DPI are all chosen there.
         self.dpi_var = tk.StringVar(value="200")
-        ttk.Combobox(row, textvariable=self.dpi_var, state="readonly",
-                     values=DPI_CHOICES, width=6).pack(side="right")
-        ttk.Button(sec, text="Save map as PNG\N{HORIZONTAL ELLIPSIS}",
-                   command=self.app.on_save_png).pack(fill="x", pady=2)
+        ttk.Button(sec, text="Save map as\N{HORIZONTAL ELLIPSIS}",
+                   command=self.app.on_save_image).pack(fill="x", pady=2)
         ttk.Button(sec, text="Export as code (Python/R)"
                             "\N{HORIZONTAL ELLIPSIS}",
                    command=self.app.on_export_code).pack(fill="x", pady=2)
@@ -538,54 +520,18 @@ class ControlPanel(ttk.Frame):
             wraplength=PANEL_WIDTH - 60,
             foreground="#666666").pack(anchor="w")
 
-    # -------------------------------------------- experimental (dev only)
+    # -------------------------------------------------------------- footer
 
-    def _build_experimental_bar(self) -> None:
-        """A quiet toggle at the very bottom of the panel. The features
-        behind it are intentionally absent from the normal UI and the
-        README; the password is asked once and the state persists."""
+    def _build_footer(self) -> None:
+        """Persistent bar pinned to the bottom edge of the panel (below the
+        notebook, so it shows on every tab): support and update actions."""
         bar = ttk.Frame(self)
         bar.pack(side="bottom", fill="x", padx=6, pady=(2, 4))
-        self.experimental_var = tk.BooleanVar(
-            value=bool(projects.load_settings().get(
-                "experimental_enabled")))
-        ttk.Checkbutton(bar, text="Enable experimental features "
-                                  "(dev only)",
-                        variable=self.experimental_var,
-                        command=self._on_experimental_toggle).pack(
-            anchor="w")
-        self._llm_button = ttk.Button(
-            bar, text="LLM Assist\N{HORIZONTAL ELLIPSIS}",
-            command=self._open_llm_assist)
-        self._sync_experimental_bar()
-
-    def _sync_experimental_bar(self) -> None:
-        if self.experimental_var.get():
-            self._llm_button.pack(fill="x", pady=(2, 0))
-        else:
-            self._llm_button.pack_forget()
-
-    def _on_experimental_toggle(self) -> None:
-        if self.experimental_var.get():
-            password = simpledialog.askstring(
-                "Experimental features",
-                "Experimental features are unsupported and may change "
-                "or break at any time.\n\nPassword:",
-                show="*", parent=self)
-            if password != EXPERIMENTAL_PASSWORD:
-                self.experimental_var.set(False)
-                if password is not None:
-                    messagebox.showerror("Experimental features",
-                                         "Wrong password.", parent=self)
-        settings = projects.load_settings()
-        settings["experimental_enabled"] = self.experimental_var.get()
-        projects.save_settings(settings)
-        self._sync_experimental_bar()
-
-    def _open_llm_assist(self) -> None:
-        from pymappr.ui.llm_assist import LLMAssistDialog
-
-        LLMAssistDialog(self.app.root, self.app)
+        ttk.Button(bar, text="\N{BLACK HEART SUIT} Support on Ko-fi",
+                   command=self._open_kofi).pack(fill="x", pady=(2, 0))
+        ttk.Button(bar, text="Check for updates\N{HORIZONTAL ELLIPSIS}",
+                   command=self.app.on_check_updates).pack(fill="x",
+                                                           pady=(2, 0))
 
     # --------------------------------------------------------------- theme
 
