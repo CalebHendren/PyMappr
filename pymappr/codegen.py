@@ -1,28 +1,3 @@
-"""Deterministic Python/R code export: recreate the current map in an IDE.
-
-Unlike the experimental LLM assist (``pymappr/llm.py``), nothing here
-talks to a model or the network at generation time. Selecting a language
-in the export dialog simply pastes the **pre-made function templates**
-below into a ``.py`` or ``.R`` file, together with one configuration
-block filled in from the current map state. Same input, same output,
-every time - so the result is testable and trustworthy.
-
-The generated Python script is a faithful, static replica of PyMappr's
-own renderer (``pymappr/renderer.py``): the same view coordinates,
-figure geometry, layer resolutions, draw order, colors, satellite
-basemap, bathymetry stack, graticule with degree labels, map labels,
-compass, marker styling, and legend construction - so its output matches
-what PyMappr itself draws. The R script (sf + ggplot2) reproduces the
-same map as closely as the toolchain allows.
-
-Base layers are downloaded straight from Natural Earth (the same data
-PyMappr renders, cached in a local folder); the user's point data is
-embedded inline or written as CSV next to the script, so the export
-runs anywhere with no setup.
-
-This module is UI-free; the dialog lives in ``pymappr/ui/code_export.py``.
-"""
-
 from __future__ import annotations
 
 import math
@@ -102,11 +77,15 @@ _EXTERNAL_FILLS = {
                          "Natural Earth)",
 }
 
-# The Natural Earth shaded-relief raster behind the "satellite" basemap,
-# and the size PyMappr resamples it to (scripts do the same, so the
-# basemap pixels match the app exactly).
-SATELLITE_RASTER = ("50m", "raster", "NE1_50M_SR_W")
-SATELLITE_SIZE = (5400, 2700)
+# Natural Earth raster basemaps: mode -> (archive tuple, JPEG filename).
+# The archive tuple is (scale, category, name) for download_archive().
+BASEMAP_RASTERS = {
+    "relief": (("50m", "raster", "NE1_50M_SR_W"), "ne1_world.jpg"),
+    "relief_alt": (("50m", "raster", "NE2_50M_SR_W"), "ne2_world.jpg"),
+    "relief_grey": (("50m", "raster", "GRAY_50M_SR_W"), "gray_world.jpg"),
+    "blue_marble": (("50m", "raster", "HYP_50M_SR_W"), "hyp_world.jpg"),
+}
+BASEMAP_SIZE = (5400, 2700)
 
 # PyMappr marker name -> R pch code. Shapes with a filled+outlined R
 # variant (21-25) get it, so filled markers carry the app's white edge;
@@ -565,7 +544,7 @@ def build_config(state: dict, entries, project_name: str = "map",
         "zoom": round(zoom, 4),
         "figsize": figsize,
         "margins": margins,
-        "satellite": str(m.get("basemap", "simple")) == "satellite",
+        "basemap": str(m.get("basemap", "simple")),
         "layers": layers,
         "label_layers": label_layers,
         "graticule": {"interval": graticule, "labels": labels_on},
@@ -727,8 +706,8 @@ def _py_config(config: dict) -> str:
                  "  # inches; the app canvas geometry")
     lines.append(f'MARGINS = {_py(config["margins"])}'
                  "  # axes box as figure fractions (l, b, r, t)")
-    lines.append(f'SATELLITE = {_py(config["satellite"])}'
-                 "  # shaded-relief basemap raster")
+    lines.append(f'BASEMAP = {_py(config["basemap"])}'
+                 "  # raster basemap mode (\"simple\" = none)")
     grat = config["graticule"]
     lines.append(f"GRATICULE = {{'interval': {_py(grat['interval'])}, "
                  f"'labels': {_py(grat['labels'])}}}")
@@ -870,8 +849,13 @@ FALLBACK_STYLE = {"color": "#7f7f7f", "marker": "o", "size": 30.0,
 LABEL_HALO = [patheffects.withStroke(linewidth=2.2, foreground="white",
                                      alpha=0.85)]
 Z_GRID, Z_POINTS, Z_LABELS, Z_COMPASS = 1.8, 2.6, 3.0, 4.0
-SATELLITE_ARCHIVE = ("50m", "raster", "NE1_50M_SR_W")
-SATELLITE_SIZE = (5400, 2700)
+BASEMAP_ARCHIVES = {
+    "relief": (("50m", "raster", "NE1_50M_SR_W"), "ne1_world.jpg"),
+    "relief_alt": (("50m", "raster", "NE2_50M_SR_W"), "ne2_world.jpg"),
+    "relief_grey": (("50m", "raster", "GRAY_50M_SR_W"), "gray_world.jpg"),
+    "blue_marble": (("50m", "raster", "HYP_50M_SR_W"), "hyp_world.jpg"),
+}
+BASEMAP_IMG_SIZE = (5400, 2700)
 WARP_GRID = (1600, 800)
 
 
@@ -1032,14 +1016,17 @@ def wrap_offsets():
 # ---------------------------------------------------------------- basemap
 
 def basemap_image():
-    """The shaded-relief basemap, prepared exactly like PyMappr does it:
+    """The raster basemap, prepared exactly like PyMappr does it:
     the Natural Earth raster resampled to a JPEG-compressed world image."""
     from PIL import Image
 
+    if BASEMAP not in BASEMAP_ARCHIVES:
+        return None
+    archive_args, jpg_name = BASEMAP_ARCHIVES[BASEMAP]
     cache = SCRIPT_DIR / "naturalearth_cache"
-    jpg = cache / "ne1_world.jpg"
+    jpg = cache / jpg_name
     if not jpg.exists():
-        zip_path = download_archive(*SATELLITE_ARCHIVE)
+        zip_path = download_archive(*archive_args)
         print("Preparing the basemap raster (one-time)...")
         with zipfile.ZipFile(zip_path) as archive:
             tif_name = next(m for m in archive.namelist()
@@ -1047,7 +1034,7 @@ def basemap_image():
             with archive.open(tif_name) as handle:
                 img = Image.open(io.BytesIO(handle.read()))
                 img.load()
-        img = img.convert("RGB").resize(SATELLITE_SIZE, Image.LANCZOS)
+        img = img.convert("RGB").resize(BASEMAP_IMG_SIZE, Image.LANCZOS)
         img.save(jpg, "JPEG", quality=85)
     with Image.open(jpg) as img:
         return np.asarray(img.convert("RGB"))
@@ -1056,6 +1043,8 @@ def basemap_image():
 def warped_basemap():
     """The basemap image in the map projection, plus its extent."""
     img = basemap_image()
+    if img is None:
+        return None
     if MAP_CRS is None:
         return img, (-180, 180, -90, 90)
     wx0, wx1, wy0, wy1 = PROJ["bounds"]
@@ -1083,10 +1072,13 @@ def warped_basemap():
     return warped, (wx0, wx1, wy0, wy1)
 
 
-def draw_satellite(ax):
-    if not SATELLITE:
+def draw_basemap_raster(ax):
+    if BASEMAP == "simple":
         return
-    img, extent = warped_basemap()
+    result = warped_basemap()
+    if result is None:
+        return
+    img, extent = result
     x0, x1, y0, y1 = extent
     for off in wrap_offsets():
         ax.imshow(img, extent=(x0 + off, x1 + off, y0, y1),
@@ -1492,7 +1484,7 @@ def main():
     ax.tick_params(labelsize=7, length=2.5, direction="out")
     ax.set_xlim(VIEW[0], VIEW[1])
     ax.set_ylim(VIEW[2], VIEW[3])
-    draw_satellite(ax)
+    draw_basemap_raster(ax)
     add_base_layers(ax)
     draw_graticule(ax)
     for spec in DATASETS:
@@ -1638,8 +1630,8 @@ def _r_config(config: dict) -> str:
                  "  # inches; the app canvas geometry")
     lines.append(f'GEOGRAPHIC <- {_r(config["crs"] is None)}'
                  "  # plain lon/lat degrees?")
-    lines.append(f'SATELLITE <- {_r(config["satellite"])}'
-                 "  # shaded-relief basemap raster (needs terra+tidyterra)")
+    lines.append(f'BASEMAP <- {_r(config["basemap"])}'
+                 "  # raster basemap mode (\"simple\" = none)")
     grat = config["graticule"]
     lines.append(f'GRID_INTERVAL <- {_r(grat["interval"])}'
                  "  # graticule spacing in degrees (NULL = off)")
@@ -1949,21 +1941,29 @@ base_layer_geom <- function(layer) {
   }
 }
 
-satellite_geom <- function() {
-  # The shaded-relief basemap via terra + tidyterra (best effort: the
+basemap_archives <- list(
+  relief     = list(scale = "50m", cat = "raster", name = "NE1_50M_SR_W"),
+  relief_alt = list(scale = "50m", cat = "raster", name = "NE2_50M_SR_W"),
+  relief_grey = list(scale = "50m", cat = "raster", name = "GRAY_50M_SR_W"),
+  blue_marble = list(scale = "50m", cat = "raster", name = "HYP_50M_SR_W")
+)
+
+basemap_geom <- function() {
+  # The raster basemap via terra + tidyterra (best effort: the
   # vector map still draws if these packages cannot be installed).
+  if (BASEMAP == "simple" || is.null(basemap_archives[[BASEMAP]])) return(NULL)
   ok <- tryCatch({
     ensure_packages(c("terra", "tidyterra"))
     TRUE
   }, error = function(e) FALSE)
   if (!ok || !requireNamespace("terra", quietly = TRUE) ||
       !requireNamespace("tidyterra", quietly = TRUE)) {
-    message("note: terra/tidyterra unavailable; skipping the satellite ",
-            "basemap")
+    message("note: terra/tidyterra unavailable; skipping the basemap raster")
     return(NULL)
   }
-  zip_path <- download_archive("50m", "raster", "NE1_50M_SR_W")
-  folder <- file.path("naturalearth_cache", "NE1_50M_SR_W")
+  info <- basemap_archives[[BASEMAP]]
+  zip_path <- download_archive(info$scale, info$cat, info$name)
+  folder <- file.path("naturalearth_cache", info$name)
   if (!dir.exists(folder)) unzip(zip_path, exdir = folder)
   tif <- list.files(folder, pattern = "\\\\.tif$", full.names = TRUE,
                     recursive = TRUE)[1]
@@ -1984,8 +1984,8 @@ lat_label <- function(value) {
 
 build_map <- function() {
   p <- ggplot()
-  if (SATELLITE) {
-    raster_layer <- satellite_geom()
+  if (BASEMAP != "simple") {
+    raster_layer <- basemap_geom()
     if (!is.null(raster_layer)) p <- p + raster_layer
   }
   for (layer in NE_LAYERS) p <- p + base_layer_geom(layer)

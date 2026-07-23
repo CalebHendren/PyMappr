@@ -1,12 +1,3 @@
-"""Headless smoke test: render several map configurations to PNG files.
-
-Usage: python scripts/render_preview.py [output_dir]
-
-Useful for checking that the data and renderer work without starting the
-GUI - it exercises basemaps, layer toggles, labels, graticules, points,
-legend, projections, and the continent-outline fallback.
-"""
-
 from __future__ import annotations
 
 import sys
