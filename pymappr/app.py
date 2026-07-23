@@ -8,6 +8,7 @@ import webbrowser
 from pathlib import Path
 from tkinter import filedialog, messagebox, simpledialog, ttk
 
+import sv_ttk
 import matplotlib
 
 matplotlib.use("TkAgg")
@@ -73,11 +74,13 @@ class PyMapprApp:
         self.canvas = FigureCanvasTkAgg(figure, master=map_frame)
         self.renderer = MapRenderer(figure, store)
 
-        self.toolbar = NavigationToolbar2Tk(self.canvas, map_frame,
+        toolbar_row = ttk.Frame(map_frame)
+        toolbar_row.pack(side="top", fill="x")
+        self.toolbar = NavigationToolbar2Tk(self.canvas, toolbar_row,
                                             pack_toolbar=False)
         self.toolbar.update()
-        self._add_zoom_buttons()
-        self.toolbar.pack(side="top", fill="x")
+        self.toolbar.pack(side="left", fill="x", expand=True)
+        self._add_zoom_buttons(toolbar_row)
         self.canvas.get_tk_widget().pack(side="top", fill="both", expand=True)
 
         # Scroll wheel zooms the map about the cursor.
@@ -94,6 +97,7 @@ class PyMapprApp:
 
         # Defaults: simple basemap with country borders.
         self.renderer.set_layer("countries", True)
+        self._style_toolbar()
         self.canvas.draw()
 
         # Everything a project stores, in its pristine state: New project
@@ -160,6 +164,16 @@ class PyMapprApp:
         file_menu.add_command(label="Exit", command=self.on_exit)
         menubar.add_cascade(label="File", menu=file_menu)
 
+        view_menu = tk.Menu(menubar, tearoff=0)
+        self._theme_var = tk.StringVar(value=sv_ttk.get_theme())
+        view_menu.add_radiobutton(label="Light theme",
+                                  variable=self._theme_var, value="light",
+                                  command=self._apply_theme)
+        view_menu.add_radiobutton(label="Dark theme",
+                                  variable=self._theme_var, value="dark",
+                                  command=self._apply_theme)
+        menubar.add_cascade(label="View", menu=view_menu)
+
         help_menu = tk.Menu(menubar, tearoff=0)
         help_menu.add_command(label="About PyMappr", command=self._about)
         help_menu.add_command(label="Check for updates"
@@ -186,13 +200,13 @@ class PyMapprApp:
 
     # ----------------------------------------------------------------- zoom
 
-    def _add_zoom_buttons(self) -> None:
+    def _add_zoom_buttons(self, parent) -> None:
         """Big, obvious zoom buttons next to the matplotlib toolbar."""
-        ttk.Separator(self.toolbar, orient="vertical").pack(
+        ttk.Separator(parent, orient="vertical").pack(
             side="left", fill="y", padx=6, pady=2)
-        ttk.Button(self.toolbar, text="\N{HEAVY MINUS SIGN} Zoom out",
+        ttk.Button(parent, text="\N{HEAVY MINUS SIGN} Zoom out",
                    command=lambda: self.zoom_step(1 / 1.5)).pack(side="left")
-        ttk.Button(self.toolbar, text="\N{HEAVY PLUS SIGN} Zoom in",
+        ttk.Button(parent, text="\N{HEAVY PLUS SIGN} Zoom in",
                    command=lambda: self.zoom_step(1.5)).pack(side="left",
                                                              padx=(2, 0))
 
@@ -207,6 +221,35 @@ class PyMapprApp:
         factor = 1.25 if event.button == "up" else 1 / 1.25
         self.renderer.zoom(factor, (event.xdata, event.ydata))
         self.renderer.redraw()
+
+    def _apply_theme(self) -> None:
+        theme = self._theme_var.get()
+        sv_ttk.set_theme(theme)
+        settings = projects.load_settings()
+        settings["theme"] = theme
+        projects.save_settings(settings)
+        # Update non-ttk widgets that don't respond to theme changes.
+        self.panel.update_theme()
+        self._style_toolbar()
+
+    def _style_toolbar(self) -> None:
+        """Re-colour the matplotlib toolbar and canvas to match the theme."""
+        style = ttk.Style()
+        bg = style.lookup("TFrame", "background") or "white"
+        fg = style.lookup("TLabel", "foreground") or "black"
+        self.toolbar.configure(background=bg)
+        for child in self.toolbar.winfo_children():
+            try:
+                child.configure(background=bg, foreground=fg)
+            except tk.TclError:
+                try:
+                    child.configure(background=bg)
+                except tk.TclError:
+                    pass
+        # Re-render toolbar icons so matplotlib picks up the new
+        # background colour and recolours icons for contrast.
+        self.toolbar._rescale()
+        self.canvas.get_tk_widget().configure(background=bg)
 
     def _about(self) -> None:
         messagebox.showinfo(
@@ -528,7 +571,10 @@ class PyMapprApp:
         p.proj_lon0_var.set(m.get("proj_lon0", ""))
         p.proj_lat0_var.set(m.get("proj_lat0", ""))
         p.update_projection_origin(m["projection"])
-        p.basemap_var.set(m["basemap"])
+        basemap = m["basemap"]
+        if basemap == "satellite":
+            basemap = "relief"  # migrate legacy value
+        p.basemap_var.set(basemap)
         p.continent_var.set(m["continent"])
         p.compass_var.set(m["compass"])
         p.graticule_var.set(m["graticule"])
@@ -1047,9 +1093,19 @@ class PyMapprApp:
         LegendEditorDialog(self.root, entry.styles, self._push_points)
 
     def on_basemap(self) -> None:
+        mode = self.panel.basemap_var.get()
+        if mode != "simple" and not self.store.has_basemap(mode):
+            self.panel.basemap_var.set("simple")
+            messagebox.showinfo(
+                "Basemap not downloaded",
+                f"The {mode.replace('_', ' ')} raster is not available.\n\n"
+                "Run 'python scripts/fetch_data.py' to download additional "
+                "basemap rasters, then select it again.",
+                parent=self.root)
+            return
         self._busy(True)
         try:
-            self.renderer.set_basemap(self.panel.basemap_var.get())
+            self.renderer.set_basemap(mode)
         finally:
             self._busy(False)
         self.renderer.redraw()
@@ -1198,6 +1254,10 @@ class PyMapprApp:
             self._busy(False)
         self.renderer.redraw()
 
+    def on_label_drag_toggle(self) -> None:
+        self.renderer.set_label_dragging(
+            self.panel.label_drag_var.get())
+
     def on_graticule(self) -> None:
         interval = self.panel.graticule_interval()
         self.renderer.set_graticule(
@@ -1255,6 +1315,10 @@ def main() -> int:
     store = LayerStore()
     error = store.check_data()
     root = tk.Tk()
+    theme = projects.load_settings().get("theme", "light")
+    if theme not in ("light", "dark"):
+        theme = "light"
+    sv_ttk.set_theme(theme)
     if error:
         root.withdraw()
         messagebox.showerror("PyMappr - missing map data", error)
