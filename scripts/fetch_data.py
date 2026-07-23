@@ -9,7 +9,7 @@ rebuild outputs and --skip-extras to skip the optional overlays.
 
 Produces:
     data/shapes/<layer>/<layer>.shp (+ .shx/.dbf/.prj)   vector layers
-    data/basemap/ne1_world.jpg                            "Satellite" basemap
+    data/basemap/*.jpg                                     raster basemaps
     data/icon/pymappr.ico                                  application icon
 """
 
@@ -83,23 +83,16 @@ VECTOR_LAYERS = [
     ("10m", "physical", "ne_10m_geography_regions_polys"),
 ]
 
-RASTER = ("50m", "raster", "NE1_50M_SR_W")
-RASTER_TIF = "NE1_50M_SR_W/NE1_50M_SR_W.tif"
-BASEMAP_JPG = DATA_DIR / "basemap" / "ne1_world.jpg"
+BASEMAP_RASTERS = [
+    ("50m", "raster", "NE1_50M_SR_W", "ne1_world.jpg"),
+    ("50m", "raster", "NE2_50M_SR_W", "ne2_world.jpg"),
+    ("50m", "raster", "GRAY_50M_SR_W", "gray_world.jpg"),
+    ("50m", "raster", "HYP_50M_SR_W", "hyp_world.jpg"),
+]
 BASEMAP_SIZE = (5400, 2700)
 
 SHAPE_EXTS = {".shp", ".shx", ".dbf", ".prj", ".cpg"}
 
-# Optional biodiversity / ecoregion overlays from external, openly licensed
-# sources (the same datasets SimpleMappr uses, in their open-licensed forms).
-# These are extras: unlike the Natural Earth core, a failure to fetch one is
-# non-fatal and PyMappr simply runs without that layer.
-#
-# Each entry: (output dir under data/shapes/, source, member, credit) where
-# *source* is ("direct", url) for a plain zip, or ("zenodo", record_id) to
-# resolve the newest .zip via the Zenodo API, and *member* is the basename of
-# the shapefile inside the archive (None = the first .shp found). The chosen
-# shapefile is renamed to "<output dir>.shp" so the layer store finds it.
 EXTRA_LAYERS = [
     ("ecoregions_2017",
      ("direct", "https://storage.googleapis.com/teow2016/Ecoregions2017.zip"),
@@ -170,28 +163,29 @@ def fetch_vectors(force: bool) -> None:
 
 
 def fetch_basemap(force: bool) -> None:
-    if BASEMAP_JPG.exists() and not force:
-        print(f"  ready    {BASEMAP_JPG.name}")
-        return
     from PIL import Image
 
-    scale, category, name = RASTER
-    zip_path = download(scale, category, name,
-                        DATA_DIR / "downloads" / f"{name}.zip")
-    print("  converting raster to JPEG basemap (this can take a minute)...")
-    with zipfile.ZipFile(zip_path) as zf:
-        tif_name = next(
-            (m for m in zf.namelist() if m.lower().endswith(".tif")), None
-        )
-        if tif_name is None:
-            raise RuntimeError(f"no .tif found inside {zip_path.name}")
-        with zf.open(tif_name) as fh:
-            img = Image.open(io.BytesIO(fh.read()))
-            img.load()
-    img = img.convert("RGB").resize(BASEMAP_SIZE, Image.LANCZOS)
-    BASEMAP_JPG.parent.mkdir(parents=True, exist_ok=True)
-    img.save(BASEMAP_JPG, "JPEG", quality=85)
-    print(f"  ready    {BASEMAP_JPG.name}")
+    for scale, category, name, jpg_name in BASEMAP_RASTERS:
+        jpg_path = DATA_DIR / "basemap" / jpg_name
+        if jpg_path.exists() and not force:
+            print(f"  ready    {jpg_name}")
+            continue
+        zip_path = download(scale, category, name,
+                            DATA_DIR / "downloads" / f"{name}.zip")
+        print(f"  converting {name} to JPEG basemap...")
+        with zipfile.ZipFile(zip_path) as zf:
+            tif_name = next(
+                (m for m in zf.namelist() if m.lower().endswith(".tif")),
+                None)
+            if tif_name is None:
+                raise RuntimeError(f"no .tif found inside {zip_path.name}")
+            with zf.open(tif_name) as fh:
+                img = Image.open(io.BytesIO(fh.read()))
+                img.load()
+        img = img.convert("RGB").resize(BASEMAP_SIZE, Image.LANCZOS)
+        jpg_path.parent.mkdir(parents=True, exist_ok=True)
+        img.save(jpg_path, "JPEG", quality=85)
+        print(f"  ready    {jpg_name}")
 
 
 def make_icon(force: bool) -> None:
@@ -326,7 +320,7 @@ def main() -> int:
 
     print("Vector layers:")
     fetch_vectors(args.force)
-    print("Basemap raster:")
+    print("Basemap rasters:")
     fetch_basemap(args.force)
     print("App icon:")
     make_icon(args.force)

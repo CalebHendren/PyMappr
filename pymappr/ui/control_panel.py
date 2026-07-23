@@ -124,7 +124,9 @@ class ControlPanel(ttk.Frame):
         """Add a notebook tab wrapping a vertically scrollable frame."""
         outer = ttk.Frame(self.notebook)
         self.notebook.add(outer, text=title)
-        canvas = tk.Canvas(outer, width=PANEL_WIDTH, highlightthickness=0)
+        bg = ttk.Style().lookup("TFrame", "background") or "white"
+        canvas = tk.Canvas(outer, width=PANEL_WIDTH, highlightthickness=0,
+                           background=bg)
         scroll = ttk.Scrollbar(outer, orient="vertical", command=canvas.yview)
         inner = ttk.Frame(canvas)
         inner.bind(
@@ -173,9 +175,16 @@ class ControlPanel(ttk.Frame):
 
         list_frame = ttk.Frame(sec)
         list_frame.pack(fill="x", pady=2)
-        self.dataset_list = tk.Listbox(list_frame, height=5,
-                                       exportselection=False,
-                                       activestyle="dotbox")
+        style = ttk.Style()
+        lb_bg = style.lookup("TFrame", "background") or "white"
+        lb_fg = style.lookup("TLabel", "foreground") or "black"
+        lb_sel = style.lookup("TButton", "background", ["active"]) or "#005fb8"
+        self.dataset_list = tk.Listbox(
+            list_frame, height=5, exportselection=False,
+            activestyle="dotbox", relief="flat", borderwidth=1,
+            background=lb_bg, foreground=lb_fg,
+            selectbackground=lb_sel, selectforeground="white",
+            highlightthickness=0)
         scroll = ttk.Scrollbar(list_frame, orient="vertical",
                                command=self.dataset_list.yview)
         self.dataset_list.configure(yscrollcommand=scroll.set)
@@ -232,12 +241,15 @@ class ControlPanel(ttk.Frame):
         self._check(sec, "Vary symbols per group", self.vary_symbols_var,
                     self.app.on_style_scheme)
 
-        ttk.Label(sec, text="Point opacity:").pack(anchor="w", pady=(6, 0))
+        row = ttk.Frame(sec)
+        row.pack(fill="x", pady=(6, 0))
+        ttk.Label(row, text="Point opacity:").pack(side="left")
+        self._alpha_label = ttk.Label(row, text="1.0")
+        self._alpha_label.pack(side="right")
         self.point_alpha_var = tk.DoubleVar(value=1.0)
-        tk.Scale(sec, from_=0.1, to=1.0, orient="horizontal",
-                 variable=self.point_alpha_var, showvalue=True,
-                 resolution=0.05,
-                 command=lambda _v: self.app.on_point_alpha()).pack(fill="x")
+        ttk.Scale(sec, from_=0.1, to=1.0, orient="horizontal",
+                  variable=self.point_alpha_var,
+                  command=self._on_alpha_scale).pack(fill="x")
 
     def _build_legend_section(self, tab) -> None:
         sec = self._section(tab, "Legend")
@@ -374,12 +386,14 @@ class ControlPanel(ttk.Frame):
 
         ttk.Label(sec, text="Basemap:").pack(anchor="w", pady=(4, 0))
         self.basemap_var = tk.StringVar(value="simple")
-        ttk.Radiobutton(sec, text="Simple (white with borders)",
-                        variable=self.basemap_var, value="simple",
-                        command=self.app.on_basemap).pack(anchor="w")
-        ttk.Radiobutton(sec, text="Satellite (full color, slower)",
-                        variable=self.basemap_var, value="satellite",
-                        command=self.app.on_basemap).pack(anchor="w")
+        for value, text in (("simple", "Simple (white with borders)"),
+                            ("relief", "Relief"),
+                            ("relief_alt", "Relief (alternate)"),
+                            ("relief_grey", "Relief (greyscale)"),
+                            ("blue_marble", "Blue Marble")):
+            ttk.Radiobutton(sec, text=text, variable=self.basemap_var,
+                            value=value,
+                            command=self.app.on_basemap).pack(anchor="w")
 
         self.compass_var = tk.BooleanVar(value=False)
         ttk.Separator(sec, orient="horizontal").pack(fill="x", pady=4)
@@ -408,10 +422,6 @@ class ControlPanel(ttk.Frame):
         ttk.Button(sec, text="Export as code (Python/R)"
                             "\N{HORIZONTAL ELLIPSIS}",
                    command=self.app.on_export_code).pack(fill="x", pady=2)
-        ttk.Label(sec, text="(a ready-to-run script or project folder that "
-                            "recreates this map in an IDE - no setup)",
-                  foreground="#666666",
-                  wraplength=PANEL_WIDTH - 60).pack(anchor="w")
 
     # ---------------------------------------------------------- layers tab
 
@@ -496,18 +506,17 @@ class ControlPanel(ttk.Frame):
 
         sec = self._section(tab, "Biodiversity & ecoregions")
         self._layer_rows(sec, BIODIVERSITY_ROWS)
-        ttk.Label(sec, text="Optional overlays (Conservation International, "
-                  "RESOLVE, WWF/TNC). Run fetch_data.py to download them.",
-                  wraplength=PANEL_WIDTH - 60,
-                  foreground="#666666").pack(anchor="w")
 
         sec = self._section(tab, "Lines")
-        ttk.Label(sec, text="Line thickness:").pack(anchor="w")
+        row = ttk.Frame(sec)
+        row.pack(fill="x")
+        ttk.Label(row, text="Line thickness:").pack(side="left")
+        self._lw_label = ttk.Label(row, text="1.0")
+        self._lw_label.pack(side="right")
         self.line_width_var = tk.DoubleVar(value=1.0)
-        tk.Scale(sec, from_=0.25, to=3.0, orient="horizontal",
-                 variable=self.line_width_var, showvalue=True,
-                 resolution=0.25,
-                 command=lambda _v: self.app.on_line_width()).pack(fill="x")
+        ttk.Scale(sec, from_=0.25, to=3.0, orient="horizontal",
+                  variable=self.line_width_var,
+                  command=self._on_lw_scale).pack(fill="x")
 
     # ---------------------------------------------------------- labels tab
 
@@ -519,12 +528,15 @@ class ControlPanel(ttk.Frame):
                             command=lambda k=key: self.app.on_label(k)).pack(
                 anchor="w")
             self.label_vars[key] = var
+        ttk.Separator(sec, orient="horizontal").pack(fill="x", pady=4)
+        self.label_drag_var = tk.BooleanVar(value=False)
+        self._check(sec, "Allow dragging labels",
+                    self.label_drag_var, self.app.on_label_drag_toggle)
         ttk.Label(
-            sec, text="Labels are scale-dependent: more appear as you zoom "
-            "in, and overlapping labels are hidden automatically. Drag any "
-            "label to reposition it; right-click to snap it back.",
+            sec, text="Drag any label to reposition it; right-click to "
+            "snap it back.",
             wraplength=PANEL_WIDTH - 60,
-            foreground="#666666").pack(anchor="w", pady=(6, 0))
+            foreground="#666666").pack(anchor="w")
 
     # -------------------------------------------- experimental (dev only)
 
@@ -574,6 +586,25 @@ class ControlPanel(ttk.Frame):
         from pymappr.ui.llm_assist import LLMAssistDialog
 
         LLMAssistDialog(self.app.root, self.app)
+
+    # --------------------------------------------------------------- theme
+
+    def update_theme(self) -> None:
+        """Refresh non-ttk widgets after a theme switch."""
+        style = ttk.Style()
+        bg = style.lookup("TFrame", "background") or "white"
+        fg = style.lookup("TLabel", "foreground") or "black"
+        sel = style.lookup("TButton", "background", ["active"]) or "#005fb8"
+        # Canvas backgrounds in every scrollable tab.
+        for tab_id in self.notebook.tabs():
+            outer = self.nametowidget(tab_id)
+            for child in outer.winfo_children():
+                if isinstance(child, tk.Canvas):
+                    child.configure(background=bg)
+        # Dataset listbox.
+        self.dataset_list.configure(
+            background=bg, foreground=fg,
+            selectbackground=sel, selectforeground="white")
 
     # -------------------------------------------------------------- helpers
 
@@ -698,3 +729,17 @@ class ControlPanel(ttk.Frame):
     def set_file_info(self, text: str) -> None:
         color = "#666666" if text == "No data loaded" else "#333333"
         self.file_label.config(text=text, foreground=color)
+
+    # ------------------------------------------------ ttk.Scale callbacks
+
+    def _on_alpha_scale(self, value: str) -> None:
+        snapped = round(float(value) * 20) / 20  # snap to 0.05
+        self.point_alpha_var.set(snapped)
+        self._alpha_label.config(text=f"{snapped:.2g}")
+        self.app.on_point_alpha()
+
+    def _on_lw_scale(self, value: str) -> None:
+        snapped = round(float(value) * 4) / 4  # snap to 0.25
+        self.line_width_var.set(snapped)
+        self._lw_label.config(text=f"{snapped:.2g}")
+        self.app.on_line_width()
