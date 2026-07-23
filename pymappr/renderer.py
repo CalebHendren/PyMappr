@@ -122,11 +122,92 @@ Z_COMPASS = 4.0
 _MARGINS_WITH_TICKS = (0.055, 0.045, 0.99, 0.99)   # left, bottom, right, top
 _MARGINS_PLAIN = (0.01, 0.012, 0.99, 0.988)
 
+# Map orientation -> target width:height for the map axes box. "landscape"
+# is None, meaning the map fills the whole canvas (the original behaviour);
+# "portrait" constrains it to a tall box, centered with blank side margins,
+# so tall regions (e.g. South America) fill the frame instead of floating in
+# a band of ocean. The value is the inverse of the ~9:6.5 default figure so
+# portrait reads as the page simply turned on its side.
+_PORTRAIT_ASPECT = 6.5 / 9.0
+ORIENTATION_ASPECT = {"landscape": None, "portrait": _PORTRAIT_ASPECT}
+
 # Horizontal world copies drawn for wrap-around panning, in world-widths.
 _WRAP_OFFSETS = (-1, 0, 1)
 
 # Warped-basemap grid (columns x rows) for projected satellite rendering.
 _WARP_GRID = (1600, 800)
+
+
+def _oriented_axes_rect(margins: tuple[float, float, float, float],
+                        fig_w: float, fig_h: float,
+                        aspect: float | None
+                        ) -> tuple[float, float, float, float]:
+    """The axes position rectangle ``(left, bottom, width, height)`` in
+    figure fractions for a target box *aspect* (width / height).
+
+    *margins* is ``(left, bottom, right, top)``; the base box it describes
+    is shrunk along whichever dimension is too long and re-centred so the
+    axes ends up with the requested aspect. ``aspect=None`` keeps the full
+    box (landscape / fill)."""
+    left, bottom, right, top = margins
+    width, height = right - left, top - bottom
+    if aspect is None:
+        return left, bottom, width, height
+    avail_w = width * fig_w
+    avail_h = height * fig_h
+    if avail_w / max(avail_h, 1e-9) > aspect:  # too wide: narrow it
+        new_w = aspect * avail_h / max(fig_w, 1e-9)
+        left += (width - new_w) / 2
+        width = new_w
+    else:  # too tall: shorten it
+        new_h = avail_w / aspect / max(fig_h, 1e-9)
+        bottom += (height - new_h) / 2
+        height = new_h
+    return left, bottom, width, height
+
+
+def _refit_xlim(box_ratio: float, xlim: tuple[float, float],
+                ylim: tuple[float, float], world_width: float,
+                clamp: bool) -> tuple[float, float]:
+    """New x-limits that fit the current view to *box_ratio* (axes
+    width / height) by keeping the centre and vertical span and adjusting
+    the horizontal span - narrowing for portrait, widening for landscape.
+    When *clamp*, the span never exceeds *world_width*."""
+    x0, x1 = xlim
+    y0, y1 = ylim
+    cx = (x0 + x1) / 2.0
+    new_w = abs(y1 - y0) * box_ratio
+    if clamp:
+        new_w = min(new_w, world_width)
+    half = new_w / 2.0 if x1 >= x0 else -new_w / 2.0
+    return cx - half, cx + half
+
+
+def _export_geometry(pos_bounds: tuple[float, float, float, float],
+                     fig_w: float, fig_h: float,
+                     margins: tuple[float, float, float, float]
+                     ) -> tuple[tuple[float, float],
+                                tuple[float, float, float, float]]:
+    """Figure size (inches) and axes rectangle for a saved image that crops
+    a letterboxed map to its content, returned as ``((w, h), (left, bottom,
+    width, height))``.
+
+    *pos_bounds* is the axes' current fractional ``(x0, y0, w, h)`` and
+    *margins* the ``(left, bottom, right, top)`` in effect. The map box is
+    kept at its on-screen inches, and the tick-label / edge margins are kept
+    at their on-screen inches too (so labels never crowd off a narrow
+    portrait crop); only the blank orientation side bars are dropped. A
+    full-canvas (landscape) map comes back at the figure size unchanged."""
+    _x0, _y0, pw, ph = pos_bounds
+    box_w, box_h = pw * fig_w, ph * fig_h
+    left, bottom, right, top = margins
+    left_gutter, right_gutter = left * fig_w, (1.0 - right) * fig_w
+    bottom_gutter, top_gutter = bottom * fig_h, (1.0 - top) * fig_h
+    exp_w = box_w + left_gutter + right_gutter
+    exp_h = box_h + bottom_gutter + top_gutter
+    rect = (left_gutter / exp_w, bottom_gutter / exp_h,
+            box_w / exp_w, box_h / exp_h)
+    return (exp_w, exp_h), rect
 
 
 def _norm_lon(value: float) -> float:
@@ -174,6 +255,16 @@ class MapRenderer:
         self._graticule_labels = True
         self._line_scale = 1.0
         self._extent_request = "World"
+        self._orientation = "landscape"
+        # Base axes margins currently in effect (with or without room for
+        # tick labels); the orientation narrows this into the axes box.
+        self._axes_margins = _MARGINS_PLAIN
+        # In portrait the map is a tall box centred on the figure; the blank
+        # side bars are painted this "mat" colour (the app's background) so
+        # the framing reads as a centred page instead of stray whitespace.
+        # The map itself keeps a white background regardless.
+        self._mat_color = "#e6e6e6"
+        self.ax.set_facecolor("white")
 
         # (label, PointStyle, lons, lats) per group
         self._point_groups: list[tuple[str, PointStyle, np.ndarray, np.ndarray]] = []
@@ -259,6 +350,7 @@ class MapRenderer:
         wx0, wx1, wy0, wy1 = self.proj.bounds
         world_w, world_h = wx1 - wx0, wy1 - wy0
 
+        self._apply_axes_position()
         pos = self.ax.get_position()
         fig_w, fig_h = self.fig.get_size_inches()
         box_ratio = max((pos.width * fig_w) / (pos.height * fig_h), 1e-6)
@@ -277,6 +369,54 @@ class MapRenderer:
 
         self.ax.set_xlim(x0, x1)
         self.ax.set_ylim(y0, y1)
+
+    def set_orientation(self, name: str) -> None:
+        """Switch the map between ``"landscape"`` (fill the canvas) and
+        ``"portrait"`` (a tall box). The region on screen is kept: its
+        vertical span stays put and the horizontal span is re-fit to the new
+        box - cropping the sides for portrait, widening them for landscape -
+        so a tall region loses its flanking ocean instead of the whole view
+        jumping back to a preset."""
+        name = name if name in ORIENTATION_ASPECT else "landscape"
+        if name == self._orientation:
+            return
+        self._orientation = name
+        self._apply_mat()
+        self._refit_view_to_box()
+
+    def set_mat_color(self, color: str) -> None:
+        """Set the colour of the portrait side bars (the app's background),
+        so the letterbox matches the surrounding UI. A no-op on the map
+        itself, which always stays white."""
+        self._mat_color = color or "#e6e6e6"
+        self._apply_mat()
+
+    def _apply_mat(self) -> None:
+        portrait = ORIENTATION_ASPECT.get(self._orientation) is not None
+        self.fig.set_facecolor(self._mat_color if portrait else "white")
+
+    def _apply_axes_position(self) -> None:
+        """Place the map axes for the current margins and orientation."""
+        fig_w, fig_h = self.fig.get_size_inches()
+        rect = _oriented_axes_rect(
+            self._axes_margins, float(fig_w), float(fig_h),
+            ORIENTATION_ASPECT.get(self._orientation))
+        self.ax.set_position(list(rect))
+
+    def _refit_view_to_box(self) -> None:
+        """Re-fit the current view to the current orientation's axes box.
+
+        The view centre and its vertical span are kept; the horizontal span
+        is set to match the box aspect, so map units stay square. Landscape
+        never widens past the world; portrait only ever narrows."""
+        self._apply_axes_position()
+        pos = self.ax.get_position()
+        fig_w, fig_h = self.fig.get_size_inches()
+        box_ratio = max((pos.width * fig_w) / (pos.height * fig_h), 1e-6)
+        x0, x1 = _refit_xlim(box_ratio, self.ax.get_xlim(),
+                             self.ax.get_ylim(), self.proj.world_width,
+                             clamp=not self.proj.hemisphere)
+        self.ax.set_xlim(x0, x1)
 
     def get_view(self) -> tuple[tuple[float, float], tuple[float, float]]:
         """Current axis limits (map coordinates) for project persistence."""
@@ -1025,9 +1165,9 @@ class MapRenderer:
         self._sync_wrap_copies()
         self.ax.tick_params(labelbottom=labels_on, labelleft=labels_on,
                             bottom=labels_on, left=labels_on)
-        left, bottom, right, top = (
-            _MARGINS_WITH_TICKS if labels_on else _MARGINS_PLAIN)
-        self.ax.set_position([left, bottom, right - left, top - bottom])
+        self._axes_margins = (_MARGINS_WITH_TICKS if labels_on
+                              else _MARGINS_PLAIN)
+        self._apply_axes_position()
 
     def _projected_graticule(self) -> list:
         """Graticule drawn as projected polylines (curved projections)."""
@@ -1192,6 +1332,19 @@ class MapRenderer:
     def redraw(self) -> None:
         self.fig.canvas.draw_idle()
 
+    def export_size_inches(self) -> tuple[float, float]:
+        """The saved image's size in inches at the current geometry.
+
+        For a portrait (letterboxed) map this is the cropped map, not the
+        on-screen figure with its blank side bars; for a landscape map it
+        equals the figure size. Used to report the output resolution and to
+        drive the exported-code figure size."""
+        fig_w, fig_h = self.fig.get_size_inches()
+        (size, _rect) = _export_geometry(self.ax.get_position().bounds,
+                                         float(fig_w), float(fig_h),
+                                         self._axes_margins)
+        return size
+
     def save_image(self, path: str, fmt: str = "png", dpi: int = 200) -> None:
         """Write the map to *path* in the given format.
 
@@ -1200,14 +1353,42 @@ class MapRenderer:
         DPI metadata tags are correct; everything else goes straight through
         matplotlib (which uses Pillow for the raster formats it does not
         write natively).
+
+        A portrait map is letterboxed on screen; before writing, the figure
+        is temporarily resized so the file is cropped to the map (no blank
+        side bars) and then restored.
         """
         fmt = fmt.lower()
-        if fmt in ("tif", "tiff"):
-            self._save_tiff(path, dpi)
+        with self._cropped_for_export():
+            if fmt in ("tif", "tiff"):
+                self._save_tiff(path, dpi)
+                return
+            if fmt in ("jpg", "jpeg"):
+                fmt = "jpeg"  # JPEG has no alpha; the white facecolor fills it
+            self.fig.savefig(path, format=fmt, dpi=dpi, facecolor="white")
+
+    @contextmanager
+    def _cropped_for_export(self):
+        """Temporarily resize the figure so a saved image is cropped to the
+        map axes (dropping any orientation letterbox bars), restoring the
+        on-screen geometry afterwards. A no-op for a full-canvas map."""
+        old_size = tuple(self.fig.get_size_inches())
+        old_bounds = self.ax.get_position().bounds
+        (new_w, new_h), rect = _export_geometry(
+            old_bounds, float(old_size[0]), float(old_size[1]),
+            self._axes_margins)
+        if (abs(new_w - old_size[0]) < 1e-3
+                and abs(new_h - old_size[1]) < 1e-3):
+            yield  # landscape / already full-canvas: nothing to crop
             return
-        if fmt in ("jpg", "jpeg"):
-            fmt = "jpeg"  # JPEG has no alpha; the white facecolor fills it
-        self.fig.savefig(path, format=fmt, dpi=dpi, facecolor="white")
+        try:
+            self.fig.set_size_inches(new_w, new_h, forward=False)
+            self.ax.set_position(list(rect))
+            yield
+        finally:
+            self.fig.set_size_inches(*old_size, forward=False)
+            self.ax.set_position(list(old_bounds))
+            self.redraw()
 
     def _save_tiff(self, path: str, dpi: int) -> None:
         # Render to PNG in memory first; matplotlib's Agg backend does not

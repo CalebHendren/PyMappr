@@ -97,10 +97,11 @@ class CodeExportDialog(tk.Toplevel):
     # ------------------------------------------------------------- code
 
     def _figure_size(self) -> tuple[float, float] | None:
-        """The app canvas size in inches, so the exported map keeps the
-        same geometry (fonts and markers at the same relative scale)."""
+        """The exported map size in inches, so the generated code keeps the
+        same geometry (fonts and markers at the same relative scale). For a
+        portrait map this is the cropped map, not the letterboxed canvas."""
         try:
-            width, height = self.app.renderer.fig.get_size_inches()
+            width, height = self.app.renderer.export_size_inches()
             return float(width), float(height)
         except Exception:  # noqa: BLE001 - fall back to the default size
             return None
