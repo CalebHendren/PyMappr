@@ -313,3 +313,27 @@ jobs:
           name: PyMappr ${{ steps.version.outputs.version }}
           files: release-assets/**
           fail_on_unmatched_files: true
+
+  # Prune this workflow's run history so only the three most recent runs
+  # (including the one that is currently running) are kept. Runs last, so a
+  # merged-PR build with a failure still gets tidied up.
+  cleanup:
+    needs: [release]
+    if: always() && (github.event_name != 'pull_request' || github.event.pull_request.merged == true)
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    steps:
+      - name: Delete old workflow runs (keep the latest 3)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh run list --repo "${{ github.repository }}" \
+            --workflow build-release.yml --limit 100 \
+            --json databaseId,createdAt \
+            --jq 'sort_by(.createdAt) | reverse | .[3:] | .[].databaseId' \
+          | while read -r id; do
+              [ -n "$id" ] || continue
+              echo "Deleting workflow run $id"
+              gh run delete --repo "${{ github.repository }}" "$id" || true
+            done

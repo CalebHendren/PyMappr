@@ -152,11 +152,9 @@ class PyMapprApp:
                               accelerator="Ctrl+M",
                               command=self.on_manual_entry)
         file_menu.add_separator()
-        file_menu.add_command(label="Save map as PNG\N{HORIZONTAL ELLIPSIS}",
+        file_menu.add_command(label="Save map as\N{HORIZONTAL ELLIPSIS}",
                               accelerator="Ctrl+E",
-                              command=self.on_save_png)
-        file_menu.add_command(label="Save map as TIFF\N{HORIZONTAL ELLIPSIS}",
-                              command=self.on_save_tif)
+                              command=self.on_save_image)
         file_menu.add_command(label="Export map as code (Python/R)"
                               "\N{HORIZONTAL ELLIPSIS}",
                               command=self.on_export_code)
@@ -189,7 +187,7 @@ class PyMapprApp:
         self.root.bind("<Control-s>", lambda _e: self.on_save_project())
         self.root.bind("<Control-o>", lambda _e: self.on_add_file())
         self.root.bind("<Control-m>", lambda _e: self.on_manual_entry())
-        self.root.bind("<Control-e>", lambda _e: self.on_save_png())
+        self.root.bind("<Control-e>", lambda _e: self.on_save_image())
         for seq in ("<Control-plus>", "<Control-equal>", "<Control-KP_Add>"):
             self.root.bind(seq, lambda _e: self.zoom_step(1.3))
         for seq in ("<Control-minus>", "<Control-KP_Subtract>"):
@@ -1264,48 +1262,15 @@ class PyMapprApp:
             interval, show_labels=not self.panel.hide_grid_labels_var.get())
         self.renderer.redraw()
 
-    def on_save_png(self) -> None:
-        path = filedialog.asksaveasfilename(
-            parent=self.root, title="Save map as PNG",
-            defaultextension=".png", initialfile="map.png",
-            filetypes=[("PNG image", "*.png")])
-        if not path:
-            return
-        self._busy(True)
-        try:
-            self.renderer.save_png(path, dpi=int(self.panel.dpi_var.get()))
-        except Exception as exc:  # noqa: BLE001 - show any save error
-            self._busy(False)
-            messagebox.showerror("Could not save PNG", str(exc),
-                                 parent=self.root)
-            return
-        self._busy(False)
-        self.set_status(f"Saved map to {path}")
+    def on_save_image(self) -> None:
+        """Open the "Save map as..." dialog (format, resolution and DPI)."""
+        from pymappr.ui.save_image import SaveImageDialog
 
-    def on_save_tif(self) -> None:
-        path = filedialog.asksaveasfilename(
-            parent=self.root, title="Save map as TIFF",
-            defaultextension=".tif", initialfile="map.tif",
-            filetypes=[("TIFF image", "*.tif *.tiff")])
-        if not path:
-            return
-        dpi = int(self.panel.dpi_var.get())
-        if dpi < 300:
-            dpi = 300
-        self._busy(True)
-        try:
-            self.renderer.save_tif(path, dpi=dpi)
-        except Exception as exc:  # noqa: BLE001 - show any save error
-            self._busy(False)
-            messagebox.showerror("Could not save TIFF", str(exc),
-                                 parent=self.root)
-            return
-        self._busy(False)
-        self.set_status(f"Saved map to {path}")
+        SaveImageDialog(self.root, self)
 
     def on_export_code(self) -> None:
-        """Show the map as ready-to-run Python or R code (no LLM: the
-        script is assembled from pre-made function templates)."""
+        """Show the map as ready-to-run Python or R code (assembled from
+        pre-made function templates, not an AI model)."""
         from pymappr.ui.code_export import CodeExportDialog
 
         CodeExportDialog(self.root, self)

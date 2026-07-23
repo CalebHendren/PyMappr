@@ -1192,10 +1192,24 @@ class MapRenderer:
     def redraw(self) -> None:
         self.fig.canvas.draw_idle()
 
-    def save_png(self, path: str, dpi: int = 200) -> None:
-        self.fig.savefig(path, dpi=dpi, facecolor="white")
+    def save_image(self, path: str, fmt: str = "png", dpi: int = 200) -> None:
+        """Write the map to *path* in the given format.
 
-    def save_tif(self, path: str, dpi: int = 300) -> None:
+        ``fmt`` is a short key: ``png``, ``jpg``/``jpeg``, ``tiff``/``tif``,
+        ``pdf``, ``svg`` or ``webp``. TIFF is written through Pillow so the
+        DPI metadata tags are correct; everything else goes straight through
+        matplotlib (which uses Pillow for the raster formats it does not
+        write natively).
+        """
+        fmt = fmt.lower()
+        if fmt in ("tif", "tiff"):
+            self._save_tiff(path, dpi)
+            return
+        if fmt in ("jpg", "jpeg"):
+            fmt = "jpeg"  # JPEG has no alpha; the white facecolor fills it
+        self.fig.savefig(path, format=fmt, dpi=dpi, facecolor="white")
+
+    def _save_tiff(self, path: str, dpi: int) -> None:
         # Render to PNG in memory first; matplotlib's Agg backend does not
         # embed DPI metadata in TIFF files, so we hand off to Pillow which
         # writes the correct XResolution/YResolution TIFF tags.
