@@ -13,7 +13,7 @@ offline desktop application.
 
 ![PyMappr](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-blue)
 
-[![DOI](https://zenodo.org/badge/1292442771.svg)](https://doi.org/10.5281/zenodo.21522496)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.19226226.svg)](https://doi.org/10.5281/zenodo.19226226)
 
 ![PyMappr main window with grouped beetle localities and a legend](docs/images/app_points.png)
 
