@@ -7,16 +7,59 @@ canvas or map data required.
 
 from __future__ import annotations
 
+import numpy as np
 import pytest
 
-from pymappr.renderer import (_MARGINS_PLAIN, _MARGINS_WITH_TICKS,
-                              ORIENTATION_ASPECT, _export_geometry,
-                              _oriented_axes_rect, _refit_xlim)
+matplotlib = pytest.importorskip("matplotlib")
+matplotlib.use("Agg")
+
+from matplotlib.backends.backend_agg import FigureCanvasAgg  # noqa: E402
+from matplotlib.figure import Figure  # noqa: E402
+
+from pymappr.layers import LayerStore  # noqa: E402
+from pymappr.renderer import (_MARGINS_PLAIN, _MARGINS_WITH_TICKS,  # noqa: E402
+                              ORIENTATION_ASPECT, MapRenderer,
+                              _export_geometry, _oriented_axes_rect,
+                              _refit_xlim)
+from pymappr.styles import PointStyle  # noqa: E402
 
 
 def _box_aspect(rect, fig_w, fig_h):
     _left, _bottom, width, height = rect
     return (width * fig_w) / (height * fig_h)
+
+
+def _renderer(fig_w: float = 9.0, fig_h: float = 6.5) -> MapRenderer:
+    """A renderer on an Agg canvas. It never touches map-data layers, so the
+    geometry and legend behaviour can be exercised without the Natural Earth
+    download."""
+    fig = Figure(figsize=(fig_w, fig_h), dpi=100)
+    FigureCanvasAgg(fig)
+    return MapRenderer(fig, LayerStore())
+
+
+def _live_box_aspect(renderer: MapRenderer) -> float:
+    pos = renderer.ax.get_position()
+    fig_w, fig_h = renderer.fig.get_size_inches()
+    return (pos.width * fig_w) / (pos.height * fig_h)
+
+
+def _view_aspect(renderer: MapRenderer) -> float:
+    x0, x1 = renderer.ax.get_xlim()
+    y0, y1 = renderer.ax.get_ylim()
+    return abs(x1 - x0) / abs(y1 - y0)
+
+
+class _MouseEvent:
+    """A stand-in for a matplotlib mouse event (pixel + data coords)."""
+
+    def __init__(self, ax, x, y, button=1, xdata=0.0, ydata=0.0):
+        self.inaxes = ax
+        self.x = x
+        self.y = y
+        self.button = button
+        self.xdata = xdata
+        self.ydata = ydata
 
 
 def test_landscape_keeps_the_full_margin_box():
@@ -125,3 +168,112 @@ def test_export_preserves_tick_label_gutter_in_inches():
     assert out[1] * exp_h == pytest.approx(bottom * fig_h)        # bottom
     # The map box itself is unchanged in inches.
     assert out[2] * exp_w == pytest.approx(rect[2] * fig_w)
+
+
+# --------------------------------------------------------------- resize / view
+
+
+def test_resize_keeps_portrait_box_aspect():
+    # Regression: the oriented axes box is a figure fraction, so resizing the
+    # figure (maximising the window, or the first layout after a restored
+    # session) used to leave a portrait box at a stale, wide aspect - the map
+    # rendered as "landscape but shrunk". The resize handler must re-derive it.
+    r = _renderer(9.0, 6.5)
+    r.set_extent("South America")
+    r.set_orientation("portrait")
+    target = ORIENTATION_ASPECT["portrait"]
+    assert _live_box_aspect(r) == pytest.approx(target, rel=1e-3)
+    for size in ((19.0, 8.0), (7.0, 9.0), (16.0, 6.0)):
+        r.fig.set_size_inches(*size, forward=False)
+        r._on_resize(None)
+        assert _live_box_aspect(r) == pytest.approx(target, rel=1e-3)
+        # Map units stay square: the view's data aspect matches the box.
+        assert _view_aspect(r) == pytest.approx(target, rel=1e-3)
+
+
+def test_resize_keeps_landscape_square():
+    # Landscape fills the canvas; on resize the map must not stretch, i.e. the
+    # data aspect tracks the (changing) box aspect instead of staying fixed.
+    r = _renderer(9.0, 6.5)
+    r.set_extent("South America")
+    for size in ((16.0, 6.0), (6.0, 12.0)):
+        r.fig.set_size_inches(*size, forward=False)
+        r._on_resize(None)
+        assert _view_aspect(r) == pytest.approx(_live_box_aspect(r), rel=1e-3)
+
+
+def test_resize_suspended_during_export_crop():
+    # While the figure is temporarily resized for a cropped export, the resize
+    # handler must not re-fit the on-screen view to the export geometry.
+    r = _renderer(9.0, 6.5)
+    r.set_extent("South America")
+    r.set_orientation("portrait")
+    with r._cropped_for_export():
+        assert r._suspend_resize is True
+    assert r._suspend_resize is False
+
+
+# ------------------------------------------------------------- legend dragging
+
+
+def _legend_renderer() -> MapRenderer:
+    r = _renderer(9.0, 6.5)
+    r.set_point_groups([("A", PointStyle(color="#d62728"),
+                         np.array([-60.0]), np.array([-15.0]))])
+    r.set_legend(True, location="upper right")
+    r.fig.canvas.draw()
+    return r
+
+
+def _legend_center_px(r: MapRenderer):
+    bbox = r.ax.get_legend().get_window_extent()
+    return (bbox.x0 + bbox.x1) / 2, (bbox.y0 + bbox.y1) / 2
+
+
+def test_legend_drag_moves_and_anchors_without_a_jump():
+    r = _legend_renderer()
+    r.set_legend_dragging(True)
+    before = r._legend_lowerleft_axes(r.ax.get_legend())
+    cx, cy = _legend_center_px(r)
+    r._on_canvas_press(_MouseEvent(r.ax, cx, cy))
+    # Grabbing an auto-placed legend pins it in place (no hop on press).
+    assert r._legend_anchor is not None
+    pinned = r._legend_lowerleft_axes(r.ax.get_legend())
+    assert pinned == pytest.approx(before, abs=1e-3)
+    # Dragging down-left moves the legend and stores the new anchor.
+    r._on_canvas_motion(_MouseEvent(r.ax, cx - 120, cy - 120))
+    r._on_canvas_release(_MouseEvent(r.ax, cx - 120, cy - 120))
+    assert r._legend_drag is None
+    after = r._legend_lowerleft_axes(r.ax.get_legend())
+    assert after[0] < before[0]
+    assert after[1] < before[1]
+
+
+def test_legend_drag_ignored_when_disabled():
+    r = _legend_renderer()
+    r.set_legend_dragging(False)
+    cx, cy = _legend_center_px(r)
+    r._on_canvas_press(_MouseEvent(r.ax, cx, cy))
+    assert r._legend_drag is None
+    assert r._legend_anchor is None
+
+
+def test_legend_right_click_and_clear_reset_anchor():
+    r = _legend_renderer()
+    r.set_legend_dragging(True)
+    cx, cy = _legend_center_px(r)
+    r._on_canvas_press(_MouseEvent(r.ax, cx, cy))
+    r._on_canvas_motion(_MouseEvent(r.ax, cx - 40, cy - 40))
+    r._on_canvas_release(_MouseEvent(r.ax, cx - 40, cy - 40))
+    assert r._legend_anchor is not None
+    # A right-click on the (now moved) legend restores automatic placement.
+    ncx, ncy = _legend_center_px(r)
+    r._on_canvas_press(_MouseEvent(r.ax, ncx, ncy, button=3))
+    assert r._legend_anchor is None
+    # Re-drag, then clearing (e.g. picking a preset position) also resets it.
+    r._on_canvas_press(_MouseEvent(r.ax, *_legend_center_px(r)))
+    r._on_canvas_motion(_MouseEvent(r.ax, cx - 30, cy - 30))
+    r._on_canvas_release(_MouseEvent(r.ax, cx - 30, cy - 30))
+    assert r._legend_anchor is not None
+    r.clear_legend_anchor()
+    assert r._legend_anchor is None

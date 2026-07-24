@@ -30,25 +30,28 @@ def main() -> int:
         print(err)
         return 1
 
-    dataset = load_csv(str(REPO_ROOT / "sample_data" / "us_cities.csv"))
+    dataset = load_csv(str(REPO_ROOT / "sample_data" / "south_america_beetles.csv"))
     print(f"sample data: {len(dataset)} points, {len(dataset.skipped)} skipped")
     groups = group_points(dataset.frame, "name1")
     styles = default_styles([label for label, _ in groups])
     point_groups = [(label, styles[label], sub["lon"].to_numpy(),
                      sub["lat"].to_numpy()) for label, sub in groups]
 
+    def save(renderer, name):
+        renderer.save_image(str(out_dir / name), fmt="png", dpi=110)
+
     # 1. Simple world map: black country borders + 10 degree graticule.
     r = new_renderer(store)
     r.set_layer("countries", True)
     r.set_graticule(10, show_labels=True)
-    r.save_png(out_dir / "1_simple_world.png")
+    save(r, "1_simple_world.png")
 
-    # 2. Satellite world with country labels (all countries labelled).
+    # 2. Blue Marble world with country labels (all countries labelled).
     r = new_renderer(store)
-    r.set_basemap("satellite")
+    r.set_basemap("blue_marble")
     r.set_layer("countries", True)
     r.set_labels("countries", True)
-    r.save_png(out_dir / "2_satellite_world.png")
+    save(r, "2_blue_marble_world.png")
 
     # 3. North America, everything on, blue water, 5 degree grid.
     r = new_renderer(store)
@@ -61,7 +64,7 @@ def main() -> int:
     r.set_graticule(5, show_labels=True)
     for key in ("countries", "states", "lakes", "rivers"):
         r.set_labels(key, True)
-    r.save_png(out_dir / "3_north_america_full.png")
+    save(r, "3_north_america_full.png")
 
     # 4. Zoomed to Texas-ish: county lines + county labels, greyscale water.
     r = new_renderer(store)
@@ -73,23 +76,32 @@ def main() -> int:
     r.set_labels("counties", True)
     r.set_labels("states", True)
     r.set_graticule(1, show_labels=False)
-    r.save_png(out_dir / "4_texas_counties.png")
+    save(r, "4_texas_counties.png")
 
-    # 5. Points + legend on a simple US map.
+    # 5. Points + legend on a simple South America map (landscape).
     r = new_renderer(store)
-    r.set_extent((-127, -65, 23, 51))
+    r.set_extent("South America")
     r.set_layer("countries", True)
-    r.set_layer("states", True)
     r.set_point_groups(point_groups)
-    r.set_legend(True, title=dataset.name1_label, location="lower left")
-    r.save_png(out_dir / "5_points_legend.png")
+    r.set_legend(True, title=dataset.name1_label, location="upper right")
+    save(r, "5_points_legend.png")
+
+    # 5b. The same points reframed in portrait: the tall region fills the
+    #     frame instead of floating in ocean (cropped to the portrait box).
+    r = new_renderer(store)
+    r.set_extent("South America")
+    r.set_orientation("portrait")
+    r.set_layer("countries", True)
+    r.set_point_groups(point_groups)
+    r.set_legend(True, title=dataset.name1_label, location="upper right")
+    save(r, "5b_points_portrait.png")
 
     # 6. Countries off: political borders gone, continent outlines stay.
     r = new_renderer(store)
     r.set_layer("countries", True)
     r.set_layer("countries", False)
     r.set_ocean("blue")
-    r.save_png(out_dir / "6_continent_outlines.png")
+    save(r, "6_continent_outlines.png")
 
     # 7. Robinson projection with a graticule and country labels.
     r = new_renderer(store)
@@ -97,7 +109,7 @@ def main() -> int:
     r.set_projection("Robinson")
     r.set_graticule(10)
     r.set_labels("countries", True)
-    r.save_png(out_dir / "7_robinson_world.png")
+    save(r, "7_robinson_world.png")
 
     # 8. Physical world: bathymetry, glaciers, ice shelves, deserts,
     #    playas, reefs, plus the compass.
@@ -108,7 +120,7 @@ def main() -> int:
         r.set_fill_layer(key, True)
     r.set_layer("reefs", True)
     r.set_compass(True)
-    r.save_png(out_dir / "8_physical_world.png")
+    save(r, "8_physical_world.png")
 
     # 9. Cities with scale-dependent labels, airports, and ports (Europe,
     #    zoomed enough that the 10m coastline is selected automatically).
@@ -119,7 +131,7 @@ def main() -> int:
     for key in ("cities", "airports", "ports"):
         r.set_point_layer(key, True)
     r.set_labels("cities", True)
-    r.save_png(out_dir / "9_cities_europe.png")
+    save(r, "9_cities_europe.png")
 
     # 10. Boundary detail: disputed areas/lines, maritime boundaries, EEZ,
     #     dependencies, urban areas.
@@ -133,7 +145,7 @@ def main() -> int:
     r.set_layer("eez", True)
     r.set_layer("dependencies", True)
     r.set_ocean("blue")
-    r.save_png(out_dir / "10_boundaries_asia.png")
+    save(r, "10_boundaries_asia.png")
 
     # 11. Time zones with capitals only.
     r = new_renderer(store)
@@ -142,7 +154,7 @@ def main() -> int:
     r.set_labels("timezones", True)
     r.set_point_layer("cities", True)
     r.set_capitals_only(True)
-    r.save_png(out_dir / "11_timezones_capitals.png")
+    save(r, "11_timezones_capitals.png")
 
     # 12. Alternate admin-0 views + parks, sovereign states vs map units.
     r = new_renderer(store)
@@ -151,7 +163,7 @@ def main() -> int:
     r.set_layer("states", True)
     r.set_fill_layer("parks", True)
     r.set_labels("countries", True)
-    r.save_png(out_dir / "12_sovereignty_parks.png")
+    save(r, "12_sovereignty_parks.png")
 
     print("previews written to", out_dir)
     return 0
