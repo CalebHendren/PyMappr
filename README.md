@@ -12,6 +12,7 @@ PyMappr is essentially a remake of
 offline desktop application.
 
 ![PyMappr](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-blue)
+[![DOI](https://zenodo.org/badge/1292442771.svg)](https://doi.org/10.5281/zenodo.21522496)
 
 ![PyMappr main window with grouped beetle localities and a legend](docs/images/app_points.png)
 
