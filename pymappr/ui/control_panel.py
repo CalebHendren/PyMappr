@@ -257,7 +257,7 @@ class ControlPanel(ttk.Frame):
 
         self.legend_loc_var = tk.StringVar(value="best")
         self._combo_row(sec, "Position:", self.legend_loc_var,
-                        LEGEND_LOCATIONS, self.app.on_legend_options,
+                        LEGEND_LOCATIONS, self.app.on_legend_position,
                         width=12)
 
         row = ttk.Frame(sec)
@@ -321,6 +321,16 @@ class ControlPanel(ttk.Frame):
         entry.bind("<KeyRelease>", lambda _e: self.app.on_legend_options())
         ttk.Label(sec, text="(blank = use the Group by column name)",
                   foreground="#666666").pack(anchor="w")
+
+        ttk.Separator(sec, orient="horizontal").pack(fill="x", pady=4)
+        self.legend_drag_var = tk.BooleanVar(value=False)
+        self._check(sec, "Allow dragging the legend",
+                    self.legend_drag_var, self.app.on_legend_drag_toggle)
+        ttk.Label(
+            sec, text="Drag the legend anywhere (no limits); right-click it "
+            "to snap back to the position above.",
+            wraplength=PANEL_WIDTH - 60,
+            foreground="#666666").pack(anchor="w")
 
         ttk.Button(sec, text="Customize legend\N{HORIZONTAL ELLIPSIS}",
                    command=self.app.on_edit_styles).pack(fill="x", pady=2)

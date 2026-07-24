@@ -1058,6 +1058,11 @@ class PyMapprApp:
     def on_legend_options(self) -> None:
         self._apply_legend()
 
+    def on_legend_position(self) -> None:
+        # Choosing a preset position discards any manual (dragged) placement.
+        self.renderer.clear_legend_anchor()
+        self._apply_legend()
+
     def _apply_legend(self, redraw: bool = True) -> None:
         title = self.panel.legend_title_var.get().strip() or None
         # With a single dataset in plain mode, default the title to its
@@ -1265,6 +1270,10 @@ class PyMapprApp:
     def on_label_drag_toggle(self) -> None:
         self.renderer.set_label_dragging(
             self.panel.label_drag_var.get())
+
+    def on_legend_drag_toggle(self) -> None:
+        self.renderer.set_legend_dragging(
+            self.panel.legend_drag_var.get())
 
     def on_graticule(self) -> None:
         interval = self.panel.graticule_interval()
