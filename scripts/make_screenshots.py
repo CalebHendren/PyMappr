@@ -61,8 +61,17 @@ def attribute_render(dataset, color_key: str, symbol_key: str):
 
 
 def save(renderer: MapRenderer, name: str) -> None:
+    """Save a full-canvas (landscape) render at the figure size."""
     path = OUT_DIR / name
     renderer.fig.savefig(path, dpi=DPI, facecolor="white")
+    print("wrote", path.relative_to(REPO_ROOT))
+
+
+def save_cropped(renderer: MapRenderer, name: str) -> None:
+    """Save cropped to the map box - used for portrait renders so the tall
+    frame comes out without its blank orientation side bars."""
+    path = OUT_DIR / name
+    renderer.save_image(str(path), fmt="png", dpi=DPI)
     print("wrote", path.relative_to(REPO_ROOT))
 
 
@@ -74,64 +83,81 @@ def main() -> int:
         return 1
 
     sample = REPO_ROOT / "sample_data"
-    us = load_csv(str(sample / "us_cities.csv"))
-    wyoming = load_csv(str(sample / "wyoming_cities.csv"))
-    animals = load_csv(str(sample / "felines_and_canines.csv"))
-    insects = load_csv(str(sample / "insects.csv"))
+    beetles = load_csv(str(sample / "south_america_beetles.csv"))
+    seabirds = load_csv(str(sample / "world_seabirds.csv"))
+    orchids = load_csv(str(sample / "europe_orchids.csv"))
 
-    # 1. Satellite world basemap with every country labelled.
+    # 1. Portrait orientation: South American beetles, color by Genus and
+    #    shape by Species, framed as a tall page (the headline of this
+    #    release). Cropped to the portrait frame.
+    beetle_groups, beetle_sections = attribute_render(beetles, "name1", "name2")
     r = new_renderer(store)
-    r.set_basemap("satellite")
+    r.set_basemap("blue_marble")
     r.set_layer("countries", True)
-    r.set_labels("countries", True)
-    save(r, "satellite_world.png")
+    r.set_extent("South America")
+    r.set_orientation("portrait")
+    r.set_point_groups(beetle_groups)
+    r.set_structured_legend(beetle_sections)
+    r.set_legend(True, location="upper right", fontsize=7)
+    save_cropped(r, "beetles_portrait.png")
 
-    # 2. US cities: grouped points + legend on a simple map.
+    # 2. The same map in landscape: it fills the canvas instead of a tall
+    #    frame. Side by side with #1 this shows the orientation switch.
     r = new_renderer(store)
-    r.set_extent((-127, -65, 23, 51))
+    r.set_basemap("blue_marble")
     r.set_layer("countries", True)
-    r.set_layer("states", True)
-    r.set_point_groups(point_groups_for(us, "name1"))
-    r.set_legend(True, title=us.name1_label, location="lower left")
-    save(r, "us_cities_points.png")
+    r.set_extent("South America")
+    r.set_point_groups(beetle_groups)
+    r.set_structured_legend(beetle_sections)
+    r.set_legend(True, location="upper right", fontsize=7)
+    save(r, "beetles_landscape.png")
 
-    # 3. Wyoming cities grouped by county (Name 3 of 4), labelled counties.
+    # 3. World seabirds grouped by Family on a Mollweide projection with a
+    #    plain per-group legend.
     r = new_renderer(store)
-    r.set_extent((-112.5, -103.5, 40.4, 45.6))
-    for key in ("countries", "states", "counties"):
-        r.set_layer(key, True)
-    r.set_labels("counties", True)
-    r.set_point_groups(point_groups_for(wyoming, "name3"))
-    r.set_legend(True, title=wyoming.name_labels[2], location="lower left")
-    save(r, "wyoming_points.png")
+    r.set_layer("countries", True)
+    r.set_projection("Mollweide")
+    r.set_ocean("blue")
+    r.set_point_groups(point_groups_for(seabirds, "name1"))
+    r.set_legend(True, title=seabirds.name_labels[0], location="lower left",
+                 fontsize=7)
+    save(r, "seabirds_world.png")
 
-    # 4. Felines & canines: color by family (Name 1), shape per animal
-    #    (Name 2) - cats share one color with a shape per species, dogs
-    #    share another color.
+    # 4. The same seabirds, but color by Family and shape by Genus: the
+    #    compact color + symbol key decodes every point with a handful of
+    #    colors and shapes.
     r = new_renderer(store)
     r.set_extent("World")
     r.set_layer("countries", True)
     r.set_ocean("blue")
-    r.set_point_groups(point_groups_for(animals, "name2", color_by="name1"))
-    r.set_legend(True, title=animals.name_labels[1], location="lower left",
-                 fontsize=7, columns=2)
-    save(r, "felines_canines_points.png")
-
-    # 4b. Insects (1500 rows, Order>Family>Genus>Species): color by Order,
-    #     symbol by Family. The compact color/symbol legend decodes every
-    #     point with 3 colors + 7 shapes instead of one row per species.
-    r = new_renderer(store)
-    r.set_extent("World")
-    r.set_layer("countries", True)
-    r.set_ocean("blue")
-    r.set_point_alpha(0.6)
-    point_groups, sections = attribute_render(insects, "name1", "name2")
+    r.set_point_alpha(0.75)
+    point_groups, sections = attribute_render(seabirds, "name1", "name2")
     r.set_point_groups(point_groups)
     r.set_structured_legend(sections)
-    r.set_legend(True, location="upper left", fontsize=7)
-    save(r, "insects_points.png")
+    r.set_legend(True, location="lower left", fontsize=7)
+    save(r, "seabirds_compact.png")
 
-    # 5. Robinson projection: world map with graticule and country labels.
+    # 5. European orchids grouped by Genus over a shaded-relief basemap, with
+    #    country labels.
+    r = new_renderer(store)
+    r.set_basemap("relief")
+    r.set_extent((-11, 30, 35, 61))
+    r.set_layer("countries", True)
+    r.set_labels("countries", True)
+    r.set_point_groups(point_groups_for(orchids, "name1"))
+    r.set_legend(True, title=orchids.name_labels[0], location="upper right",
+                 fontsize=7)
+    save(r, "orchids_europe.png")
+
+    # 6. Every country labelled on the offline Blue Marble basemap.
+    r = new_renderer(store)
+    r.set_basemap("blue_marble")
+    r.set_layer("countries", True)
+    r.set_labels("countries", True)
+    save(r, "blue_marble_world.png")
+
+    # 7. The Robinson projection with a 10 degree graticule and country
+    #    labels.
     r = new_renderer(store)
     r.set_layer("countries", True)
     r.set_projection("Robinson")
@@ -139,15 +165,15 @@ def main() -> int:
     r.set_labels("countries", True)
     save(r, "robinson_world.png")
 
-    # 6. Countries layer off: political borders removed, continent
-    #    outlines kept.
+    # 8. Countries layer off: political borders removed, continent outlines
+    #    kept.
     r = new_renderer(store)
     r.set_layer("countries", True)
     r.set_layer("countries", False)
     r.set_ocean("blue")
     save(r, "continent_outlines.png")
 
-    # 7. Physical world: bathymetry, land fill, glaciers, ice shelves,
+    # 9. Physical world: bathymetry, land fill, glaciers, ice shelves,
     #    deserts, playas, reefs, and the compass.
     r = new_renderer(store)
     r.set_layer("countries", True)
@@ -158,8 +184,8 @@ def main() -> int:
     r.set_compass(True)
     save(r, "physical_world.png")
 
-    # 8. Cities, airports, and ports over Europe: labels and markers are
-    #    scale-dependent, and the coastline switches to 10m automatically.
+    # 10. Cities, airports, and ports over Europe: markers and labels are
+    #     scale-dependent, and the coastline switches to 10m automatically.
     r = new_renderer(store)
     r.set_extent((-12, 32, 35, 62))
     r.set_layer("countries", True)
@@ -169,8 +195,8 @@ def main() -> int:
     r.set_labels("cities", True)
     save(r, "cities_europe.png")
 
-    # 9. Boundary detail: disputed areas and boundaries, maritime
-    #    boundaries, EEZ / 200 nm limits, urban areas.
+    # 11. Boundary detail: disputed areas and boundaries, maritime
+    #     boundaries, EEZ / 200 nm limits, urban areas.
     r = new_renderer(store)
     r.set_extent((40, 110, -5, 45))
     r.set_layer("countries", True)
@@ -181,7 +207,7 @@ def main() -> int:
     r.set_ocean("blue")
     save(r, "boundaries_asia.png")
 
-    # 10. Time zones with capitals only.
+    # 12. Time zones with capitals only.
     r = new_renderer(store)
     r.set_layer("countries", True)
     r.set_layer("timezones", True)

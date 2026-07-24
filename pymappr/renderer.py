@@ -283,6 +283,13 @@ class MapRenderer:
         self._legend_sections: list | None = None
         self._point_alpha = 1.0
 
+        # Manual legend placement: dragging the legend (when enabled) anchors
+        # its lower-left corner here, in axes fraction, with no limit; None
+        # falls back to the automatic ``_legend_loc`` placement.
+        self._legend_anchor: tuple[float, float] | None = None
+        self._legend_drag: dict | None = None
+        self._legend_dragging_enabled = False
+
         # Artists are keyed "<layer>@<source directory>" so multi-resolution
         # layers keep one artist set per resolution; _artist_res remembers
         # which resolution is currently shown for each visible layer.
@@ -302,17 +309,22 @@ class MapRenderer:
         self._label_drag: dict | None = None
         self._label_dragging_enabled = False
 
+        # While the figure is temporarily resized for export, the resize
+        # handler must not re-fit the on-screen view to the export size.
+        self._suspend_resize = False
+
         self.set_extent("World")
         self._apply_graticule()
         self.ax.callbacks.connect("xlim_changed", self._on_limits_changed)
         self.ax.callbacks.connect("ylim_changed", self._on_limits_changed)
         if self.fig.canvas is not None:
             self.fig.canvas.mpl_connect("button_press_event",
-                                        self._on_label_press)
+                                        self._on_canvas_press)
             self.fig.canvas.mpl_connect("motion_notify_event",
-                                        self._on_label_motion)
+                                        self._on_canvas_motion)
             self.fig.canvas.mpl_connect("button_release_event",
-                                        self._on_label_release)
+                                        self._on_canvas_release)
+            self.fig.canvas.mpl_connect("resize_event", self._on_resize)
 
     # ------------------------------------------------------------------ view
 
@@ -417,6 +429,21 @@ class MapRenderer:
                              self.ax.get_ylim(), self.proj.world_width,
                              clamp=not self.proj.hemisphere)
         self.ax.set_xlim(x0, x1)
+
+    def _on_resize(self, _event) -> None:
+        """Keep the map correctly shaped whenever the figure (window) resizes.
+
+        The oriented axes box is a *figure fraction*, so a Tk resize - the
+        window being maximised, or the first real layout after a restored
+        session that was measured against the initial figure size - would
+        leave a portrait box at a stale, no-longer-portrait aspect: the map
+        turns into 'landscape but shrunk'. Re-deriving the box for the new
+        size and re-fitting the view keeps portrait tall, landscape full, and
+        map units square in either orientation."""
+        if self._suspend_resize or self._in_limits_refresh:
+            return
+        self._refit_view_to_box()
+        self.redraw()
 
     def get_view(self) -> tuple[tuple[float, float], tuple[float, float]]:
         """Current axis limits (map coordinates) for project persistence."""
@@ -592,10 +619,13 @@ class MapRenderer:
                 artists = []
                 for off in self._offsets():
                     x0, x1, y0, y1 = extent
+                    # aspect="auto" keeps the axes from locking to equal
+                    # (imshow's default), which would letterbox any non-2:1
+                    # extent - breaking portrait framing and re-fit sizing.
                     artist = self.ax.imshow(
                         img, extent=(x0 + off, x1 + off, y0, y1),
                         origin="upper", interpolation="bilinear",
-                        zorder=Z_SATELLITE)
+                        aspect="auto", zorder=Z_SATELLITE)
                     artist._pym_offset = off
                     artists.append(artist)
                 self._artists[artist_key] = artists
@@ -1093,10 +1123,56 @@ class MapRenderer:
         dy = max(-max_dy, min(max_dy, dy))
         return dx, dy
 
-    def _on_label_press(self, event) -> None:
-        if not self._label_dragging_enabled:
-            return
+    # Dragging the legend (when enabled) is unbounded - unlike labels, which
+    # are held near their computed spot - so it can be parked anywhere on or
+    # off the map. A right-click on the legend restores automatic placement.
+
+    def set_legend_dragging(self, enabled: bool) -> None:
+        self._legend_dragging_enabled = enabled
+
+    def _legend_lowerleft_axes(self, legend) -> tuple[float, float]:
+        """The legend's lower-left corner in axes fraction (the coordinate an
+        anchored legend is positioned by)."""
+        bbox = legend.get_window_extent()
+        x, y = self.ax.transAxes.inverted().transform((bbox.x0, bbox.y0))
+        return float(x), float(y)
+
+    def _legend_hit(self, event) -> bool:
+        legend = self.ax.get_legend()
+        if legend is None or event.x is None or event.y is None:
+            return False
+        return bool(legend.get_window_extent().contains(event.x, event.y))
+
+    def _on_canvas_press(self, event) -> None:
         if event.inaxes is not self.ax or self._toolbar_busy():
+            return
+        if self._legend_press(event):
+            return
+        self._label_press(event)
+
+    def _legend_press(self, event) -> bool:
+        """Begin (or reset) a legend drag; returns True if it took the click."""
+        if not self._legend_dragging_enabled or not self._legend_hit(event):
+            return False
+        if event.button == 3:  # right-click: back to automatic placement
+            self._legend_anchor = None
+            self._update_legend()
+            self.redraw()
+            return True
+        if event.button == 1:
+            legend = self.ax.get_legend()
+            lx, ly = self._legend_lowerleft_axes(legend)
+            cx, cy = self.ax.transAxes.inverted().transform((event.x, event.y))
+            # If the legend was auto-placed, pin it to its current corner so
+            # the drag has a stable anchor to move from.
+            if self._legend_anchor is None:
+                self._legend_anchor = (lx, ly)
+                self._update_legend()
+            self._legend_drag = {"grab": (lx - cx, ly - cy)}
+        return True
+
+    def _label_press(self, event) -> None:
+        if not self._label_dragging_enabled:
             return
         text = self._label_under(event)
         if text is None:
@@ -1111,7 +1187,10 @@ class MapRenderer:
             self._label_drag = {"text": text,
                                 "grab": (tx - event.xdata, ty - event.ydata)}
 
-    def _on_label_motion(self, event) -> None:
+    def _on_canvas_motion(self, event) -> None:
+        if self._legend_drag is not None:
+            self._drag_legend(event)
+            return
         if self._label_drag is None or event.inaxes is not self.ax:
             return
         text = self._label_drag["text"]
@@ -1123,7 +1202,21 @@ class MapRenderer:
         text.set_position((bx + dx, by + dy))
         self.redraw()
 
-    def _on_label_release(self, event) -> None:
+    def _drag_legend(self, event) -> None:
+        legend = self.ax.get_legend()
+        if legend is None or event.x is None or event.y is None:
+            return
+        cx, cy = self.ax.transAxes.inverted().transform((event.x, event.y))
+        gx, gy = self._legend_drag["grab"]
+        self._legend_anchor = (cx + gx, cy + gy)
+        legend.set_bbox_to_anchor(self._legend_anchor,
+                                  transform=self.ax.transAxes)
+        self.redraw()
+
+    def _on_canvas_release(self, event) -> None:
+        if self._legend_drag is not None:
+            self._legend_drag = None
+            return
         if self._label_drag is None:
             return
         text = self._label_drag["text"]
@@ -1230,6 +1323,11 @@ class MapRenderer:
         self._legend_sections = sections
         self._update_legend()
 
+    def clear_legend_anchor(self) -> None:
+        """Drop any manual (dragged) legend position, returning to automatic
+        placement at the chosen location."""
+        self._legend_anchor = None
+
     def set_point_alpha(self, alpha: float) -> None:
         self._point_alpha = max(min(float(alpha), 1.0), 0.05)
         self._rebuild_points()
@@ -1267,6 +1365,17 @@ class MapRenderer:
                       markerfacecolor=face, color=style.color,
                       markeredgecolor=edge, markeredgewidth=edge_w)
 
+    def _legend_placement(self) -> dict:
+        """Legend ``loc``/``bbox_to_anchor`` kwargs: the automatic location,
+        or - once the legend has been dragged - its manual lower-left anchor
+        in axes fraction (no bounds)."""
+        if self._legend_anchor is not None:
+            # borderaxespad=0 pins the lower-left corner exactly on the
+            # anchor, so grabbing an auto-placed legend doesn't make it hop.
+            return {"loc": "lower left", "bbox_to_anchor": self._legend_anchor,
+                    "borderaxespad": 0.0}
+        return {"loc": self._legend_loc}
+
     def _update_legend(self) -> None:
         legend = self.ax.get_legend()
         if legend is not None:
@@ -1282,14 +1391,15 @@ class MapRenderer:
         ]
         for handle, (label, *_rest) in zip(handles, self._point_groups):
             handle.set_label(label)
-        self.ax.legend(handles=handles, loc=self._legend_loc,
+        self.ax.legend(handles=handles,
                        title=self._legend_title,
                        fontsize=self._legend_fontsize,
                        title_fontsize=self._legend_title_fontsize,
                        ncols=self._legend_columns,
                        markerscale=self._legend_marker_scale,
                        labelspacing=self._legend_label_spacing,
-                       frameon=self._legend_frame, framealpha=0.85)
+                       frameon=self._legend_frame, framealpha=0.85,
+                       **self._legend_placement())
 
     def _draw_structured_legend(self) -> None:
         """A compact legend split into titled sections (a color key and a
@@ -1313,7 +1423,7 @@ class MapRenderer:
             for label, style in entries:
                 handles.append(self._legend_handle(style, size=45))
                 labels.append("   " + label)
-        leg = self.ax.legend(handles, labels, loc=self._legend_loc,
+        leg = self.ax.legend(handles, labels,
                              title=self._legend_title,
                              fontsize=self._legend_fontsize,
                              title_fontsize=self._legend_title_fontsize,
@@ -1321,7 +1431,8 @@ class MapRenderer:
                              markerscale=self._legend_marker_scale,
                              frameon=self._legend_frame, framealpha=0.85,
                              handletextpad=0.4,
-                             labelspacing=self._legend_label_spacing)
+                             labelspacing=self._legend_label_spacing,
+                             **self._legend_placement())
         texts = leg.get_texts()
         for row in header_rows:
             if row < len(texts):
@@ -1381,6 +1492,8 @@ class MapRenderer:
                 and abs(new_h - old_size[1]) < 1e-3):
             yield  # landscape / already full-canvas: nothing to crop
             return
+        was_suspended = self._suspend_resize
+        self._suspend_resize = True
         try:
             self.fig.set_size_inches(new_w, new_h, forward=False)
             self.ax.set_position(list(rect))
@@ -1388,6 +1501,7 @@ class MapRenderer:
         finally:
             self.fig.set_size_inches(*old_size, forward=False)
             self.ax.set_position(list(old_bounds))
+            self._suspend_resize = was_suspended
             self.redraw()
 
     def _save_tiff(self, path: str, dpi: int) -> None:
