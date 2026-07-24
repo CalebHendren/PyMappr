@@ -13,7 +13,7 @@ offline desktop application.
 
 ![PyMappr](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-blue)
 
-![PyMappr main window with grouped points and a legend](docs/images/app_points.png)
+![PyMappr main window with grouped beetle localities and a legend](docs/images/app_points.png)
 
 ## Features
 
@@ -57,8 +57,15 @@ offline desktop application.
   projections take a **customizable centre** - set the central meridian and
   latitude to spin the globe or re-centre the map on your region. Every
   layer, label, point, and the satellite basemap is reprojected live.
-- **Basemaps**: *Simple* (white with black borders) or *Satellite*
-  (full color, slower - Natural Earth shaded relief, fully offline).
+- **Landscape or portrait orientation**: switch the map between filling the
+  canvas (*Landscape*) and a tall, centred frame (*Portrait*), so a tall
+  region like South America fills the page instead of floating in a band of
+  ocean. The framing stays correct as the window is resized or maximised, and
+  a saved image is cropped to the chosen shape.
+- **Basemaps**: *Simple* (white with black borders) or full-color offline
+  rasters - *Relief* (Natural Earth I / II shaded relief), a *greyscale*
+  relief, and *Blue Marble* (Natural Earth hypsometric tints) - reprojected
+  live.
 - **~30 Natural Earth layer toggles**, organized in a tabbed side panel:
   - *Borders & areas*: Countries, States/Provinces, US Counties,
     Sovereign states, Map units, Map subunits, Dependencies,
@@ -110,21 +117,24 @@ offline desktop application.
   - per-group color, symbol, and size - symbols include circle, square,
     star, diamond, triangles, plus, X, pentagon, hexagon, octagon, and more,
     each in a **solid and an open (outline-only) version**
-  - *Group by* any name column, and *Color by* another: group by Animal and
-    color by Family, and every feline species gets its own shape in one
-    color while canines get their own shapes in another color
+  - *Group by* any name column, and *Color by* another: group by Genus and
+    color by Family, and every genus in a family shares that family's color
+    while keeping its own shape
   - *Vary symbols per group* to cycle shapes automatically
   - position, label and title font size, legend marker size, row spacing,
     column count, frame on/off, and a custom title
+  - **drag the whole legend** anywhere on (or off) the map, with no limits,
+    once *Allow dragging the legend* is ticked - right-click it to snap back
+    to the chosen position
 - **Two-attribute styling for deep hierarchies**: *Color by* one column and
-  *Symbol by* another to encode two levels at once (e.g. color by Order,
-  symbol by Family). The legend switches to a compact **color key + symbol
+  *Symbol by* another to encode two levels at once (e.g. color by Family,
+  symbol by Genus). The legend switches to a compact **color key + symbol
   key** - a handful of colors and shapes - instead of one row per
-  combination, so a 1500-point, 33-species dataset stays readable.
+  combination, so a many-species dataset stays readable.
 - **Point opacity** slider to keep dense, overlapping point clouds legible.
 - **Filter bar below the map**: pick a name column and tick the values to
-  show - on the felines-and-canines dataset, filter by Family and untick
-  Felines to see only the dogs. *All*/*None* buttons for quick toggling.
+  show - on the world-seabirds dataset, filter by Family and untick a family
+  to hide its colonies. *All*/*None* buttons for quick toggling.
   The legend follows the filter: only the values currently shown on the map
   appear in it (their colors and symbols stay stable while you toggle).
 - **Save map as PNG** at 100-300 DPI.
@@ -156,6 +166,26 @@ offline desktop application.
 
 ## Screenshots
 
+### Landscape and portrait orientation
+
+The same map, two orientations. In **Landscape** the map fills the canvas; in
+**Portrait** it is reframed as a tall, centred page - the vertical span is
+kept and the sides are cropped, so a tall region fills the frame instead of
+floating in ocean. Switching orientation, resizing, or maximising the window
+all keep the framing correct, and a saved image is cropped to the shape.
+
+The app in Portrait mode, showing the South American beetle localities:
+
+![PyMappr in portrait orientation](docs/images/app_portrait.png)
+
+The same view rendered to an image, portrait and landscape:
+
+| Portrait | Landscape |
+|----------|-----------|
+| ![Portrait beetle map](docs/images/beetles_portrait.png) | ![Landscape beetle map](docs/images/beetles_landscape.png) |
+
+### Layers, projections, and detail
+
 The Layers tab: bathymetry, land fill, glaciers, ice shelves, deserts, and
 the compass on a world view:
 
@@ -181,9 +211,9 @@ Time zones (labelled) with national capitals:
 
 ![Time zones and capitals](docs/images/timezones_capitals.png)
 
-Every country labelled on the offline satellite basemap:
+Every country labelled on the offline Blue Marble basemap:
 
-![Satellite basemap](docs/images/satellite_world.png)
+![Blue Marble basemap](docs/images/blue_marble_world.png)
 
 The Robinson projection with a 10° graticule:
 
@@ -198,69 +228,64 @@ selection is required, name columns are ticked on and off:
 
 ![Column mapping dialog](docs/images/column_mapper.png)
 
-US cities grouped and styled per group:
-
-![US cities with legend](docs/images/us_cities_points.png)
-
 ## CSV format
 
 The expected layout - any number of name columns followed by coordinates
 (order is flexible; you confirm the mapping on import):
 
-| Country       | State   | County  | City     | Longitude   | Latitude   |
-|---------------|---------|---------|----------|-------------|------------|
-| United States | Wyoming | Laramie | Cheyenne | -104.8202   | 41.1400    |
-| United States | Wyoming | Natrona | Casper   | 106°18'47"W | 42°52'00"N |
+| Genus       | Species       | Longitude   | Latitude    |
+|-------------|---------------|-------------|-------------|
+| Eleusis     | chapadensis   | -68.4349    | -12.3541    |
+| Xanthopygus | orinocensis   | 67°33'37"W  | 10°18'29"N  |
 
 Working examples in [`sample_data/`](sample_data):
 
-- [`us_cities.csv`](sample_data/us_cities.csv) - two name columns, mixed
-  decimal and DMS notation
-- [`wyoming_cities.csv`](sample_data/wyoming_cities.csv) - four name columns
-  (Country, State, County, City)
-- [`felines_and_canines.csv`](sample_data/felines_and_canines.csv) - Family +
-  Animal + Place, for the grouped-styling test case below
-- [`dog_breeds.csv`](sample_data/dog_breeds.csv) - Species + Breed with the
-  place of origin of ~90 dog breeds
-- [`insects.csv`](sample_data/insects.csv) - 1500 rows of a four-level
-  taxonomy (Order, Family, Genus, Species) for the two-attribute styling
-  test case below
+- [`south_america_beetles.csv`](sample_data/south_america_beetles.csv) - 50
+  rove-beetle localities across South America (Genus + Species), for the
+  color/symbol legend and the landscape/portrait examples above
+- [`world_seabirds.csv`](sample_data/world_seabirds.csv) - seabird colonies
+  worldwide with a three-level Family + Genus + Species hierarchy, for
+  grouped and two-attribute styling
+- [`europe_orchids.csv`](sample_data/europe_orchids.csv) - European orchid
+  records (Genus + Species), for a regional map with labels
 
 ## Test cases
 
-### Wyoming cities by county (four name columns)
+### South American beetles (Color by + Symbol by, in portrait)
 
-[`sample_data/wyoming_cities.csv`](sample_data/wyoming_cities.csv) lists the
-largest town in every Wyoming county as
-`United States, Wyoming, <county>, <city>` - Name 1 is the country, Name 2
-the state, Name 3 the county, and Name 4 the city (Cheyenne, Casper,
-Gillette, Laramie, ...). Grouping by the County column labels every group in
-the legend, and the County labels layer names every county in view:
+[`sample_data/south_america_beetles.csv`](sample_data/south_america_beetles.csv)
+has 50 rove-beetle localities across South America. Name 1 is the Genus
+(Eleusis, Xanthopygus, Plociopterus) and Name 2 the Species. Set *Color by*
+to Genus and *Symbol by* to Species: color encodes the genus and shape the
+species, and the legend collapses to a compact color key (3 colors) plus
+symbol key that decodes every point. Because South America is tall, this is a
+natural fit for **Portrait** orientation - the two renders are shown at the
+top of the Screenshots section.
 
-![Wyoming cities grouped by county](docs/images/wyoming_points.png)
+### World seabirds (Group by, and Color by + Symbol by)
 
-### Felines and canines (Group by + Color by)
+[`sample_data/world_seabirds.csv`](sample_data/world_seabirds.csv) maps
+seabird colonies worldwide with a `Family, Genus, Species` hierarchy - 4
+families, 8 genera, 12 species. *Group by* Family gives one color per family
+with its own legend row:
 
-[`sample_data/felines_and_canines.csv`](sample_data/felines_and_canines.csv)
-maps sightings/ranges of cat and dog species. Name 1 is the Family (Felines
-or Canines) and Name 2 the Animal. Set *Group by* to Animal and *Color by*
-to Family: domestic cats, lions, cheetahs, and tigers each get their own
-shape in the feline color, while wolves, coyotes, and dingoes get their own
-shapes in the canine color:
+![Seabirds grouped by family on a Mollweide world](docs/images/seabirds_world.png)
 
-![Felines and canines styled by family](docs/images/felines_canines_points.png)
+Grouping by Species alone would make a long legend. Instead set *Color by* to
+Family and *Symbol by* to Genus: color encodes the family, shape the genus,
+and the legend collapses to a compact color key plus symbol key. Turning the
+point opacity down keeps overlapping colonies readable:
 
-### Insects: a four-level taxonomy (Color by + Symbol by)
+![Seabirds colored by family, shaped by genus](docs/images/seabirds_compact.png)
 
-[`sample_data/insects.csv`](sample_data/insects.csv) has 1500 records with
-an `Order, Family, Genus, Species` hierarchy - 3 orders, 7 families, 17
-genera, 33 species. Grouping by Species alone would make a 33-row legend.
-Instead, set *Color by* to Order and *Symbol by* to Family: color encodes
-the order, shape encodes the family, and the legend collapses to a compact
-color key (3 colors) plus symbol key (7 shapes) that decodes every point.
-Turning the point opacity down keeps the overlapping cloud readable:
+### European orchids (regional map with labels)
 
-![Insects colored by order, shaped by family](docs/images/insects_points.png)
+[`sample_data/europe_orchids.csv`](sample_data/europe_orchids.csv) has
+European orchid records (Genus + Species). Limiting the view to Europe,
+grouping by Genus, and turning on country labels over a shaded-relief basemap
+makes a publication-ready regional distribution map:
+
+![European orchids grouped by genus](docs/images/orchids_europe.png)
 
 To reproduce these renders: `python scripts/make_screenshots.py`
 (writes to `docs/images/`); the app-window screenshots come from
