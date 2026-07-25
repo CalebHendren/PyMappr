@@ -107,6 +107,23 @@ Building the release packages is automated by
 [`build-release.yml`](.github/workflows/build-release.yml); see
 `packaging/` for local build scripts per platform.
 
+## MinMappr (browser version)
+
+[`index.html`](index.html) is **MinMappr**, a single-file, browser-only edition
+of PyMappr hosted with GitHub Pages at
+[calebhendren.github.io/PyMappr](https://calebhendren.github.io/PyMappr/). It
+covers the core workflow with no install: points from a CSV/TSV (with a
+column-mapping step), a pasted table, or manual entry, decimal degrees or DMS,
+styled by group/color/symbol on the same projections (Equirectangular, Mercator,
+Robinson, Mollweide, Natural Earth, Winkel Tripel, orthographic Globe, and
+regional Lambert), exported as PNG or SVG.
+
+It intentionally leaves out the heavier desktop features: the ~30 Natural Earth
+layers, relief/Blue Marble basemaps, bathymetry, labels, Excel import, project
+files, and Python/R code export. The page is self-contained (D3,
+d3-geo-projection, topojson-client, and a simplified world outline are all
+inlined) and is kept out of the PyInstaller build.
+
 ## Support Me
 
 If PyMappr is useful to you, you can support its development on Ko-fi:
@@ -129,3 +146,8 @@ Biodiversity hotspots ([Conservation International, 2016.1](https://zenodo.org/r
 and Marine ecoregions ([WWF/TNC MEOW](https://hub.arcgis.com/datasets/903c3ae05b264c00a3b5e58a4561b7e6)) -
 are CC-BY licensed and fetched by `scripts/fetch_data.py`; if a source is
 unavailable, that layer is skipped and the rest of PyMappr works as usual.
+
+MinMappr (the browser version) uses a simplified, Natural Earth-derived world
+outline from [world-atlas](https://github.com/topojson/world-atlas) (public
+domain), rendered with [D3](https://d3js.org) and d3-geo-projection and decoded
+with topojson-client (all ISC licensed).
