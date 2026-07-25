@@ -50,7 +50,7 @@ jobs:
           done
 
           if printf '%s\n%s' "$PR_TITLE" "$PR_BODY" \
-              | grep -qiE 'generated with \[?claude code|claude\.ai/code/session|^co-authored-by:.*(claude|anthropic)'; then
+              | grep -qiE '\[claude code\]\(https://claude\.com/claude-code\)|claude\.ai/code/session_|^co-authored-by:.*(claude|anthropic)'; then
             echo "::error::PR title/description contains a Claude attribution byline"
             found=1
           fi
