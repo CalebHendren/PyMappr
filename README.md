@@ -1,8 +1,7 @@
 # PyMappr
 
 PyMappr is a remake of [SimpleMappr](https://www.simplemappr.net/) in
-Python: the same "CSV of localities in, publication-ready point map out"
-workflow, but as an offline desktop application.
+Python as an offline desktop application.
 
 ![PyMappr](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-blue)
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.21522496.svg)](https://doi.org/10.5281/zenodo.21522496)
