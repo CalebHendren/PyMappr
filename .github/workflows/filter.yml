@@ -1,13 +1,5 @@
 name: Block Claude attribution
 
-# Fails the check if any commit in the PR - or the PR title/description -
-# carries Claude/Anthropic authorship metadata: an anthropic.com author or
-# committer email, a Co-Authored-By/Claude-Session trailer, or the
-# "Generated with Claude Code" byline. Deliberately scoped to those specific
-# markers rather than any mention of "claude" or "anthropic", since LLM
-# Assist legitimately documents Claude as one of several supported model
-# providers and that text must not trip this check.
-
 on:
   pull_request:
     types: [opened, synchronize, reopened, edited]
