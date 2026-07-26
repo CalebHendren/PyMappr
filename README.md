@@ -108,7 +108,7 @@ Building the release packages is automated by
 
 ## MinMappr (browser version)
 
-[`index.html`](index.html) is **MiniMappr**, a single-file, browser-only edition
+[`index.html`](index.html) is **MiniMappr**, a browser-only edition
 of PyMappr hosted with GitHub Pages at
 [calebhendren.github.io/PyMappr](https://calebhendren.github.io/PyMappr/). It
 covers the core workflow with no install: points from a CSV/TSV (with a
