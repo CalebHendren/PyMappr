@@ -7,7 +7,7 @@ dist/
 .venv/
 venv/
 .pytest_cache/
-data/
+/data/
 *.spec.bak
 output/
 Output/
@@ -18,4 +18,5 @@ Output/
 .DS_Store
 Thumbs.db
 /CLAUDE.md
+.claudeignore
 preview/

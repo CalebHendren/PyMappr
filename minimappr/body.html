@@ -1,0 +1,335 @@
+<div id="app">
+  <header id="top">
+    <div class="brand">
+      <span class="logo"><span class="min">Mini</span>Mappr</span>
+      <span class="tag">a lite, in-browser edition of PyMappr</span>
+    </div>
+    <span class="spacer"></span>
+    <select id="themeSelect" class="themesel" aria-label="Colour theme">
+      <option value="system">System theme</option>
+      <option value="light">Light</option>
+      <option value="dark">Dark</option>
+    </select>
+    <a class="pill ghost" id="aboutBtn" href="#">About</a>
+    <a class="pill primary" href="https://github.com/CalebHendren/PyMappr/releases" target="_blank" rel="noopener">Get full PyMappr ↓</a>
+  </header>
+
+  <main>
+    <aside id="side">
+      <nav id="tabs">
+        <button data-tab="data" class="active">Data</button>
+        <button data-tab="style">Style</button>
+        <button data-tab="map">Map</button>
+        <button data-tab="legend">Legend</button>
+        <button data-tab="export">Export</button>
+      </nav>
+      <div id="panels">
+
+        <!-- ============ DATA ============ -->
+        <section class="tabpage active" data-page="data">
+          <details class="sec" open>
+            <summary>Add points</summary>
+            <div class="body">
+              <div class="btnrow">
+                <button class="btn pri" id="btnCsv">Add CSV / TSV…</button>
+                <button class="btn" id="btnPaste">Paste table…</button>
+              </div>
+              <div class="btnrow" style="margin-top:7px">
+                <button class="btn" id="btnManual">Manual entry…</button>
+              </div>
+              <input type="file" id="fileInput" accept=".csv,.tsv,.txt" style="display:none">
+              <label class="block">Or load a sample dataset</label>
+              <div class="btnrow">
+                <button class="btn sm" data-sample="beetles">Beetles</button>
+                <button class="btn sm" data-sample="orchids">Orchids</button>
+                <button class="btn sm" data-sample="seabirds">Seabirds</button>
+              </div>
+              <p class="hintline">Coordinates may be decimal degrees (<code>-68.43</code>) or DMS
+                (<code>10°18'29"N</code>). Columns are mapped on import.</p>
+            </div>
+          </details>
+
+          <details class="sec" open>
+            <summary>Datasets</summary>
+            <div class="body">
+              <div id="dslist"><div id="dsempty">No data yet. Add a CSV, paste a table, or load a sample.</div></div>
+              <div class="btnrow" style="margin-top:8px">
+                <button class="btn sm" id="btnEdit" disabled>Edit…</button>
+                <button class="btn sm" id="btnRemove" disabled>Remove</button>
+                <button class="btn sm" id="btnClear">Clear all</button>
+              </div>
+            </div>
+          </details>
+        </section>
+
+        <!-- ============ STYLE ============ -->
+        <section class="tabpage" data-page="style">
+          <p class="muted" id="styleFor" style="margin:8px 2px">Select a dataset to style it.</p>
+          <div id="styleControls" style="display:none">
+            <details class="sec" open>
+              <summary>Grouping</summary>
+              <div class="body">
+                <div class="row"><label class="lbl grow">Group by</label>
+                  <select id="groupBy" class="grow"></select></div>
+                <div class="row"><label class="lbl grow">Color by</label>
+                  <select id="colorBy" class="grow"></select></div>
+                <div class="row"><label class="lbl grow">Symbol by</label>
+                  <select id="symbolBy" class="grow"></select></div>
+                <p class="hintline">Setting <b>Symbol by</b> builds a compact colour + symbol legend
+                  (e.g. colour by Family, symbol by Genus).</p>
+                <label class="check"><input type="checkbox" id="varySymbols"> Vary symbols per group</label>
+              </div>
+            </details>
+
+            <details class="sec" open>
+              <summary>Marker</summary>
+              <div class="body">
+                <div class="row"><label class="lbl grow">Base shape</label>
+                  <select id="baseMarker" class="grow"></select></div>
+                <div class="row"><label class="lbl">Base colour</label>
+                  <input type="color" id="baseColor"><span class="grow"></span>
+                  <label class="lbl">Size</label><span id="sizeVal" class="valbadge">30</span></div>
+                <input type="range" id="sizeRange" min="6" max="200" step="2" value="30">
+                <div class="row"><label class="lbl grow">Opacity</label>
+                  <span id="opacityVal" class="valbadge">1.0</span></div>
+                <input type="range" id="opacityRange" min="0.1" max="1" step="0.05" value="1">
+                <p class="hintline">Base colour/shape apply when a single group is shown; grouped
+                  datasets get palette colours automatically.</p>
+              </div>
+            </details>
+
+            <details class="sec">
+              <summary>Per-group overrides</summary>
+              <div class="body">
+                <div id="groupList" class="muted">Group the data to fine-tune each entry.</div>
+                <button class="btn sm" id="resetStyles" style="margin-top:8px">Reset to defaults</button>
+              </div>
+            </details>
+          </div>
+        </section>
+
+        <!-- ============ MAP ============ -->
+        <section class="tabpage" data-page="map">
+          <details class="sec" open>
+            <summary>View</summary>
+            <div class="body">
+              <div class="row"><label class="lbl grow">Region</label>
+                <select id="extent" class="grow"></select></div>
+              <div class="row"><label class="lbl grow">Projection</label>
+                <select id="projection" class="grow"></select></div>
+              <div id="originRow" style="display:none">
+                <div class="row"><label class="lbl grow">Centre longitude</label>
+                  <input type="number" id="centerLon" step="5" style="width:96px"></div>
+                <div class="row"><label class="lbl grow">Centre latitude</label>
+                  <input type="number" id="centerLat" step="5" style="width:96px"></div>
+                <p class="hintline">Centre for the Globe and Lambert projections.</p>
+              </div>
+              <label class="block">Orientation</label>
+              <div class="seg" id="orientSeg">
+                <button data-orient="landscape" class="on">Landscape</button>
+                <button data-orient="portrait">Portrait</button>
+              </div>
+            </div>
+          </details>
+
+          <details class="sec" open>
+            <summary>Basemap</summary>
+            <div class="body">
+              <label class="check"><input type="checkbox" id="showLand" checked> Land fill</label>
+              <div class="row"><label class="lbl">Land colour</label><input type="color" id="landColor" value="#ffffff"></div>
+              <label class="check"><input type="checkbox" id="showBorders" checked> Country borders</label>
+              <label class="check"><input type="checkbox" id="showCoast" checked> Coastlines</label>
+              <label class="block">Ocean</label>
+              <div class="seg" id="oceanSeg">
+                <button data-ocean="none">None</button>
+                <button data-ocean="grey">Grey</button>
+                <button data-ocean="blue" class="on">Blue</button>
+              </div>
+              <label class="block">Graticule (grid)</label>
+              <div class="seg" id="gratSeg">
+                <button data-grat="0" class="on">Off</button>
+                <button data-grat="10">10°</button>
+                <button data-grat="20">20°</button>
+                <button data-grat="30">30°</button>
+              </div>
+            </div>
+          </details>
+
+          <details class="sec">
+            <summary>Decorations</summary>
+            <div class="body">
+              <label class="block">Map title</label>
+              <input type="text" id="mapTitle" placeholder="(optional)">
+              <label class="check"><input type="checkbox" id="showCompass"> Compass (north arrow)</label>
+              <label class="check"><input type="checkbox" id="showLabels"> Point labels (from a Label column)</label>
+              <div class="row"><label class="lbl">Background</label><input type="color" id="matColor" value="#ffffff"></div>
+              <div class="row"><label class="lbl grow">Border weight</label>
+                <span id="lwVal" class="valbadge">1.0</span></div>
+              <input type="range" id="lineWidth" min="0.25" max="3" step="0.25" value="1">
+            </div>
+          </details>
+        </section>
+
+        <!-- ============ LEGEND ============ -->
+        <section class="tabpage" data-page="legend">
+          <details class="sec" open>
+            <summary>Legend</summary>
+            <div class="body">
+              <label class="check"><input type="checkbox" id="legShow" checked> Show legend</label>
+              <label class="check"><input type="checkbox" id="legFrame" checked> Draw frame</label>
+              <div class="row"><label class="lbl grow">Position</label>
+                <select id="legPos" class="grow">
+                  <option value="tr">Top right</option>
+                  <option value="tl">Top left</option>
+                  <option value="br">Bottom right</option>
+                  <option value="bl">Bottom left</option>
+                </select></div>
+              <label class="block">Title <span class="muted">(blank = grouping column)</span></label>
+              <input type="text" id="legTitle" placeholder="(auto)">
+              <div class="row"><label class="lbl grow">Font size</label>
+                <input type="number" id="legFont" min="6" max="28" step="1" value="12" style="width:74px"></div>
+              <div class="row"><label class="lbl grow">Columns</label>
+                <input type="number" id="legCols" min="1" max="5" step="1" value="1" style="width:74px"></div>
+              <div class="row"><label class="lbl grow">Marker scale</label>
+                <input type="number" id="legScale" min="0.5" max="3" step="0.25" value="1" style="width:74px"></div>
+              <p class="hintline">Tip: drag the legend on the map to place it freely;
+                double-click it to snap back.</p>
+            </div>
+          </details>
+        </section>
+
+        <!-- ============ EXPORT ============ -->
+        <section class="tabpage" data-page="export">
+          <details class="sec" open>
+            <summary>Export image</summary>
+            <div class="body">
+              <div class="row"><label class="lbl grow">PNG width (px)</label>
+                <input type="number" id="pngWidth" min="600" max="8000" step="100" value="2000" style="width:96px"></div>
+              <div class="btnrow" style="margin-top:6px">
+                <button class="btn pri" id="btnPng">Download PNG</button>
+                <button class="btn" id="btnSvg">Download SVG</button>
+              </div>
+              <p class="hintline">The image is cropped to the map frame and its decorations.</p>
+            </div>
+          </details>
+          <details class="sec">
+            <summary>Not included in the web version</summary>
+            <div class="body">
+              <p class="muted">Present in desktop
+                <a href="https://github.com/CalebHendren/PyMappr/releases" target="_blank" rel="noopener">PyMappr</a>,
+                not here: the ~30 Natural Earth vector layers, relief and Blue Marble basemaps,
+                bathymetry, city and feature labels, Excel import, project files, and code export
+                to Python or R. See About for the full list.</p>
+            </div>
+          </details>
+        </section>
+
+      </div>
+    </aside>
+
+    <div id="stage">
+      <div id="mapwrap"><svg id="map" xmlns="http://www.w3.org/2000/svg"></svg></div>
+      <div class="hint" id="emptyHint">
+        <div style="font-size:15px;font-weight:600;color:#5c636b">A blank world, ready for points</div>
+        <div style="margin-top:6px">Add a CSV, paste a table, type coordinates, or load a sample dataset
+          from the <b>Data</b> tab.</div>
+      </div>
+      <div id="stagebar"></div>
+    </div>
+  </main>
+</div>
+
+<!-- ===== Manual entry modal ===== -->
+<div class="modal-bg" id="manualModal">
+  <div class="modal">
+    <h3>Manual coordinate entry</h3>
+    <div class="mbody">
+      <div class="row"><label class="lbl" style="flex:0 0 96px">Legend name</label>
+        <input type="text" id="mLegend" class="grow" placeholder="e.g. My sites"></div>
+      <div class="row"><label class="lbl" style="flex:0 0 96px">Order</label>
+        <select id="mOrder" class="grow">
+          <option value="latlon">Latitude, Longitude</option>
+          <option value="lonlat">Longitude, Latitude</option>
+        </select></div>
+      <label class="block">One point per line: <code>38, -100</code>. Add a label with
+        <code>38, -100, Site A</code>. Decimal degrees or DMS.</label>
+      <textarea id="mText" placeholder="38.9, -77.0, Washington&#10;51.5, -0.12, London&#10;-33.9, 151.2, Sydney"></textarea>
+      <div class="row wrap" style="margin-top:8px">
+        <label class="lbl">Shape</label><select id="mMarker" style="flex:0 0 130px"></select>
+        <label class="lbl">Size</label><input type="number" id="mSize" value="30" min="6" max="200" step="2" style="width:70px">
+        <label class="lbl">Colour</label><input type="color" id="mColor" value="#d62728">
+      </div>
+      <div class="err" id="mErr"></div>
+    </div>
+    <div class="mfoot">
+      <button class="btn" data-close="manualModal">Cancel</button>
+      <button class="btn pri" id="mOk">Add points</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== Paste modal ===== -->
+<div class="modal-bg" id="pasteModal">
+  <div class="modal">
+    <h3>Paste a table</h3>
+    <div class="mbody">
+      <label class="block">Paste CSV / TSV text (including the header row).</label>
+      <textarea id="pText" style="min-height:150px" placeholder="Genus,Species,Latitude,Longitude&#10;Ophrys,apifera,46.24,1.49"></textarea>
+      <div class="err" id="pErr"></div>
+    </div>
+    <div class="mfoot">
+      <button class="btn" data-close="pasteModal">Cancel</button>
+      <button class="btn pri" id="pOk">Continue →</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== Column mapping modal ===== -->
+<div class="modal-bg" id="mapModal">
+  <div class="modal">
+    <h3>Map columns</h3>
+    <div class="mbody">
+      <div class="row"><label class="lbl" style="flex:0 0 96px">Dataset name</label>
+        <input type="text" id="mapName" class="grow"></div>
+      <p class="muted" style="margin:10px 0 6px">Tell MiniMappr which columns hold the coordinates.
+        The rest become attributes you can group, colour, or symbolise by.</p>
+      <table class="maptbl"><thead><tr><th>Column</th><th>Sample</th><th>Role</th></tr></thead>
+        <tbody id="mapRows"></tbody></table>
+      <div class="err" id="mapErr"></div>
+    </div>
+    <div class="mfoot">
+      <button class="btn" data-close="mapModal">Cancel</button>
+      <button class="btn pri" id="mapOk">Add dataset</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== About modal ===== -->
+<div class="modal-bg" id="aboutModal">
+  <div class="modal">
+    <h3>About MiniMappr</h3>
+    <div class="mbody">
+      <p>MiniMappr is a browser build of
+        <a href="https://github.com/CalebHendren/PyMappr" target="_blank" rel="noopener">PyMappr</a>,
+        a remake of <a href="https://www.simplemappr.net/" target="_blank" rel="noopener">SimpleMappr</a>.
+        It plots points from a CSV or manual entry onto a projected world map and exports PNG or SVG.
+        Everything runs in the page; no data leaves the browser.</p>
+      <p><b>Not in this web version.</b> Use desktop
+        <a href="https://github.com/CalebHendren/PyMappr/releases" target="_blank" rel="noopener">PyMappr</a> for:</p>
+      <ul>
+        <li>The ~30 Natural Earth vector layers (borders, states, cities, rivers, roads, time zones, and more)</li>
+        <li>Relief and Blue Marble raster basemaps, and bathymetry</li>
+        <li>City, place, and feature labels</li>
+        <li>Excel (.xlsx) import</li>
+        <li>Project files with autosave, and code export to Python (matplotlib) or R (ggplot2)</li>
+      </ul>
+      <p class="muted">Built with D3, d3-geo-projection, and topojson-client (all ISC licence), plus a
+        simplified world outline from
+        <a href="https://github.com/topojson/world-atlas" target="_blank" rel="noopener">world-atlas</a>
+        (derived from <a href="https://www.naturalearthdata.com/" target="_blank" rel="noopener">Natural Earth</a>,
+        public domain). Everything is inlined into this one HTML file.</p>
+    </div>
+    <div class="mfoot"><button class="btn pri" data-close="aboutModal">Close</button></div>
+  </div>
+</div>
+

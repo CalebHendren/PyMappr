@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MiniMappr: simple point maps in your browser</title>
+<meta name="description" content="MiniMappr plots points from a CSV or manual entry onto a projected world map, in the browser. A lite edition of PyMappr.">
+<style>
+@@STYLES@@</style>
+</head>
+<body>
+@@BODY@@<!-- ===== inlined libraries (D3, d3-geo-projection, topojson-client) ===== -->
+@@VENDOR@@
+<!-- ===== inlined basemap + sample data ===== -->
+@@DATA@@
+<!-- ===== application ===== -->
+<script>
+"use strict";
+(function(){
+@@APP@@
+})();
+</script>
+</body>
+</html>
