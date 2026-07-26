@@ -1,0 +1,80 @@
+name: PR checks
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited]
+
+permissions:
+  contents: read
+
+jobs:
+  commit-metadata:
+    name: Commit metadata
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Check authorship and trailers
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          set -euo pipefail
+
+          # Commits should be attributed to the human accountable for them, and
+          # messages should carry only the trailers this project uses
+          # (Signed-off-by, Reviewed-by, Fixes). Rules are "<kind>:<regex>",
+          # matched case-insensitively:
+          #   domain   author/committer addresses that are not accepted
+          #   trailer  message lines that must not appear
+          #   text     patterns that must not appear in the PR title or body
+          rules=(
+            'domain:@anthropic\.com'
+            'trailer:^co-authored-by:.*(claude|anthropic)'
+            'trailer:^claude-session:'
+            'text:\[claude code\]\(https://claude\.com/claude-code\)'
+            'text:claude\.ai/code/session_'
+            'text:^co-authored-by:.*(claude|anthropic)'
+          )
+
+          fail=0
+
+          check() {
+            local kind="$1" subject="$2" label="$3" rule pattern
+            for rule in "${rules[@]}"; do
+              case "$rule" in
+                "$kind":*) pattern="${rule#"$kind":}" ;;
+                *) continue ;;
+              esac
+              if printf '%s\n' "$subject" | grep -qiE -- "$pattern"; then
+                echo "::error::$label does not meet this project's commit metadata conventions"
+                fail=1
+                return
+              fi
+            done
+          }
+
+          merge_base=$(git merge-base "$BASE_SHA" "$HEAD_SHA")
+
+          while read -r sha; do
+            [ -n "$sha" ] || continue
+            subject=$(git show -s --format='%s' "$sha")
+            check domain "$(git show -s --format='%ae%n%ce' "$sha")" "Authorship on $sha ($subject)"
+            check trailer "$(git show -s --format='%B' "$sha")" "Message on $sha ($subject)"
+          done < <(git rev-list "$merge_base..$HEAD_SHA")
+
+          check text "$(printf '%s\n%s' "${PR_TITLE:-}" "${PR_BODY:-}")" "This pull request's title or description"
+
+          if [ "$fail" -ne 0 ]; then
+            echo
+            echo "Amend or rebase the affected commits (and edit the PR description),"
+            echo "then push again. See CONTRIBUTING.md for the commit conventions."
+            exit 1
+          fi
+
+          echo "Commit metadata OK."
