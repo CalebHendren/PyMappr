@@ -324,10 +324,6 @@ class MapRenderer:
         # handler must not re-fit the on-screen view to the export size.
         self._suspend_resize = False
 
-        # Click-to-place mode: when on, a left click on the map reports its
-        # lon/lat through this callback instead of doing anything else.
-        self._place_mode = False
-        self._on_place = None
         # Globe spin: a left-drag on the orthographic globe rotates it by
         # re-centring the projection. ``_on_globe_rotate`` lets the app keep
         # its centre-lon/lat controls in sync with the drag.
@@ -350,6 +346,7 @@ class MapRenderer:
             # has no underline property, so a stroke is drawn under each
             # flagged label using the live renderer (fires on save too).
             self.fig.canvas.mpl_connect("draw_event", self._on_draw)
+        self._sync_navigation()
 
     # ------------------------------------------------------------------ view
 
@@ -560,6 +557,9 @@ class MapRenderer:
         self._label_offsets.clear()
         self._clear_artists()
         self._rebuild_scene()
+        # The globe takes over pan/zoom drags to spin; other projections hand
+        # them back to matplotlib.
+        self._sync_navigation()
 
     def _clear_artists(self) -> None:
         for artists in self._artists.values():
@@ -606,6 +606,12 @@ class MapRenderer:
         self._rebuild_points()
         self._refresh_point_layers()
         self._refresh_labels()
+        # The globe's projected bounds are a square disk; set_extent leaves the
+        # view at those raw bounds, which the wide map axes would stretch into
+        # an ellipse. Re-fit the horizontal span to the axes box so the globe
+        # stays circular after a projection switch or a spin (re-centre).
+        if self.proj.hemisphere:
+            self._refit_view_to_box()
 
     def _offsets(self) -> tuple[float, ...]:
         # The orthographic globe is a single disk: no wrap-around copies.
@@ -785,11 +791,18 @@ class MapRenderer:
         from matplotlib.collections import PathCollection
 
         artists = []
+        # A layer can clip to nothing in the current projection (e.g. a
+        # regional layer on the far side of the globe): geopandas then adds no
+        # collection, so there is nothing to copy - bail out with no artists.
+        if gdf is None or len(gdf) == 0:
+            return artists
         with self._preserving_view():
             before = len(self.ax.collections)
             # aspect=None stops geopandas from forcing equal axes aspect,
             # which would letterbox the map inside the canvas.
             gdf.plot(ax=self.ax, zorder=zorder, aspect=None, **plot_kwargs)
+            if len(self.ax.collections) == before:
+                return artists
             base = self.ax.collections[before]
             base._pym_offset = 0.0
             artists.append(base)
@@ -1155,11 +1168,18 @@ class MapRenderer:
     def set_legend_dragging(self, enabled: bool) -> None:
         self._legend_dragging_enabled = enabled
 
-    def set_place_mode(self, enabled: bool, on_place=None) -> None:
-        """Turn click-to-place on or off. While on, a left click on the map
-        calls *on_place(lon, lat)* with the clicked point in degrees."""
-        self._place_mode = bool(enabled)
-        self._on_place = on_place if enabled else None
+    def _sync_navigation(self) -> None:
+        """Hand pan/zoom drags to our own spin handler when the globe is shown:
+        matplotlib's built-in axes pan and rubber-band zoom are switched off for
+        the map axes so a drag spins the globe instead of sliding or boxing the
+        view. The scroll wheel and the zoom buttons still zoom - they don't
+        route through this."""
+        if self.proj.hemisphere:
+            self.ax.can_pan = lambda *_a, **_k: False
+            self.ax.can_zoom = lambda *_a, **_k: False
+        else:
+            self.ax.__dict__.pop("can_pan", None)
+            self.ax.__dict__.pop("can_zoom", None)
 
     def set_globe_rotate_callback(self, callback) -> None:
         """Register *callback(lon0, lat0)*, invoked as the globe is spun so
@@ -1180,34 +1200,25 @@ class MapRenderer:
         return bool(legend.get_window_extent().contains(event.x, event.y))
 
     def _on_canvas_press(self, event) -> None:
-        if event.inaxes is not self.ax or self._toolbar_busy():
+        if event.inaxes is not self.ax:
             return
-        if self._legend_press(event):
-            return
-        if self._place_mode:
-            self._place_press(event)
-            return
-        self._label_press(event)
-        # A plain left-drag on the globe (that did not grab a label) spins it.
-        if (self._label_drag is None and self.proj.hemisphere
-                and event.button == 1):
+        # The globe spin takes the press even while a matplotlib toolbar tool
+        # (pan/zoom) is active: matplotlib's own axes pan and rubber-band zoom
+        # are switched off for the map axes on the globe (see _sync_navigation),
+        # so the gestures never fight. Panning the globe therefore spins it
+        # instead of sliding the disk around.
+        #
+        # Legend and label dragging (when enabled) still win over a globe spin,
+        # so annotations stay draggable on the globe. They yield to an active
+        # toolbar tool, exactly as before.
+        if not self._toolbar_busy():
+            if self._legend_press(event):
+                return
+            self._label_press(event)
+            if self._label_drag is not None:
+                return
+        if self.proj.hemisphere and event.button == 1:
             self._globe_press(event)
-
-    def _place_press(self, event) -> None:
-        """Report a left-clicked map point as lon/lat to the placement
-        callback. Points off the globe (or otherwise unprojectable) are
-        ignored."""
-        if event.button != 1 or self._on_place is None:
-            return
-        if event.xdata is None or event.ydata is None:
-            return
-        lon, lat = self.proj.inverse([event.xdata], [event.ydata])
-        lon, lat = float(np.ravel(lon)[0]), float(np.ravel(lat)[0])
-        if not (np.isfinite(lon) and np.isfinite(lat)):
-            return
-        if not (-180.0 <= lon <= 180.0 and -90.0 <= lat <= 90.0):
-            return
-        self._on_place(lon, lat)
 
     def _globe_press(self, event) -> None:
         self._globe_drag = {"x": event.x, "y": event.y,

@@ -86,10 +86,39 @@ function renderDatasetList(){
       box.appendChild(row);
     }
   }
-  $("#btnEdit").disabled = !selectedDataset() || selectedDataset().source!=="manual";
+  // Every dataset can be edited: manual sets reopen the coordinate editor,
+  // imported ones reopen their table (as CSV text) and column mapping.
+  $("#btnEdit").disabled = !selectedDataset();
   $("#btnRemove").disabled = !selectedDataset();
 }
 function escapeHtml(s){ return String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+
+// Reconstruct an editable CSV table for an imported dataset. Prefer the raw
+// table it was created from (kept in ._import so every original column and
+// value survives a round-trip); fall back to rebuilding one from the parsed
+// points if that is missing (e.g. an older saved project).
+function csvCell(v){ v = v==null ? "" : String(v);
+  return /[",\n\r]/.test(v) ? '"'+v.replace(/"/g,'""')+'"' : v; }
+function parsedToCsv(parsed){
+  const cols=parsed.columns;
+  const lines=[cols.map(csvCell).join(",")];
+  for(const r of parsed.rows) lines.push(cols.map(c=>csvCell(r[c])).join(","));
+  return lines.join("\n");
+}
+function datasetToParsed(ds){
+  if(ds._import && ds._import.columns && ds._import.columns.length)
+    return {columns:ds._import.columns, rows:ds._import.rows,
+            mapping:ds._import.mapping||null};
+  const attr=[...ds.columns];
+  const hasLabel=ds.rows.some(r=>r.label!=null && r.label!=="");
+  const columns=["Latitude","Longitude"].concat(attr).concat(hasLabel?["Label"]:[]);
+  const rows=ds.rows.map(r=>{ const o={Latitude:r.lat, Longitude:r.lon};
+    attr.forEach(c=>o[c]=r._attr?(r._attr[c]??""):""); if(hasLabel) o.Label=r.label??"";
+    return o; });
+  const mapping={}; columns.forEach(c=>mapping[c]="attr");
+  mapping.Latitude="lat"; mapping.Longitude="lon"; if(hasLabel) mapping.Label="label";
+  return {columns, rows, mapping};
+}
 
 /* ---------------- UI: style panel ---------------- */
 function fillSelect(sel, values, current){

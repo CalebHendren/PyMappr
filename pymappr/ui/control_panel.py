@@ -183,18 +183,6 @@ class ControlPanel(ttk.Frame):
                    command=self.app.on_manual_entry).pack(
             side="left", fill="x", expand=True, padx=(4, 0))
 
-        # Click-to-place: a toggle that turns map clicks into points added to
-        # a manual dataset, exactly like typed coordinates.
-        self.place_mode_var = tk.BooleanVar(value=False)
-        self.place_button = ttk.Checkbutton(
-            sec, text="Place points on map (click)", style="Toolbutton",
-            variable=self.place_mode_var, command=self.app.on_place_mode)
-        self.place_button.pack(fill="x", pady=(4, 0))
-        ttk.Label(sec, text="When on, each click drops a point. Click the "
-                            "button again to stop.",
-                  wraplength=PANEL_WIDTH - 60,
-                  foreground="#666666").pack(anchor="w")
-
         list_frame = ttk.Frame(sec)
         list_frame.pack(fill="x", pady=2)
         style = ttk.Style()

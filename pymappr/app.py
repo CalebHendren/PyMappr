@@ -50,8 +50,6 @@ class PyMapprApp:
         self.store = store
         self.entries: list[DatasetEntry] = []
         self.active: int | None = None
-        # Dataset that click-to-place appends points to (a manual dataset).
-        self._place_entry: DatasetEntry | None = None
         self.project_path: Path | None = None
         self.project_name: str = UNTITLED
 
@@ -807,67 +805,6 @@ class PyMapprApp:
         self._push_points()
         self.set_status(f"Updated {entry.name}: {len(dataset)} points.")
 
-    def on_place_mode(self) -> None:
-        """Toggle click-to-place. While on, map clicks drop points into a
-        manual dataset (the selected one if it is manual, otherwise a fresh
-        "Placed points" set), so placed points behave like typed ones."""
-        if not self.panel.place_mode_var.get():
-            self.renderer.set_place_mode(False)
-            self._place_entry = None
-            self.set_status("Ready.")
-            return
-        entry = self._active_entry()
-        if entry is None or entry.manual is None:
-            entry = self._new_placement_entry()
-        self._place_entry = entry
-        self.renderer.set_place_mode(True, self._place_point)
-        self.set_status(f"Placing into \N{LEFT DOUBLE QUOTATION MARK}"
-                        f"{entry.name}\N{RIGHT DOUBLE QUOTATION MARK}: click "
-                        "the map to drop points; toggle the button off to "
-                        "stop.")
-
-    def _new_placement_entry(self) -> DatasetEntry:
-        """Create and register an empty manual dataset for placed points."""
-        existing = {e.name for e in self.entries}
-        name = "Placed points"
-        n = 2
-        while name in existing:
-            name = f"Placed points {n}"
-            n += 1
-        entry = DatasetEntry(
-            dataset=build_manual_dataset(name, "", "lat,lon"),
-            name=name, group_by="Legend",
-            styles={name: PointStyle()},
-            manual={"text": "", "order": "lat,lon"})
-        # Append without zooming: the view should stay put while placing
-        # (especially mid-spin on the globe).
-        self.entries.append(entry)
-        self.active = len(self.entries) - 1
-        self._sync_dataset_ui()
-        return entry
-
-    def _place_point(self, lon: float, lat: float) -> None:
-        """Append one clicked point to the placement dataset and re-render."""
-        entry = self._place_entry
-        if entry is None or entry not in self.entries:
-            entry = self._new_placement_entry()
-            self._place_entry = entry
-        order = (entry.manual or {}).get("order", "lat,lon")
-        pair = ((lat, lon) if order == "lat,lon" else (lon, lat))
-        line = f"{pair[0]:.5f}, {pair[1]:.5f}"
-        text = (entry.manual or {}).get("text", "")
-        text = f"{text}\n{line}" if text.strip() else line
-        entry.dataset = build_manual_dataset(entry.name, text, order)
-        entry.manual = {"text": text, "order": order}
-        if entry.name not in entry.styles:
-            entry.styles = {entry.name: PointStyle()}
-        self._sync_dataset_ui()
-        self._push_points()
-        quoted = (f"\N{LEFT DOUBLE QUOTATION MARK}{entry.name}"
-                  f"\N{RIGHT DOUBLE QUOTATION MARK}")
-        self.set_status(f"Placed {lat:.3f}, {lon:.3f} "
-                        f"({len(entry.dataset)} in {quoted}).")
-
     def on_globe_rotated(self, lon0: float, lat0: float) -> None:
         """Mirror a globe spin in the centre-lon/lat controls (the renderer
         has already re-centred the projection)."""
@@ -885,8 +822,6 @@ class PyMapprApp:
                 parent=self.root):
             return
         self.entries.remove(entry)
-        if entry is self._place_entry:
-            self._place_entry = None  # next placed point starts a fresh set
         if not self.entries:
             self.active = None
         elif self.active is not None and self.active >= len(self.entries):
