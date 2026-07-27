@@ -89,6 +89,7 @@
   .btn.pri:hover{filter:brightness(1.05)}
   .btn.sm{padding:6px 9px;font-size:12px}
   .btn.full{width:100%}
+  .btn.on{background:var(--accent);color:#fff;border-color:var(--accent)}
   .btnrow{display:flex;gap:7px;flex-wrap:wrap}
   .btnrow>*{flex:1 1 auto}
   .check{display:flex;align-items:center;gap:8px;margin:7px 0;font-size:13px}

@@ -277,3 +277,90 @@ def test_legend_right_click_and_clear_reset_anchor():
     assert r._legend_anchor is not None
     r.clear_legend_anchor()
     assert r._legend_anchor is None
+
+
+# ------------------------------------------------------- legend text formatting
+
+
+def test_legend_text_formatting_applies_and_collects_underlines():
+    r = _renderer(9.0, 6.5)
+    r.set_point_groups([("Alpha", PointStyle(color="#d62728"),
+                         np.array([-60.0]), np.array([-15.0]))])
+    r.set_legend(True, title="Sites", label_bold=True, label_italic=True,
+                 label_underline=True, title_bold=True, title_italic=False,
+                 title_underline=True)
+    leg = r.ax.get_legend()
+    text = leg.get_texts()[0]
+    assert text.get_fontweight() == "bold"
+    assert text.get_fontstyle() == "italic"
+    title = leg.get_title()
+    assert title.get_fontweight() == "bold"
+    assert title.get_fontstyle() == "normal"
+    # The label and the title are both flagged for underlining.
+    assert set(r._legend_underline_texts) == {text, title}
+
+
+def test_legend_underlines_cleared_when_hidden():
+    r = _renderer(9.0, 6.5)
+    r.set_point_groups([("Alpha", PointStyle(color="#d62728"),
+                         np.array([-60.0]), np.array([-15.0]))])
+    r.set_legend(True, label_underline=True)
+    assert r._legend_underline_texts
+    r.set_legend(False, label_underline=True)  # legend hidden: nothing to draw
+    assert r._legend_underline_texts == []
+
+
+# --------------------------------------------------------- click-to-place points
+
+
+def test_place_mode_reports_clicked_lonlat():
+    r = _renderer(9.0, 6.5)  # Equirectangular: map coords are lon/lat
+    got = []
+    r.set_place_mode(True, lambda lon, lat: got.append((lon, lat)))
+    r._on_canvas_press(_MouseEvent(r.ax, 400, 300, xdata=-100.0, ydata=40.0))
+    assert got == [(-100.0, 40.0)]
+
+
+def test_place_mode_rejects_out_of_range_clicks():
+    r = _renderer(9.0, 6.5)
+    got = []
+    r.set_place_mode(True, lambda lon, lat: got.append((lon, lat)))
+    # A latitude past the pole (e.g. a click in the letterbox) is dropped.
+    r._on_canvas_press(_MouseEvent(r.ax, 10, 10, xdata=0.0, ydata=120.0))
+    assert got == []
+
+
+def test_place_mode_off_does_not_report():
+    r = _renderer(9.0, 6.5)
+    got = []
+    r.set_place_mode(True, lambda lon, lat: got.append((lon, lat)))
+    r.set_place_mode(False)
+    r._on_canvas_press(_MouseEvent(r.ax, 400, 300, xdata=10.0, ydata=10.0))
+    assert got == []
+
+
+# --------------------------------------------------------------- globe spinning
+
+
+def test_dragging_the_globe_recentres_the_projection():
+    from pymappr.projections import GLOBE
+
+    r = _renderer(9.0, 6.5)
+    r.set_projection(GLOBE, 0.0, 0.0)
+    r.fig.canvas.draw()
+    seen = []
+    r.set_globe_rotate_callback(lambda lon0, lat0: seen.append((lon0, lat0)))
+    r._on_canvas_press(_MouseEvent(r.ax, 400, 300, button=1))
+    assert r._globe_drag is not None
+    r._on_canvas_motion(_MouseEvent(r.ax, 460, 260))
+    # Dragging moved the centre off (0, 0), and the callback fired in step.
+    assert (r.proj.lon_0, r.proj.lat_0) != (0.0, 0.0)
+    assert seen and seen[-1] == (r.proj.lon_0, r.proj.lat_0)
+    r._on_canvas_release(_MouseEvent(r.ax, 460, 260))
+    assert r._globe_drag is None
+
+
+def test_non_globe_projection_does_not_spin():
+    r = _renderer(9.0, 6.5)  # Equirectangular is not a hemisphere
+    r._on_canvas_press(_MouseEvent(r.ax, 400, 300, button=1))
+    assert r._globe_drag is None

@@ -13,6 +13,7 @@ function render(){
   svg.setAttribute("width",W); svg.setAttribute("height",H);
 
   const proj = buildProjection(W,H);
+  currentProjection = proj;
   const path = d3.geoPath(proj);
   const rect = drawRect(W,H);
   frameRect = rect;
@@ -205,7 +206,10 @@ function drawLegend(svg, W, H, entries, attrLegends){
     for(const item of colItems[c]){
       if(item.type==="title"){
         const t=el("text",{x:cx0, y:yy+fs*0.34,"font-family":"sans-serif","font-size":fs*1.02,
-          "font-weight":700,fill:"#1d2127"}); t.textContent=item.text; g.appendChild(t);
+          "font-weight":opts.legTitleBold?700:400,fill:"#1d2127"});
+        if(opts.legTitleItalic) t.setAttribute("font-style","italic");
+        if(opts.legTitleUnderline) t.setAttribute("text-decoration","underline");
+        t.textContent=item.text; g.appendChild(t);
         yy+=rowH;
       } else if(item.type==="row"){
         const mx=cx0+swW/2, my=yy;
@@ -217,7 +221,10 @@ function drawLegend(svg, W, H, entries, attrLegends){
           p.setAttribute("stroke",item.style.color); p.setAttribute("stroke-width",Math.max(1,rr*0.24)); }
         else { p.setAttribute("fill",item.style.color); p.setAttribute("stroke","none"); }
         g.appendChild(p);
-        const t=el("text",{x:cx0+swW+8, y:my+fs*0.34,"font-family":"sans-serif","font-size":fs,fill:"#22262c"});
+        const t=el("text",{x:cx0+swW+8, y:my+fs*0.34,"font-family":"sans-serif","font-size":fs,fill:"#22262c",
+          "font-weight":opts.legLabelBold?700:400});
+        if(opts.legLabelItalic) t.setAttribute("font-style","italic");
+        if(opts.legLabelUnderline) t.setAttribute("text-decoration","underline");
         t.textContent=item.label; g.appendChild(t);
         yy+=rowH;
       } else { yy+=rowH*0.4; }

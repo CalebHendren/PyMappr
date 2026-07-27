@@ -97,6 +97,7 @@
   .btn.pri:hover{filter:brightness(1.05)}
   .btn.sm{padding:6px 9px;font-size:12px}
   .btn.full{width:100%}
+  .btn.on{background:var(--accent);color:#fff;border-color:var(--accent)}
   .btnrow{display:flex;gap:7px;flex-wrap:wrap}
   .btnrow>*{flex:1 1 auto}
   .check{display:flex;align-items:center;gap:8px;margin:7px 0;font-size:13px}
@@ -182,7 +183,11 @@
               </div>
               <div class="btnrow" style="margin-top:7px">
                 <button class="btn" id="btnManual">Manual entry…</button>
+                <button class="btn" id="btnPlace">Place on map</button>
               </div>
+              <p class="hintline" id="placeHint" style="display:none">Click the
+                map to drop points into a manual dataset. Click <b>Place on map</b>
+                again to stop.</p>
               <input type="file" id="fileInput" accept=".csv,.tsv,.txt" style="display:none">
               <label class="block">Or load a sample dataset</label>
               <div class="btnrow">
@@ -338,6 +343,18 @@
                 <input type="number" id="legCols" min="1" max="5" step="1" value="1" style="width:74px"></div>
               <div class="row"><label class="lbl grow">Marker scale</label>
                 <input type="number" id="legScale" min="0.5" max="3" step="0.25" value="1" style="width:74px"></div>
+              <label class="block">Label text</label>
+              <div class="btnrow">
+                <label class="check"><input type="checkbox" id="legLabelBold"> Bold</label>
+                <label class="check"><input type="checkbox" id="legLabelItalic"> Italic</label>
+                <label class="check"><input type="checkbox" id="legLabelUnderline"> Underline</label>
+              </div>
+              <label class="block">Title text</label>
+              <div class="btnrow">
+                <label class="check"><input type="checkbox" id="legTitleBold" checked> Bold</label>
+                <label class="check"><input type="checkbox" id="legTitleItalic"> Italic</label>
+                <label class="check"><input type="checkbox" id="legTitleUnderline"> Underline</label>
+              </div>
               <p class="hintline">Tip: drag the legend on the map to place it freely;
                 double-click it to snap back.</p>
             </div>
@@ -715,7 +732,12 @@ const opts = {
   showCoast:true, ocean:"blue", graticule:0, title:"", compass:false, labels:false,
   matColor:"#ffffff", lineWidth:1,
   legShow:true, legFrame:true, legPos:"tr", legTitle:"", legFont:12, legCols:1, legScale:1,
+  legLabelBold:false, legLabelItalic:false, legLabelUnderline:false,
+  legTitleBold:true, legTitleItalic:false, legTitleUnderline:false,
 };
+let currentProjection=null;     // the d3 projection from the last render()
+let placeMode=false;            // click-to-place points onto the map
+let placeDsId=null;             // manual dataset placed points go into
 let legendDrag=null; // {x,y} fractional override
 let view={k:1,x:0,y:0};      // scroll-wheel zoom / drag pan over the map
 let frameRect=[[0,0],[0,0]]; // current map rectangle, for clamping the pan
@@ -835,6 +857,7 @@ function render(){
   svg.setAttribute("width",W); svg.setAttribute("height",H);
 
   const proj = buildProjection(W,H);
+  currentProjection = proj;
   const path = d3.geoPath(proj);
   const rect = drawRect(W,H);
   frameRect = rect;
@@ -1027,7 +1050,10 @@ function drawLegend(svg, W, H, entries, attrLegends){
     for(const item of colItems[c]){
       if(item.type==="title"){
         const t=el("text",{x:cx0, y:yy+fs*0.34,"font-family":"sans-serif","font-size":fs*1.02,
-          "font-weight":700,fill:"#1d2127"}); t.textContent=item.text; g.appendChild(t);
+          "font-weight":opts.legTitleBold?700:400,fill:"#1d2127"});
+        if(opts.legTitleItalic) t.setAttribute("font-style","italic");
+        if(opts.legTitleUnderline) t.setAttribute("text-decoration","underline");
+        t.textContent=item.text; g.appendChild(t);
         yy+=rowH;
       } else if(item.type==="row"){
         const mx=cx0+swW/2, my=yy;
@@ -1039,7 +1065,10 @@ function drawLegend(svg, W, H, entries, attrLegends){
           p.setAttribute("stroke",item.style.color); p.setAttribute("stroke-width",Math.max(1,rr*0.24)); }
         else { p.setAttribute("fill",item.style.color); p.setAttribute("stroke","none"); }
         g.appendChild(p);
-        const t=el("text",{x:cx0+swW+8, y:my+fs*0.34,"font-family":"sans-serif","font-size":fs,fill:"#22262c"});
+        const t=el("text",{x:cx0+swW+8, y:my+fs*0.34,"font-family":"sans-serif","font-size":fs,fill:"#22262c",
+          "font-weight":opts.legLabelBold?700:400});
+        if(opts.legLabelItalic) t.setAttribute("font-style","italic");
+        if(opts.legLabelUnderline) t.setAttribute("text-decoration","underline");
         t.textContent=item.label; g.appendChild(t);
         yy+=rowH;
       } else { yy+=rowH*0.4; }
@@ -1075,6 +1104,44 @@ function makeDataset(name, columns, rows, base){
     overrides:{}, opacity:1, source:"csv",
   };
 }
+// The manual dataset that placed points are appended to: the selected one
+// if it is manual, otherwise a fresh "Placed points" set.
+function placementDataset(){
+  let ds = placeDsId!=null ? datasets.find(d=>d.id===placeDsId) : null;
+  if(!ds){
+    const sel=selectedDataset();
+    if(sel && sel.source==="manual"){ ds=sel; }
+    else {
+      ds=makeDataset("Placed points", [], [], {color:"#d62728",marker:"Circle",size:30});
+      ds.groupBy=null; ds.source="manual";
+      ds._manual={legend:"Placed points", text:"", order:"latlon", base:ds.base};
+      datasets.push(ds); selId=ds.id;
+    }
+    placeDsId=ds.id;
+  }
+  return ds;
+}
+// Convert a screen click to lon/lat and append it as a point, exactly like
+// a typed coordinate line (kept in _manual.text so Edit shows it too).
+function placeAt(clientX, clientY){
+  if(!currentProjection || !currentProjection.invert) return;
+  const r=svg.getBoundingClientRect();
+  const px=(clientX-r.left-view.x)/view.k, py=(clientY-r.top-view.y)/view.k;
+  const ll=currentProjection.invert([px,py]);
+  if(!ll || !isFinite(ll[0]) || !isFinite(ll[1])) return;
+  let [lon,lat]=ll;
+  if(lon< -180||lon>180||lat< -90||lat>90) return;
+  if(currentProjDef().globe &&
+     d3.geoDistance([lon,lat],[opts.centerLon,opts.centerLat])>Math.PI/2) return;
+  const ds=placementDataset();
+  const order=(ds._manual&&ds._manual.order)||"latlon";
+  ds.rows.push({lon,lat,label:null,_attr:{Set:ds.name}});
+  const line = order==="latlon" ? `${lat.toFixed(5)}, ${lon.toFixed(5)}`
+                                : `${lon.toFixed(5)}, ${lat.toFixed(5)}`;
+  ds._manual.text = ds._manual.text ? ds._manual.text+"\n"+line : line;
+  renderDatasetList(); syncStylePanel(); render(); scheduleSave();
+}
+
 function pointsFromMapping(parsed, mapping){
   const {columns, rows}=parsed;
   const attrCols = columns.filter(c=>mapping[c]==="attr");
@@ -1300,6 +1367,14 @@ $("#mOk").addEventListener("click",()=>{
   closeModal("manualModal"); renderDatasetList(); syncStylePanel(); render();
   if(bad) flashStage(`${bad} line${bad!==1?"s":""} skipped.`);
 });
+// click-to-place toggle
+$("#btnPlace").addEventListener("click",()=>{
+  placeMode=!placeMode;
+  if(placeMode) placeDsId=null;   // re-resolve target on the next click
+  $("#btnPlace").classList.toggle("on", placeMode);
+  $("#placeHint").style.display = placeMode ? "block":"none";
+  svg.style.cursor = placeMode ? "crosshair" : "";
+});
 $("#btnEdit").addEventListener("click",()=>{
   const ds=selectedDataset(); if(!ds||ds.source!=="manual") return;
   const m=ds._manual||{};
@@ -1367,6 +1442,12 @@ $("#legTitle").addEventListener("input",e=>{ opts.legTitle=e.target.value; rende
 $("#legFont").addEventListener("input",e=>{ opts.legFont=+e.target.value||12; render(); });
 $("#legCols").addEventListener("input",e=>{ opts.legCols=+e.target.value||1; render(); });
 $("#legScale").addEventListener("input",e=>{ opts.legScale=+e.target.value||1; render(); });
+$("#legLabelBold").addEventListener("change",e=>{ opts.legLabelBold=e.target.checked; render(); });
+$("#legLabelItalic").addEventListener("change",e=>{ opts.legLabelItalic=e.target.checked; render(); });
+$("#legLabelUnderline").addEventListener("change",e=>{ opts.legLabelUnderline=e.target.checked; render(); });
+$("#legTitleBold").addEventListener("change",e=>{ opts.legTitleBold=e.target.checked; render(); });
+$("#legTitleItalic").addEventListener("change",e=>{ opts.legTitleItalic=e.target.checked; render(); });
+$("#legTitleUnderline").addEventListener("change",e=>{ opts.legTitleUnderline=e.target.checked; render(); });
 
 // export
 $("#btnSvg").addEventListener("click",()=>{
@@ -1407,7 +1488,37 @@ stageEl.addEventListener("wheel",e=>{
   clampView(); applyView(); scheduleSave();
 },{passive:false});
 svg.addEventListener("mousedown",e=>{
-  if(e.button!==0 || view.k<=1.0001) return; // nothing to pan at fit-to-frame zoom
+  if(e.button!==0) return;
+  // Click-to-place: drop a point where the map is clicked (ignore drags).
+  if(placeMode){
+    e.preventDefault();
+    const sx=e.clientX, sy=e.clientY; let moved=false;
+    function mv(ev){ if(Math.abs(ev.clientX-sx)+Math.abs(ev.clientY-sy)>4) moved=true; }
+    function up(ev){ window.removeEventListener("mousemove",mv); window.removeEventListener("mouseup",up);
+      if(!moved) placeAt(ev.clientX, ev.clientY); }
+    window.addEventListener("mousemove",mv); window.addEventListener("mouseup",up);
+    return;
+  }
+  // Spinning the globe: a drag rotates it by re-centring the projection.
+  if(currentProjDef().globe){
+    e.preventDefault();
+    const sx=e.clientX, sy=e.clientY, lon0=opts.centerLon, lat0=opts.centerLat;
+    const r=svg.getBoundingClientRect();
+    const scale=180/Math.max(Math.min(r.width,r.height),1);  // deg per pixel across the disk
+    svg.classList.add("panning");
+    function mv(ev){
+      let lon=lon0-(ev.clientX-sx)*scale, lat=clamp(lat0+(ev.clientY-sy)*scale,-90,90);
+      lon=((lon+180)%360+360)%360-180;
+      opts.centerLon=lon; opts.centerLat=lat;
+      $("#centerLon").value=Math.round(lon); $("#centerLat").value=Math.round(lat);
+      render();
+    }
+    function up(){ window.removeEventListener("mousemove",mv); window.removeEventListener("mouseup",up);
+      svg.classList.remove("panning"); scheduleSave(); }
+    window.addEventListener("mousemove",mv); window.addEventListener("mouseup",up);
+    return;
+  }
+  if(view.k<=1.0001) return; // nothing to pan at fit-to-frame zoom
   e.preventDefault();
   const sx=e.clientX, sy=e.clientY, ox=view.x, oy=view.y; let moved=false;
   svg.classList.add("panning");
@@ -1456,6 +1567,10 @@ function syncMapControls(){
   $("#legShow").checked=opts.legShow; $("#legFrame").checked=opts.legFrame; $("#legPos").value=opts.legPos;
   $("#legTitle").value=opts.legTitle; $("#legFont").value=opts.legFont;
   $("#legCols").value=opts.legCols; $("#legScale").value=opts.legScale;
+  $("#legLabelBold").checked=opts.legLabelBold; $("#legLabelItalic").checked=opts.legLabelItalic;
+  $("#legLabelUnderline").checked=opts.legLabelUnderline;
+  $("#legTitleBold").checked=opts.legTitleBold; $("#legTitleItalic").checked=opts.legTitleItalic;
+  $("#legTitleUnderline").checked=opts.legTitleUnderline;
 }
 
 /* ---------------- theme ---------------- */

@@ -8,6 +8,44 @@ function makeDataset(name, columns, rows, base){
     overrides:{}, opacity:1, source:"csv",
   };
 }
+// The manual dataset that placed points are appended to: the selected one
+// if it is manual, otherwise a fresh "Placed points" set.
+function placementDataset(){
+  let ds = placeDsId!=null ? datasets.find(d=>d.id===placeDsId) : null;
+  if(!ds){
+    const sel=selectedDataset();
+    if(sel && sel.source==="manual"){ ds=sel; }
+    else {
+      ds=makeDataset("Placed points", [], [], {color:"#d62728",marker:"Circle",size:30});
+      ds.groupBy=null; ds.source="manual";
+      ds._manual={legend:"Placed points", text:"", order:"latlon", base:ds.base};
+      datasets.push(ds); selId=ds.id;
+    }
+    placeDsId=ds.id;
+  }
+  return ds;
+}
+// Convert a screen click to lon/lat and append it as a point, exactly like
+// a typed coordinate line (kept in _manual.text so Edit shows it too).
+function placeAt(clientX, clientY){
+  if(!currentProjection || !currentProjection.invert) return;
+  const r=svg.getBoundingClientRect();
+  const px=(clientX-r.left-view.x)/view.k, py=(clientY-r.top-view.y)/view.k;
+  const ll=currentProjection.invert([px,py]);
+  if(!ll || !isFinite(ll[0]) || !isFinite(ll[1])) return;
+  let [lon,lat]=ll;
+  if(lon< -180||lon>180||lat< -90||lat>90) return;
+  if(currentProjDef().globe &&
+     d3.geoDistance([lon,lat],[opts.centerLon,opts.centerLat])>Math.PI/2) return;
+  const ds=placementDataset();
+  const order=(ds._manual&&ds._manual.order)||"latlon";
+  ds.rows.push({lon,lat,label:null,_attr:{Set:ds.name}});
+  const line = order==="latlon" ? `${lat.toFixed(5)}, ${lon.toFixed(5)}`
+                                : `${lon.toFixed(5)}, ${lat.toFixed(5)}`;
+  ds._manual.text = ds._manual.text ? ds._manual.text+"\n"+line : line;
+  renderDatasetList(); syncStylePanel(); render(); scheduleSave();
+}
+
 function pointsFromMapping(parsed, mapping){
   const {columns, rows}=parsed;
   const attrCols = columns.filter(c=>mapping[c]==="attr");
