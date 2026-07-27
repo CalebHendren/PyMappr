@@ -6,5 +6,5 @@ numpy>=1.26
 pandas>=3.0.5
 pyproj>=3.6
 pillow>=10.0
-openpyxl>=3.1
+openpyxl>=3.1.5
 sv-ttk>=2.6.1
