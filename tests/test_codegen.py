@@ -196,7 +196,8 @@ def test_r_config_reflects_map_settings():
     assert '"label_spacing" = 0.8' in code
     assert "override.aes = list(size = key_sizes)" in code
     assert "unname(STYLE_SIZES) * LEGEND$marker_scale" in code
-    assert "element_text(size = LEGEND$title_fontsize)" in code
+    assert "element_text(size = LEGEND$title_fontsize" in code
+    assert "face = text_face(LEGEND$title_bold" in code
     assert "grid::unit(1 + LEGEND$label_spacing" in code
 
 
@@ -214,6 +215,25 @@ def test_legend_options_default_when_absent():
     assert '"title_fontsize" = 9.0' in r
     assert '"marker_scale" = 1.0' in r
     assert '"label_spacing" = 0.5' in r
+
+
+def test_legend_text_formatting_reaches_exports():
+    state = make_state(legend={"show": True, "frame": True, "location": "best",
+                               "fontsize": "10", "title": "Sites",
+                               "label_bold": True, "label_italic": True,
+                               "label_underline": True, "title_bold": True,
+                               "title_italic": False, "title_underline": True})
+    py = codegen.generate_code(state, [file_entry()], "Python")
+    assert "'label_bold': True" in py
+    assert "'label_underline': True" in py
+    assert "'title_underline': True" in py
+    # The Python export styles and underlines legend text.
+    assert "style_legend(ax.figure, leg" in py
+    r = codegen.generate_code(state, [file_entry()], "R")
+    assert '"label_bold" = TRUE' in r
+    assert "face = text_face(LEGEND$label_bold" in r
+    # Underline is unsupported in ggplot2 element_text: it is called out.
+    assert "Underlined legend text" in r
 
 
 def test_lambert_origin_reaches_the_crs():

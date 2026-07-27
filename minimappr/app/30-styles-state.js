@@ -63,7 +63,12 @@ const opts = {
   showCoast:true, ocean:"blue", graticule:0, title:"", compass:false, labels:false,
   matColor:"#ffffff", lineWidth:1,
   legShow:true, legFrame:true, legPos:"tr", legTitle:"", legFont:12, legCols:1, legScale:1,
+  legLabelBold:false, legLabelItalic:false, legLabelUnderline:false,
+  legTitleBold:true, legTitleItalic:false, legTitleUnderline:false,
 };
+let currentProjection=null;     // the d3 projection from the last render()
+let placeMode=false;            // click-to-place points onto the map
+let placeDsId=null;             // manual dataset placed points go into
 let legendDrag=null; // {x,y} fractional override
 let view={k:1,x:0,y:0};      // scroll-wheel zoom / drag pan over the map
 let frameRect=[[0,0],[0,0]]; // current map rectangle, for clamping the pan

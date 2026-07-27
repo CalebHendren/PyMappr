@@ -11,7 +11,7 @@ from matplotlib.ticker import AutoLocator, FuncFormatter, MultipleLocator
 
 from pymappr.layers import (BATHYMETRY_STEPS, CONTINENT_EXTENTS, LAYER_SPECS,
                             LayerStore)
-from pymappr.projections import get_projection
+from pymappr.projections import GLOBE, get_projection
 from pymappr.styles import PointStyle
 
 __all__ = ["MapRenderer"]
@@ -278,6 +278,17 @@ class MapRenderer:
         self._legend_frame = True
         self._legend_marker_scale = 1.0
         self._legend_label_spacing = 0.5
+        # Text formatting for the legend labels and title. Weight/style are
+        # matplotlib keywords ("normal"/"bold", "normal"/"italic"); underline
+        # is drawn at draw time (matplotlib text has no underline property).
+        self._legend_label_weight = "normal"
+        self._legend_label_style = "normal"
+        self._legend_label_underline = False
+        self._legend_title_weight = "bold"
+        self._legend_title_style = "normal"
+        self._legend_title_underline = False
+        # Legend Text artists that need an underline stroke on each draw.
+        self._legend_underline_texts: list = []
         # Structured legend: list of (section title, [(label, PointStyle)]).
         # When set, it replaces the one-row-per-group legend.
         self._legend_sections: list | None = None
@@ -313,6 +324,16 @@ class MapRenderer:
         # handler must not re-fit the on-screen view to the export size.
         self._suspend_resize = False
 
+        # Click-to-place mode: when on, a left click on the map reports its
+        # lon/lat through this callback instead of doing anything else.
+        self._place_mode = False
+        self._on_place = None
+        # Globe spin: a left-drag on the orthographic globe rotates it by
+        # re-centring the projection. ``_on_globe_rotate`` lets the app keep
+        # its centre-lon/lat controls in sync with the drag.
+        self._globe_drag: dict | None = None
+        self._on_globe_rotate = None
+
         self.set_extent("World")
         self._apply_graticule()
         self.ax.callbacks.connect("xlim_changed", self._on_limits_changed)
@@ -325,6 +346,10 @@ class MapRenderer:
             self.fig.canvas.mpl_connect("button_release_event",
                                         self._on_canvas_release)
             self.fig.canvas.mpl_connect("resize_event", self._on_resize)
+            # Underlining legend text is done at draw time: matplotlib Text
+            # has no underline property, so a stroke is drawn under each
+            # flagged label using the live renderer (fires on save too).
+            self.fig.canvas.mpl_connect("draw_event", self._on_draw)
 
     # ------------------------------------------------------------------ view
 
@@ -1130,6 +1155,17 @@ class MapRenderer:
     def set_legend_dragging(self, enabled: bool) -> None:
         self._legend_dragging_enabled = enabled
 
+    def set_place_mode(self, enabled: bool, on_place=None) -> None:
+        """Turn click-to-place on or off. While on, a left click on the map
+        calls *on_place(lon, lat)* with the clicked point in degrees."""
+        self._place_mode = bool(enabled)
+        self._on_place = on_place if enabled else None
+
+    def set_globe_rotate_callback(self, callback) -> None:
+        """Register *callback(lon0, lat0)*, invoked as the globe is spun so
+        the app can mirror the new centre in its controls."""
+        self._on_globe_rotate = callback
+
     def _legend_lowerleft_axes(self, legend) -> tuple[float, float]:
         """The legend's lower-left corner in axes fraction (the coordinate an
         anchored legend is positioned by)."""
@@ -1148,7 +1184,52 @@ class MapRenderer:
             return
         if self._legend_press(event):
             return
+        if self._place_mode:
+            self._place_press(event)
+            return
         self._label_press(event)
+        # A plain left-drag on the globe (that did not grab a label) spins it.
+        if (self._label_drag is None and self.proj.hemisphere
+                and event.button == 1):
+            self._globe_press(event)
+
+    def _place_press(self, event) -> None:
+        """Report a left-clicked map point as lon/lat to the placement
+        callback. Points off the globe (or otherwise unprojectable) are
+        ignored."""
+        if event.button != 1 or self._on_place is None:
+            return
+        if event.xdata is None or event.ydata is None:
+            return
+        lon, lat = self.proj.inverse([event.xdata], [event.ydata])
+        lon, lat = float(np.ravel(lon)[0]), float(np.ravel(lat)[0])
+        if not (np.isfinite(lon) and np.isfinite(lat)):
+            return
+        if not (-180.0 <= lon <= 180.0 and -90.0 <= lat <= 90.0):
+            return
+        self._on_place(lon, lat)
+
+    def _globe_press(self, event) -> None:
+        self._globe_drag = {"x": event.x, "y": event.y,
+                            "lon0": self.proj.lon_0, "lat0": self.proj.lat_0}
+
+    def _spin_globe(self, event) -> None:
+        if self._globe_drag is None or event.x is None or event.y is None:
+            return
+        drag = self._globe_drag
+        # ~180 degrees span the visible disk; scale the pixel drag to that so
+        # grabbing and dragging turns the globe about that much.
+        ext = self.ax.get_window_extent()
+        disk_px = max(min(ext.width, ext.height), 1.0)
+        scale = 180.0 / disk_px
+        lon0 = drag["lon0"] - (event.x - drag["x"]) * scale
+        lat0 = drag["lat0"] - (event.y - drag["y"]) * scale
+        lat0 = max(-90.0, min(90.0, lat0))
+        lon0 = ((lon0 + 180.0) % 360.0) - 180.0
+        self.set_projection(GLOBE, lon0, lat0)
+        if self._on_globe_rotate is not None:
+            self._on_globe_rotate(lon0, lat0)
+        self.redraw()
 
     def _legend_press(self, event) -> bool:
         """Begin (or reset) a legend drag; returns True if it took the click."""
@@ -1188,6 +1269,9 @@ class MapRenderer:
                                 "grab": (tx - event.xdata, ty - event.ydata)}
 
     def _on_canvas_motion(self, event) -> None:
+        if self._globe_drag is not None:
+            self._spin_globe(event)
+            return
         if self._legend_drag is not None:
             self._drag_legend(event)
             return
@@ -1214,6 +1298,9 @@ class MapRenderer:
         self.redraw()
 
     def _on_canvas_release(self, event) -> None:
+        if self._globe_drag is not None:
+            self._globe_drag = None
+            return
         if self._legend_drag is not None:
             self._legend_drag = None
             return
@@ -1305,7 +1392,11 @@ class MapRenderer:
                    columns: int = 1, frame: bool = True,
                    title_fontsize: float | None = None,
                    marker_scale: float = 1.0,
-                   label_spacing: float = 0.5) -> None:
+                   label_spacing: float = 0.5,
+                   label_bold: bool = False, label_italic: bool = False,
+                   label_underline: bool = False,
+                   title_bold: bool = True, title_italic: bool = False,
+                   title_underline: bool = False) -> None:
         self._legend_visible = visible
         self._legend_title = title
         self._legend_loc = location
@@ -1316,6 +1407,12 @@ class MapRenderer:
         self._legend_frame = frame
         self._legend_marker_scale = max(float(marker_scale), 0.1)
         self._legend_label_spacing = max(float(label_spacing), 0.0)
+        self._legend_label_weight = "bold" if label_bold else "normal"
+        self._legend_label_style = "italic" if label_italic else "normal"
+        self._legend_label_underline = bool(label_underline)
+        self._legend_title_weight = "bold" if title_bold else "normal"
+        self._legend_title_style = "italic" if title_italic else "normal"
+        self._legend_title_underline = bool(title_underline)
         self._update_legend()
 
     def set_structured_legend(self, sections: list | None) -> None:
@@ -1380,6 +1477,8 @@ class MapRenderer:
         legend = self.ax.get_legend()
         if legend is not None:
             legend.remove()
+        # Rebuilt below for whatever legend (if any) is created this pass.
+        self._legend_underline_texts = []
         if not (self._legend_visible and self._point_groups):
             return
         if self._legend_sections is not None:
@@ -1391,15 +1490,16 @@ class MapRenderer:
         ]
         for handle, (label, *_rest) in zip(handles, self._point_groups):
             handle.set_label(label)
-        self.ax.legend(handles=handles,
-                       title=self._legend_title,
-                       fontsize=self._legend_fontsize,
-                       title_fontsize=self._legend_title_fontsize,
-                       ncols=self._legend_columns,
-                       markerscale=self._legend_marker_scale,
-                       labelspacing=self._legend_label_spacing,
-                       frameon=self._legend_frame, framealpha=0.85,
-                       **self._legend_placement())
+        leg = self.ax.legend(handles=handles,
+                             title=self._legend_title,
+                             fontsize=self._legend_fontsize,
+                             title_fontsize=self._legend_title_fontsize,
+                             ncols=self._legend_columns,
+                             markerscale=self._legend_marker_scale,
+                             labelspacing=self._legend_label_spacing,
+                             frameon=self._legend_frame, framealpha=0.85,
+                             **self._legend_placement())
+        self._apply_legend_text_format(leg, leg.get_texts())
 
     def _draw_structured_legend(self) -> None:
         """A compact legend split into titled sections (a color key and a
@@ -1434,9 +1534,65 @@ class MapRenderer:
                              labelspacing=self._legend_label_spacing,
                              **self._legend_placement())
         texts = leg.get_texts()
+        header_set = set(header_rows)
+        entry_texts = [t for i, t in enumerate(texts) if i not in header_set]
+        self._apply_legend_text_format(leg, entry_texts)
+        # Section headers read as sub-titles: give them the title formatting
+        # (kept bold by default) rather than the entry-label formatting.
         for row in header_rows:
             if row < len(texts):
-                texts[row].set_fontweight("bold")
+                self._format_text(texts[row], self._legend_title_weight,
+                                  self._legend_title_style,
+                                  self._legend_title_underline)
+
+    def _format_text(self, text, weight: str, style: str,
+                     underline: bool) -> None:
+        """Apply weight/style to a Text and register it for underlining."""
+        text.set_fontweight(weight)
+        text.set_fontstyle(style)
+        if underline and text.get_text().strip():
+            self._legend_underline_texts.append(text)
+
+    def _apply_legend_text_format(self, leg, entry_texts) -> None:
+        """Style the legend title and entry labels, and collect the texts
+        that need an underline stroke drawn on the next draw."""
+        self._legend_underline_texts = [
+            t for t in self._legend_underline_texts
+            if t not in set(entry_texts) and t is not leg.get_title()]
+        title = leg.get_title()
+        if title is not None and title.get_text():
+            self._format_text(title, self._legend_title_weight,
+                              self._legend_title_style,
+                              self._legend_title_underline)
+        for text in entry_texts:
+            self._format_text(text, self._legend_label_weight,
+                              self._legend_label_style,
+                              self._legend_label_underline)
+
+    def _on_draw(self, event) -> None:
+        self._draw_legend_underlines(getattr(event, "renderer", None))
+
+    def _draw_legend_underlines(self, renderer) -> None:
+        """Stroke an underline beneath each flagged legend Text in display
+        coordinates. Runs during every draw (screen and file export), so the
+        underline tracks the text's true position at any size or DPI."""
+        if renderer is None or not self._legend_underline_texts:
+            return
+        for text in self._legend_underline_texts:
+            if not text.get_visible() or not text.get_text().strip():
+                continue
+            try:
+                bbox = text.get_window_extent(renderer)
+            except Exception:  # noqa: BLE001 - never let a draw crash the app
+                continue
+            y = bbox.y0 - max(bbox.height * 0.1, 1.0)
+            line = Line2D([bbox.x0, bbox.x1], [y, y],
+                          transform=mtransforms.IdentityTransform(),
+                          color=text.get_color(),
+                          linewidth=max(text.get_fontsize() / 11.0, 0.6),
+                          solid_capstyle="butt")
+            line.set_figure(self.fig)
+            line.draw(renderer)
 
     # --------------------------------------------------------------- output
 

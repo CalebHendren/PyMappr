@@ -12,7 +12,37 @@ stageEl.addEventListener("wheel",e=>{
   clampView(); applyView(); scheduleSave();
 },{passive:false});
 svg.addEventListener("mousedown",e=>{
-  if(e.button!==0 || view.k<=1.0001) return; // nothing to pan at fit-to-frame zoom
+  if(e.button!==0) return;
+  // Click-to-place: drop a point where the map is clicked (ignore drags).
+  if(placeMode){
+    e.preventDefault();
+    const sx=e.clientX, sy=e.clientY; let moved=false;
+    function mv(ev){ if(Math.abs(ev.clientX-sx)+Math.abs(ev.clientY-sy)>4) moved=true; }
+    function up(ev){ window.removeEventListener("mousemove",mv); window.removeEventListener("mouseup",up);
+      if(!moved) placeAt(ev.clientX, ev.clientY); }
+    window.addEventListener("mousemove",mv); window.addEventListener("mouseup",up);
+    return;
+  }
+  // Spinning the globe: a drag rotates it by re-centring the projection.
+  if(currentProjDef().globe){
+    e.preventDefault();
+    const sx=e.clientX, sy=e.clientY, lon0=opts.centerLon, lat0=opts.centerLat;
+    const r=svg.getBoundingClientRect();
+    const scale=180/Math.max(Math.min(r.width,r.height),1);  // deg per pixel across the disk
+    svg.classList.add("panning");
+    function mv(ev){
+      let lon=lon0-(ev.clientX-sx)*scale, lat=clamp(lat0+(ev.clientY-sy)*scale,-90,90);
+      lon=((lon+180)%360+360)%360-180;
+      opts.centerLon=lon; opts.centerLat=lat;
+      $("#centerLon").value=Math.round(lon); $("#centerLat").value=Math.round(lat);
+      render();
+    }
+    function up(){ window.removeEventListener("mousemove",mv); window.removeEventListener("mouseup",up);
+      svg.classList.remove("panning"); scheduleSave(); }
+    window.addEventListener("mousemove",mv); window.addEventListener("mouseup",up);
+    return;
+  }
+  if(view.k<=1.0001) return; // nothing to pan at fit-to-frame zoom
   e.preventDefault();
   const sx=e.clientX, sy=e.clientY, ox=view.x, oy=view.y; let moved=false;
   svg.classList.add("panning");
@@ -61,6 +91,10 @@ function syncMapControls(){
   $("#legShow").checked=opts.legShow; $("#legFrame").checked=opts.legFrame; $("#legPos").value=opts.legPos;
   $("#legTitle").value=opts.legTitle; $("#legFont").value=opts.legFont;
   $("#legCols").value=opts.legCols; $("#legScale").value=opts.legScale;
+  $("#legLabelBold").checked=opts.legLabelBold; $("#legLabelItalic").checked=opts.legLabelItalic;
+  $("#legLabelUnderline").checked=opts.legLabelUnderline;
+  $("#legTitleBold").checked=opts.legTitleBold; $("#legTitleItalic").checked=opts.legTitleItalic;
+  $("#legTitleUnderline").checked=opts.legTitleUnderline;
 }
 
 /* ---------------- theme ---------------- */

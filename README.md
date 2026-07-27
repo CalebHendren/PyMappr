@@ -10,14 +10,17 @@ Python as an offline desktop application.
 
 ## Features
 
-- Load points from CSV/TSV/Excel (with a column-mapping step on import) or
-  type them in by hand, decimal degrees or DMS.
+- Load points from CSV/TSV/Excel (with a column-mapping step on import),
+  type them in by hand (decimal degrees or DMS), or drop them straight onto
+  the map with click-to-place.
 - Group/color/symbol styling by any name column, including two-attribute
   styling (e.g. color by Family, symbol by Genus) with a compact legend.
+- Legend customization: position, columns, marker scale, spacing, and
+  bold / italic / underline for the labels and title.
 - ~30 toggleable Natural Earth layers (borders, cities, water, physical
   features, infrastructure) with automatic 110m/50m/10m detail by zoom.
 - Six map projections plus a Globe (orthographic) view and regional
-  Lambert projections, all reprojected live.
+  Lambert projections, all reprojected live. Drag the globe to spin it.
 - Landscape or portrait framing, draggable legend and labels, compass,
   graticule, and continent presets.
 - Projects (`.pymappr` files) with autosave/restore, and export/import for

@@ -566,6 +566,12 @@ def build_config(state: dict, entries, project_name: str = "map",
             "label_spacing": max(0.0, _num(legend.get("label_spacing", 0.5),
                                            0.5)),
             "title": title,
+            "label_bold": bool(legend.get("label_bold", False)),
+            "label_italic": bool(legend.get("label_italic", False)),
+            "label_underline": bool(legend.get("label_underline", False)),
+            "title_bold": bool(legend.get("title_bold", True)),
+            "title_italic": bool(legend.get("title_italic", False)),
+            "title_underline": bool(legend.get("title_underline", False)),
         },
         "point_alpha": _num(state.get("point_alpha", 1.0), 1.0),
         "dpi": int(_num(m.get("dpi", 200), 200.0)),
@@ -1424,6 +1430,63 @@ def legend_handle(style, size=None):
                   markeredgecolor=edge, markeredgewidth=edge_w)
 
 
+def style_legend(fig, leg, header_rows):
+    """Apply the LEGEND bold/italic/underline formatting to a legend.
+
+    Entry labels use the label_* flags; the title and section headers use
+    the title_* flags (so headers stay bold by default). Underlining is
+    drawn under each flagged text on every draw, since matplotlib Text has
+    no underline property; it fires on savefig too."""
+    if leg is None:
+        return
+    label_w = "bold" if LEGEND["label_bold"] else "normal"
+    label_s = "italic" if LEGEND["label_italic"] else "normal"
+    title_w = "bold" if LEGEND["title_bold"] else "normal"
+    title_s = "italic" if LEGEND["title_italic"] else "normal"
+    underline = []
+    title = leg.get_title()
+    if title is not None and title.get_text():
+        title.set_fontweight(title_w)
+        title.set_fontstyle(title_s)
+        if LEGEND["title_underline"]:
+            underline.append(title)
+    for i, text in enumerate(leg.get_texts()):
+        if i in header_rows:
+            text.set_fontweight(title_w)
+            text.set_fontstyle(title_s)
+            if LEGEND["title_underline"] and text.get_text().strip():
+                underline.append(text)
+        else:
+            text.set_fontweight(label_w)
+            text.set_fontstyle(label_s)
+            if LEGEND["label_underline"] and text.get_text().strip():
+                underline.append(text)
+    if not underline:
+        return
+
+    def _draw_underlines(event):
+        renderer = getattr(event, "renderer", None)
+        if renderer is None:
+            return
+        for text in underline:
+            if not text.get_visible() or not text.get_text().strip():
+                continue
+            try:
+                bbox = text.get_window_extent(renderer)
+            except Exception:
+                continue
+            y = bbox.y0 - max(bbox.height * 0.1, 1.0)
+            line = Line2D([bbox.x0, bbox.x1], [y, y],
+                          transform=mtransforms.IdentityTransform(),
+                          color=text.get_color(),
+                          linewidth=max(text.get_fontsize() / 11.0, 0.6),
+                          solid_capstyle="butt")
+            line.set_figure(fig)
+            line.draw(renderer)
+
+    fig.canvas.mpl_connect("draw_event", _draw_underlines)
+
+
 def add_legend(ax):
     """The app's legend: one row per group, or titled sections when the
     map is styled by two attribute columns."""
@@ -1434,13 +1497,14 @@ def add_legend(ax):
         handles = [legend_handle(style) for style in STYLES.values()]
         for handle, label in zip(handles, STYLES):
             handle.set_label(label)
-        ax.legend(handles=handles, loc=LEGEND["location"], title=title,
-                  fontsize=LEGEND["fontsize"],
-                  title_fontsize=LEGEND["title_fontsize"],
-                  ncols=LEGEND["columns"],
-                  markerscale=LEGEND["marker_scale"],
-                  labelspacing=LEGEND["label_spacing"],
-                  frameon=LEGEND["frame"], framealpha=0.85)
+        leg = ax.legend(handles=handles, loc=LEGEND["location"], title=title,
+                        fontsize=LEGEND["fontsize"],
+                        title_fontsize=LEGEND["title_fontsize"],
+                        ncols=LEGEND["columns"],
+                        markerscale=LEGEND["marker_scale"],
+                        labelspacing=LEGEND["label_spacing"],
+                        frameon=LEGEND["frame"], framealpha=0.85)
+        style_legend(ax.figure, leg, set())
         return
     handles, labels, header_rows = [], [], []
 
@@ -1466,10 +1530,7 @@ def add_legend(ax):
                     frameon=LEGEND["frame"], framealpha=0.85,
                     handletextpad=0.4,
                     labelspacing=LEGEND["label_spacing"])
-    texts = leg.get_texts()
-    for row in header_rows:
-        if row < len(texts):
-            texts[row].set_fontweight("bold")
+    style_legend(ax.figure, leg, set(header_rows))
 
 
 # ------------------------------------------------------------------- main
@@ -1515,6 +1576,10 @@ def _r_header(config: dict) -> str:
     notes = list(config["notes"])
     notes.append("The compass (north arrow)")
     notes.append("Map labels (country/city/... name placement)")
+    if (config["legend"].get("label_underline")
+            or config["legend"].get("title_underline")):
+        notes.append("Underlined legend text (ggplot2 element_text has no "
+                     "underline; bold/italic are applied)")
     if config["legend_sections"] is not None:
         notes.append("The sectioned two-attribute legend (rendered as one "
                      "row per combination)")
@@ -2038,8 +2103,12 @@ build_map <- function() {
     panel.grid.major = grid_line,
     axis.text = axis_text,
     axis.ticks = element_blank(),
-    legend.text = element_text(size = LEGEND$fontsize),
-    legend.title = element_text(size = LEGEND$title_fontsize),
+    legend.text = element_text(size = LEGEND$fontsize,
+                               face = text_face(LEGEND$label_bold,
+                                                LEGEND$label_italic)),
+    legend.title = element_text(size = LEGEND$title_fontsize,
+                                face = text_face(LEGEND$title_bold,
+                                                 LEGEND$title_italic)),
     # Approximates matplotlib's labelspacing (vertical gap per entry).
     legend.key.height = grid::unit(1 + LEGEND$label_spacing, "lines"),
     legend.position = if (LEGEND$show) legend_position(LEGEND$location)
@@ -2053,6 +2122,14 @@ build_map <- function() {
 legend_position <- function(location) {
   # PyMappr legend locations approximated by ggplot2 sides.
   if (location %in% c("upper left", "lower left")) "left" else "right"
+}
+
+text_face <- function(bold, italic) {
+  # ggplot2 element_text face: bold/italic combinations (no underline).
+  if (isTRUE(bold) && isTRUE(italic)) "bold.italic"
+  else if (isTRUE(bold)) "bold"
+  else if (isTRUE(italic)) "italic"
+  else "plain"
 }
 
 main <- function() {

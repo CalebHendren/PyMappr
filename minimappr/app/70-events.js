@@ -130,6 +130,14 @@ $("#mOk").addEventListener("click",()=>{
   closeModal("manualModal"); renderDatasetList(); syncStylePanel(); render();
   if(bad) flashStage(`${bad} line${bad!==1?"s":""} skipped.`);
 });
+// click-to-place toggle
+$("#btnPlace").addEventListener("click",()=>{
+  placeMode=!placeMode;
+  if(placeMode) placeDsId=null;   // re-resolve target on the next click
+  $("#btnPlace").classList.toggle("on", placeMode);
+  $("#placeHint").style.display = placeMode ? "block":"none";
+  svg.style.cursor = placeMode ? "crosshair" : "";
+});
 $("#btnEdit").addEventListener("click",()=>{
   const ds=selectedDataset(); if(!ds||ds.source!=="manual") return;
   const m=ds._manual||{};
@@ -197,6 +205,12 @@ $("#legTitle").addEventListener("input",e=>{ opts.legTitle=e.target.value; rende
 $("#legFont").addEventListener("input",e=>{ opts.legFont=+e.target.value||12; render(); });
 $("#legCols").addEventListener("input",e=>{ opts.legCols=+e.target.value||1; render(); });
 $("#legScale").addEventListener("input",e=>{ opts.legScale=+e.target.value||1; render(); });
+$("#legLabelBold").addEventListener("change",e=>{ opts.legLabelBold=e.target.checked; render(); });
+$("#legLabelItalic").addEventListener("change",e=>{ opts.legLabelItalic=e.target.checked; render(); });
+$("#legLabelUnderline").addEventListener("change",e=>{ opts.legLabelUnderline=e.target.checked; render(); });
+$("#legTitleBold").addEventListener("change",e=>{ opts.legTitleBold=e.target.checked; render(); });
+$("#legTitleItalic").addEventListener("change",e=>{ opts.legTitleItalic=e.target.checked; render(); });
+$("#legTitleUnderline").addEventListener("change",e=>{ opts.legTitleUnderline=e.target.checked; render(); });
 
 // export
 $("#btnSvg").addEventListener("click",()=>{

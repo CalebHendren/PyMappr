@@ -155,6 +155,21 @@ class ControlPanel(ttk.Frame):
         ttk.Checkbutton(parent, text=text, variable=var,
                         command=command).pack(anchor="w")
 
+    def _build_text_style_row(self, parent, label: str,
+                              bold_var: tk.BooleanVar,
+                              italic_var: tk.BooleanVar,
+                              underline_var: tk.BooleanVar) -> None:
+        """A row of Bold / Italic / Underline toggles for a legend text
+        element, wired to the legend-options handler."""
+        row = ttk.Frame(parent)
+        row.pack(fill="x", pady=(2, 0))
+        ttk.Label(row, text=label).pack(side="left")
+        for text, var in (("B", bold_var), ("I", italic_var),
+                          ("U", underline_var)):
+            ttk.Checkbutton(row, text=text, variable=var, width=3,
+                            command=self.app.on_legend_options).pack(
+                side="left", padx=(4, 0))
+
     # ------------------------------------------------------------ data tab
 
     def _build_data_section(self, tab) -> None:
@@ -167,6 +182,18 @@ class ControlPanel(ttk.Frame):
         ttk.Button(row, text="Manual entry\N{HORIZONTAL ELLIPSIS}",
                    command=self.app.on_manual_entry).pack(
             side="left", fill="x", expand=True, padx=(4, 0))
+
+        # Click-to-place: a toggle that turns map clicks into points added to
+        # a manual dataset, exactly like typed coordinates.
+        self.place_mode_var = tk.BooleanVar(value=False)
+        self.place_button = ttk.Checkbutton(
+            sec, text="Place points on map (click)", style="Toolbutton",
+            variable=self.place_mode_var, command=self.app.on_place_mode)
+        self.place_button.pack(fill="x", pady=(4, 0))
+        ttk.Label(sec, text="When on, each click drops a point. Click the "
+                            "button again to stop.",
+                  wraplength=PANEL_WIDTH - 60,
+                  foreground="#666666").pack(anchor="w")
 
         list_frame = ttk.Frame(sec)
         list_frame.pack(fill="x", pady=2)
@@ -321,6 +348,21 @@ class ControlPanel(ttk.Frame):
         entry.bind("<KeyRelease>", lambda _e: self.app.on_legend_options())
         ttk.Label(sec, text="(blank = use the Group by column name)",
                   foreground="#666666").pack(anchor="w")
+
+        # Text styling for the labels and the title (bold / italic /
+        # underline), applied independently to each.
+        self.legend_label_bold_var = tk.BooleanVar(value=False)
+        self.legend_label_italic_var = tk.BooleanVar(value=False)
+        self.legend_label_underline_var = tk.BooleanVar(value=False)
+        self.legend_title_bold_var = tk.BooleanVar(value=True)
+        self.legend_title_italic_var = tk.BooleanVar(value=False)
+        self.legend_title_underline_var = tk.BooleanVar(value=False)
+        self._build_text_style_row(
+            sec, "Label text:", self.legend_label_bold_var,
+            self.legend_label_italic_var, self.legend_label_underline_var)
+        self._build_text_style_row(
+            sec, "Title text:", self.legend_title_bold_var,
+            self.legend_title_italic_var, self.legend_title_underline_var)
 
         ttk.Separator(sec, orient="horizontal").pack(fill="x", pady=4)
         self.legend_drag_var = tk.BooleanVar(value=False)
@@ -662,6 +704,18 @@ class ControlPanel(ttk.Frame):
             return max(min(int(self.legend_columns_var.get()), 6), 1)
         except ValueError:
             return 1
+
+    def legend_text_format(self) -> dict:
+        """The bold / italic / underline flags for legend labels and title,
+        as keyword arguments for :meth:`MapRenderer.set_legend`."""
+        return {
+            "label_bold": self.legend_label_bold_var.get(),
+            "label_italic": self.legend_label_italic_var.get(),
+            "label_underline": self.legend_label_underline_var.get(),
+            "title_bold": self.legend_title_bold_var.get(),
+            "title_italic": self.legend_title_italic_var.get(),
+            "title_underline": self.legend_title_underline_var.get(),
+        }
 
     def set_dataset_list(self, rows: list[tuple[str, bool]],
                          active: int | None) -> None:
