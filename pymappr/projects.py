@@ -91,7 +91,11 @@ def set_projects_dir(folder: str | Path) -> None:
 
 # ---------------------------------------------------------------- datasets
 
-@dataclass
+# eq=False: entries are compared by identity, never by value. The default
+# dataclass __eq__ would compare the dataset field, whose DataFrame raises
+# "Can only compare identically-labeled DataFrame objects" for differently
+# shaped datasets - breaking list.remove(entry) / `entry in self.entries`.
+@dataclass(eq=False)
 class DatasetEntry:
     """One loaded dataset plus everything the user set up around it."""
 

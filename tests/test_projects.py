@@ -19,6 +19,22 @@ def make_entry():
         manual={"text": "38,-100, Site A\n-25,140, Site B", "order": "lat,lon"})
 
 
+def test_entries_compare_by_identity_for_list_removal():
+    # DatasetEntry holds a DataFrame; a value-based __eq__ would raise
+    # "Can only compare identically-labeled DataFrame objects" when two
+    # differently shaped datasets are compared, breaking list.remove() /
+    # `entry in entries`. Entries must compare by identity instead.
+    a = make_entry()
+    b = DatasetEntry(
+        dataset=build_manual_dataset("Other", "10,20\n30,40\n50,60\n"),
+        name="Other")
+    entries = [a, b]
+    assert a in entries and b in entries
+    assert (a == b) is False
+    entries.remove(b)          # must not raise
+    assert entries == [a] and b not in entries
+
+
 def test_entry_roundtrip():
     entry = make_entry()
     restored = projects.entry_from_dict(
