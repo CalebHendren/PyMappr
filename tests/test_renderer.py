@@ -50,6 +50,19 @@ def _view_aspect(renderer: MapRenderer) -> float:
     return abs(x1 - x0) / abs(y1 - y0)
 
 
+class _FakeToolbar:
+    """A stand-in matplotlib toolbar with an active tool (``mode`` set), plus
+    the one hook the Agg draw path calls when a toolbar is present."""
+
+    def __init__(self, mode="pan/zoom"):
+        self.mode = mode
+
+    def _wait_cursor_for_draw_cm(self):
+        import contextlib
+
+        return contextlib.nullcontext()
+
+
 class _MouseEvent:
     """A stand-in for a matplotlib mouse event (pixel + data coords)."""
 
@@ -339,6 +352,21 @@ def test_place_mode_off_does_not_report():
     assert got == []
 
 
+def test_place_mode_still_places_with_the_pan_tool_active():
+    # With the matplotlib pan tool active the toolbar is "busy"; placement
+    # must still fire (and matplotlib's own pan is switched off for the axes).
+    r = _renderer(9.0, 6.5)
+    r.fig.canvas.toolbar = _FakeToolbar()
+    got = []
+    r.set_place_mode(True, lambda lon, lat: got.append((lon, lat)))
+    assert r.ax.can_pan() is False and r.ax.can_zoom() is False
+    r._on_canvas_press(_MouseEvent(r.ax, 400, 300, xdata=-100.0, ydata=40.0))
+    assert got == [(-100.0, 40.0)]
+    # Turning it back off restores normal panning.
+    r.set_place_mode(False)
+    assert "can_pan" not in r.ax.__dict__ and "can_zoom" not in r.ax.__dict__
+
+
 # --------------------------------------------------------------- globe spinning
 
 
@@ -364,3 +392,30 @@ def test_non_globe_projection_does_not_spin():
     r = _renderer(9.0, 6.5)  # Equirectangular is not a hemisphere
     r._on_canvas_press(_MouseEvent(r.ax, 400, 300, button=1))
     assert r._globe_drag is None
+
+
+def test_globe_spins_when_the_pan_tool_is_active():
+    # Panning the globe should spin it, not slide the disk: the globe grabs
+    # the drag even while the toolbar pan tool is active, and matplotlib's
+    # axes pan/zoom is disabled so the two never fight.
+    from pymappr.projections import GLOBE
+
+    r = _renderer(9.0, 6.5)
+    r.set_projection(GLOBE, 0.0, 0.0)
+    r.fig.canvas.draw()
+    r.fig.canvas.toolbar = _FakeToolbar()
+    assert r.ax.can_pan() is False and r.ax.can_zoom() is False
+    r._on_canvas_press(_MouseEvent(r.ax, 400, 300, button=1))
+    assert r._globe_drag is not None
+    r._on_canvas_motion(_MouseEvent(r.ax, 460, 260))
+    assert (r.proj.lon_0, r.proj.lat_0) != (0.0, 0.0)
+
+
+def test_switching_off_the_globe_restores_panning():
+    from pymappr.projections import GLOBE
+
+    r = _renderer(9.0, 6.5)
+    r.set_projection(GLOBE, 0.0, 0.0)
+    assert "can_pan" in r.ax.__dict__
+    r.set_projection("Equirectangular")
+    assert "can_pan" not in r.ax.__dict__ and "can_zoom" not in r.ax.__dict__

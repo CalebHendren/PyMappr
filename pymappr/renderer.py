@@ -350,6 +350,7 @@ class MapRenderer:
             # has no underline property, so a stroke is drawn under each
             # flagged label using the live renderer (fires on save too).
             self.fig.canvas.mpl_connect("draw_event", self._on_draw)
+        self._sync_navigation()
 
     # ------------------------------------------------------------------ view
 
@@ -560,6 +561,9 @@ class MapRenderer:
         self._label_offsets.clear()
         self._clear_artists()
         self._rebuild_scene()
+        # The globe takes over pan/zoom drags to spin; other projections hand
+        # them back to matplotlib.
+        self._sync_navigation()
 
     def _clear_artists(self) -> None:
         for artists in self._artists.values():
@@ -1160,6 +1164,21 @@ class MapRenderer:
         calls *on_place(lon, lat)* with the clicked point in degrees."""
         self._place_mode = bool(enabled)
         self._on_place = on_place if enabled else None
+        self._sync_navigation()
+
+    def _sync_navigation(self) -> None:
+        """Hand pan/zoom drags to our own handlers when the globe is shown or
+        click-to-place is on: matplotlib's built-in axes pan and rubber-band
+        zoom are switched off for the map axes so a drag spins the globe (or a
+        click drops a point) instead of sliding or boxing the view. The scroll
+        wheel and the zoom buttons still zoom - they don't route through this."""
+        take_over = self.proj.hemisphere or self._place_mode
+        if take_over:
+            self.ax.can_pan = lambda *_a, **_k: False
+            self.ax.can_zoom = lambda *_a, **_k: False
+        else:
+            self.ax.__dict__.pop("can_pan", None)
+            self.ax.__dict__.pop("can_zoom", None)
 
     def set_globe_rotate_callback(self, callback) -> None:
         """Register *callback(lon0, lat0)*, invoked as the globe is spun so
@@ -1180,17 +1199,26 @@ class MapRenderer:
         return bool(legend.get_window_extent().contains(event.x, event.y))
 
     def _on_canvas_press(self, event) -> None:
-        if event.inaxes is not self.ax or self._toolbar_busy():
+        if event.inaxes is not self.ax:
             return
-        if self._legend_press(event):
-            return
+        # Click-to-place and the globe spin take the press even while a
+        # matplotlib toolbar tool (pan/zoom) is active: matplotlib's own axes
+        # pan and rubber-band zoom are switched off for the map axes in these
+        # modes (see _sync_navigation), so the gestures never fight. Panning
+        # the globe therefore spins it instead of sliding the disk around.
         if self._place_mode:
             self._place_press(event)
             return
-        self._label_press(event)
-        # A plain left-drag on the globe (that did not grab a label) spins it.
-        if (self._label_drag is None and self.proj.hemisphere
-                and event.button == 1):
+        # Legend and label dragging (when enabled) still win over a globe
+        # spin, so annotations stay draggable on the globe. They yield to an
+        # active toolbar tool, exactly as before.
+        if not self._toolbar_busy():
+            if self._legend_press(event):
+                return
+            self._label_press(event)
+            if self._label_drag is not None:
+                return
+        if self.proj.hemisphere and event.button == 1:
             self._globe_press(event)
 
     def _place_press(self, event) -> None:
