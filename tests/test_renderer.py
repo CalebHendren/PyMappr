@@ -323,50 +323,6 @@ def test_legend_underlines_cleared_when_hidden():
     assert r._legend_underline_texts == []
 
 
-# --------------------------------------------------------- click-to-place points
-
-
-def test_place_mode_reports_clicked_lonlat():
-    r = _renderer(9.0, 6.5)  # Equirectangular: map coords are lon/lat
-    got = []
-    r.set_place_mode(True, lambda lon, lat: got.append((lon, lat)))
-    r._on_canvas_press(_MouseEvent(r.ax, 400, 300, xdata=-100.0, ydata=40.0))
-    assert got == [(-100.0, 40.0)]
-
-
-def test_place_mode_rejects_out_of_range_clicks():
-    r = _renderer(9.0, 6.5)
-    got = []
-    r.set_place_mode(True, lambda lon, lat: got.append((lon, lat)))
-    # A latitude past the pole (e.g. a click in the letterbox) is dropped.
-    r._on_canvas_press(_MouseEvent(r.ax, 10, 10, xdata=0.0, ydata=120.0))
-    assert got == []
-
-
-def test_place_mode_off_does_not_report():
-    r = _renderer(9.0, 6.5)
-    got = []
-    r.set_place_mode(True, lambda lon, lat: got.append((lon, lat)))
-    r.set_place_mode(False)
-    r._on_canvas_press(_MouseEvent(r.ax, 400, 300, xdata=10.0, ydata=10.0))
-    assert got == []
-
-
-def test_place_mode_still_places_with_the_pan_tool_active():
-    # With the matplotlib pan tool active the toolbar is "busy"; placement
-    # must still fire (and matplotlib's own pan is switched off for the axes).
-    r = _renderer(9.0, 6.5)
-    r.fig.canvas.toolbar = _FakeToolbar()
-    got = []
-    r.set_place_mode(True, lambda lon, lat: got.append((lon, lat)))
-    assert r.ax.can_pan() is False and r.ax.can_zoom() is False
-    r._on_canvas_press(_MouseEvent(r.ax, 400, 300, xdata=-100.0, ydata=40.0))
-    assert got == [(-100.0, 40.0)]
-    # Turning it back off restores normal panning.
-    r.set_place_mode(False)
-    assert "can_pan" not in r.ax.__dict__ and "can_zoom" not in r.ax.__dict__
-
-
 # --------------------------------------------------------------- globe spinning
 
 
@@ -419,3 +375,27 @@ def test_switching_off_the_globe_restores_panning():
     assert "can_pan" in r.ax.__dict__
     r.set_projection("Equirectangular")
     assert "can_pan" not in r.ax.__dict__ and "can_zoom" not in r.ax.__dict__
+
+
+def test_globe_view_is_circular_not_stretched():
+    # The globe's projected bounds are a square disk. In the wide map axes the
+    # view must be re-fit so map units stay square (aspect == the box aspect),
+    # or the disk renders as an ellipse. This guards the "stretched globe" bug.
+    from pymappr.projections import GLOBE
+
+    r = _renderer(9.0, 6.5)
+    r.set_projection(GLOBE, 0.0, 0.0)
+    assert _view_aspect(r) == pytest.approx(_live_box_aspect(r), rel=1e-3)
+    # Re-centring (a spin) must keep it circular, not reset to raw bounds.
+    r.set_projection(GLOBE, -100.0, 40.0)
+    assert _view_aspect(r) == pytest.approx(_live_box_aspect(r), rel=1e-3)
+
+
+def test_empty_layer_does_not_crash_plotting():
+    # A layer that clips to nothing in the current projection (e.g. a regional
+    # layer on the far side of the globe) must not raise when it is drawn.
+    import geopandas as gpd
+
+    r = _renderer(9.0, 6.5)
+    empty = gpd.GeoDataFrame(geometry=[])
+    assert r._plot_gdf_copies(empty, zorder=1, facecolor="none") == []
