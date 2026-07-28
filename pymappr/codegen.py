@@ -12,9 +12,11 @@ from pymappr.renderer import (BATHYMETRY_COLORS, FILL_COLORS, FILL_LAYERS,
                               LABEL_STYLES, LINE_LAYERS, POINT_LAYERS,
                               Z_BATHYMETRY, Z_LAKE_FILL, Z_OCEAN,
                               Z_POINT_LAYERS)
+from pymappr.legend import (LegendOptions, legend_counts, legend_sections,
+                            order_labels)
 from pymappr.styles import (PointStyle, attribute_style_maps,
-                            default_styles, group_points, legend_counts,
-                            legend_sections, style_by_attributes)
+                            default_styles, group_points,
+                            style_by_attributes)
 from pymappr.updates import GITHUB_REPO
 
 LANGUAGES = ("Python", "R")
@@ -360,13 +362,16 @@ def _dataset_filename(name: str, used: set[str]) -> str:
     return candidate
 
 
-def _style_dict(style: PointStyle) -> dict:
+def _style_dict(style: PointStyle | None) -> dict | None:
+    # None is a legend row that takes no swatch.
+    if style is None:
+        return None
     return {"color": style.color, "marker": style.mpl_marker,
             "size": style.size, "open": style.is_open}
 
 
 def _dataset_configs(entries, data_mode: str = "inline",
-                     show_counts: bool = False
+                     options: LegendOptions | None = None
                      ) -> tuple[list[dict], dict[str, PointStyle],
                                 dict[str, str], list | None]:
     """Per-dataset script configs, the combined legend-label -> style map
@@ -374,6 +379,7 @@ def _dataset_configs(entries, data_mode: str = "inline",
     ``"files"`` mode, and the structured legend sections (None in plain
     mode) - replicating the app's ``_push_points`` exactly.
     """
+    options = options or LegendOptions()
     visible = [e for e in entries if e.visible and len(e.dataset)]
     multi = len(visible) > 1
     any_attr = False
@@ -388,6 +394,7 @@ def _dataset_configs(entries, data_mode: str = "inline",
     configs: list[dict] = []
     data_files: dict[str, str] = {}
     sections: list = []
+    row_order: list[str] = []
     palette_offset = 0
     for entry in visible:
         frame = entry.dataset.frame
@@ -425,21 +432,24 @@ def _dataset_configs(entries, data_mode: str = "inline",
             config["color_col"] = entry.color_by or None
             config["symbol_col"] = entry.symbol_by or None
             color_map, symbol_map = attribute_style_maps(frame, color_key,
-                                                         symbol_key)
+                                                         symbol_key,
+                                                         options.hierarchy)
             combos = style_by_attributes(frame, color_key, symbol_key,
                                          color_map, symbol_map)
             raw = [label for label, _style, _sub in combos]
             display = _display_labels(raw, entry.name, multi, True, used)
             for label, style, _sub in combos:
                 styles[display[label]] = style
-            prefix = f"{entry.name}: " if multi else ""
+            prefix = (f"{entry.name}: "
+                      if (multi and options.dataset_prefix) else "")
             # Same builder the app draws with, so an exported script's legend
             # matches the map it was exported from.
             sections += legend_sections(
                 frame, color_key, symbol_key, color_map, symbol_map,
                 entry.color_by, entry.symbol_by, prefix=prefix,
                 counts=legend_counts(frame, color_key, symbol_key)
-                if show_counts else None)
+                if (options.counts or options.orders_by_count) else None,
+                options=options)
         else:
             group_key = key_by_label.get(entry.group_by)
             groups = group_points(frame, group_key)
@@ -453,18 +463,46 @@ def _dataset_configs(entries, data_mode: str = "inline",
                                    palette_offset=palette_offset)
             palette_offset += len(labels)
             display = _display_labels(labels, entry.name, multi, False, used)
+            # Counts ride on the display label, exactly as the app puts them
+            # on the point-group label, so the exported legend matches.
+            total = sum(len(sub) for _label, sub in groups)
+            sizes = {label: len(sub) for label, sub in groups}
+            if options.counts:
+                display = {label: _counted(text, sizes[label], total, options)
+                           for label, text in display.items()}
             entry_styles = {}
             for label in labels:
                 style = entry.styles.get(label, fresh[label])
                 styles[display[label]] = style
                 entry_styles[display[label]] = style
+            by_text = {display[label]: sizes[label] for label in labels}
+            row_order += order_labels(list(entry_styles), options.order,
+                                      lambda t: by_text.get(t, 0))
             if group_key is not None:
                 config["group_col"] = entry.group_by
             if entry_styles:
-                sections.append((entry.name, list(entry_styles.items())))
+                title = entry.name if options.section_titles else ""
+                ordered = order_labels(list(entry_styles), options.order,
+                                       lambda t: by_text.get(t, 0))
+                sections.append((title, [(t, entry_styles[t])
+                                         for t in ordered]))
         config["label_map"] = display
         configs.append(config)
-    return configs, styles, data_files, (sections if any_attr else None)
+    return (configs, styles, data_files, (sections if any_attr else None),
+            (None if any_attr else row_order))
+
+
+def _counted(label: str, n: int, total: int, options: LegendOptions) -> str:
+    """A plain-mode legend row's text with its count appended, matching
+    ``PyMapprApp._counted_label``."""
+    pct = (100.0 * n / total) if total else 0.0
+    if options.count_format == "n":
+        return f"{label} {n}"
+    if options.count_format == "(n, %)":
+        return f"{label} ({n}, {pct:.0f}%)"
+    if options.count_format == "%":
+        return f"{label} {pct:.0f}%"
+    return f"{label} ({n})"
 
 
 def _inline_csv(entry) -> str:
@@ -513,9 +551,10 @@ def build_config(state: dict, entries, project_name: str = "map",
 
     layers, notes = _base_layers(m, zoom)
     label_layers = _label_layers(m, zoom)
-    datasets, styles, data_files, sections = _dataset_configs(
-        entries, data_mode, bool(legend.get("counts", False)))
-    title = str(legend.get("title", "")).strip()
+    options = LegendOptions.from_dict(legend)
+    datasets, styles, data_files, sections, row_order = _dataset_configs(
+        entries, data_mode, options)
+    title = str(legend.get("title") or "").strip()
     if not title and len(datasets) == 1 and datasets[0]["group_col"]:
         title = datasets[0]["group_col"]
     clip_cap = None
@@ -551,25 +590,11 @@ def build_config(state: dict, entries, project_name: str = "map",
         "data_files": data_files,
         "styles": styles,
         "legend_sections": sections,
-        "legend": {
-            "show": bool(legend.get("show", True)),
-            "frame": bool(legend.get("frame", True)),
-            "location": str(legend.get("location", "best")),
-            "fontsize": _num(legend.get("fontsize", 8), 8.0),
-            "title_fontsize": _num(legend.get("title_fontsize", 9), 9.0),
-            "columns": max(1, int(_num(legend.get("columns", 1), 1.0))),
-            "marker_scale": max(0.1, _num(legend.get("marker_scale", 1.0),
-                                          1.0)),
-            "label_spacing": max(0.0, _num(legend.get("label_spacing", 0.5),
-                                           0.5)),
-            "title": title,
-            "label_bold": bool(legend.get("label_bold", False)),
-            "label_italic": bool(legend.get("label_italic", False)),
-            "label_underline": bool(legend.get("label_underline", False)),
-            "title_bold": bool(legend.get("title_bold", True)),
-            "title_italic": bool(legend.get("title_italic", False)),
-            "title_underline": bool(legend.get("title_underline", False)),
-        },
+        "legend_rows": row_order or None,
+        # Straight from LegendOptions, so a new setting reaches the exported
+        # script without another entry here. "title" is the resolved one.
+        "legend": {**options.to_dict(), "title": title,
+                   "handle_text_pad": options.pad_for(sections is not None)},
         "point_alpha": _num(state.get("point_alpha", 1.0), 1.0),
         "dpi": int(_num(m.get("dpi", 200), 200.0)),
         "notes": notes,
@@ -777,12 +802,21 @@ def _py_config(config: dict) -> str:
             lines.append(f"    ({_py(title)}, [")
             for label, style, *rest in entries:
                 depth = rest[0] if rest else 0
-                body = ", ".join(f"{_py(k)}: {_py(v)}"
-                                 for k, v in _style_dict(style).items())
+                fields = _style_dict(style)
+                if fields is None:
+                    drawn = "None"
+                else:
+                    drawn = "{" + ", ".join(f"{_py(k)}: {_py(v)}"
+                                            for k, v in fields.items()) + "}"
                 lines.append(
-                    f"        ({_py(label)}, {{{body}}}, {depth}),")
+                    f"        ({_py(label)}, {drawn}, {depth}),")
             lines.append("    ]),")
         lines.append("]")
+    lines.append("")
+    rows = config.get("legend_rows")
+    lines.append("# Legend row order for the plain legend (None = the order "
+                 "STYLES was built in).")
+    lines.append(f"LEGEND_ROWS = {_py(rows)}")
     lines.append("")
     legend = config["legend"]
     body = ", ".join(f"{_py(k)}: {_py(v)}" for k, v in legend.items())
@@ -1420,6 +1454,9 @@ def plot_dataset(ax, spec):
 # ----------------------------------------------------------------- legend
 
 def legend_handle(style, size=None):
+    # A None style is a row that takes no swatch.
+    if style is None:
+        return Line2D([], [], linestyle="", marker="")
     area = style["size"] if size is None else size
     if style["open"]:
         face, edge, edge_w = "none", style["color"], 1.2
@@ -1431,6 +1468,23 @@ def legend_handle(style, size=None):
                   markeredgecolor=edge, markeredgewidth=edge_w)
 
 
+def legend_kwargs():
+    """The legend keywords shared by both draw paths, from LEGEND."""
+    return dict(
+        loc=LEGEND["location"], title=LEGEND["title"] or None,
+        fontsize=LEGEND["fontsize"], title_fontsize=LEGEND["title_fontsize"],
+        ncols=LEGEND["columns"], markerscale=LEGEND["marker_scale"],
+        labelspacing=LEGEND["label_spacing"],
+        columnspacing=LEGEND["column_spacing"],
+        handletextpad=LEGEND["handle_text_pad"],
+        handlelength=LEGEND["handle_length"],
+        borderpad=LEGEND["border_pad"],
+        frameon=LEGEND["frame"], framealpha=LEGEND["frame_alpha"],
+        facecolor=LEGEND["frame_color"], edgecolor=LEGEND["frame_edge_color"],
+        fancybox=LEGEND["rounded"], shadow=LEGEND["shadow"],
+        alignment=LEGEND["title_align"])
+
+
 def style_legend(fig, leg, header_rows):
     """Apply the LEGEND bold/italic/underline formatting to a legend.
 
@@ -1440,28 +1494,25 @@ def style_legend(fig, leg, header_rows):
     no underline property; it fires on savefig too."""
     if leg is None:
         return
-    label_w = "bold" if LEGEND["label_bold"] else "normal"
-    label_s = "italic" if LEGEND["label_italic"] else "normal"
-    title_w = "bold" if LEGEND["title_bold"] else "normal"
-    title_s = "italic" if LEGEND["title_italic"] else "normal"
+    frame = leg.get_frame()
+    if frame is not None:
+        frame.set_linewidth(LEGEND["frame_width"])
     underline = []
+
+    def apply(text, role):
+        text.set_fontweight("bold" if LEGEND[role + "_bold"] else "normal")
+        text.set_fontstyle("italic" if LEGEND[role + "_italic"] else "normal")
+        text.set_color(LEGEND[role + "_color"])
+        if LEGEND["font_family"]:
+            text.set_fontfamily(LEGEND["font_family"])
+        if LEGEND[role + "_underline"] and text.get_text().strip():
+            underline.append(text)
+
     title = leg.get_title()
     if title is not None and title.get_text():
-        title.set_fontweight(title_w)
-        title.set_fontstyle(title_s)
-        if LEGEND["title_underline"]:
-            underline.append(title)
+        apply(title, "title")
     for i, text in enumerate(leg.get_texts()):
-        if i in header_rows:
-            text.set_fontweight(title_w)
-            text.set_fontstyle(title_s)
-            if LEGEND["title_underline"] and text.get_text().strip():
-                underline.append(text)
-        else:
-            text.set_fontweight(label_w)
-            text.set_fontstyle(label_s)
-            if LEGEND["label_underline"] and text.get_text().strip():
-                underline.append(text)
+        apply(text, "title" if i in header_rows else "label")
     if not underline:
         return
 
@@ -1493,21 +1544,19 @@ def add_legend(ax):
     map is styled by two attribute columns."""
     if not LEGEND["show"] or not STYLES:
         return
-    title = LEGEND["title"] or None
     if LEGEND_SECTIONS is None:
-        handles = [legend_handle(style) for style in STYLES.values()]
-        for handle, label in zip(handles, STYLES):
+        rows = list(STYLES)
+        if LEGEND_ROWS:
+            rank = {label: i for i, label in enumerate(LEGEND_ROWS)}
+            rows.sort(key=lambda label: rank.get(label, len(rank)))
+        handles = [legend_handle(STYLES[label]) for label in rows]
+        for handle, label in zip(handles, rows):
             handle.set_label(label)
-        leg = ax.legend(handles=handles, loc=LEGEND["location"], title=title,
-                        fontsize=LEGEND["fontsize"],
-                        title_fontsize=LEGEND["title_fontsize"],
-                        ncols=LEGEND["columns"],
-                        markerscale=LEGEND["marker_scale"],
-                        labelspacing=LEGEND["label_spacing"],
-                        frameon=LEGEND["frame"], framealpha=0.85)
+        leg = ax.legend(handles=handles, **legend_kwargs())
         style_legend(ax.figure, leg, set())
         return
     handles, labels, header_rows = [], [], []
+    indent = " " * LEGEND["indent"]
 
     def blank():
         return Line2D([], [], linestyle="", marker="")
@@ -1520,9 +1569,10 @@ def add_legend(ax):
     for section_title, entries in LEGEND_SECTIONS:
         if handles:  # spacer between sections
             spacer()
-        header_rows.append(len(labels))
-        handles.append(blank())
-        labels.append(section_title)
+        if section_title:  # section titles can be turned off entirely
+            header_rows.append(len(labels))
+            handles.append(blank())
+            labels.append(section_title)
         # In a nested key the depth-0 rows head a block of children, so they
         # take the header formatting (bold by default) on top of their
         # swatch - indentation alone reads too weakly when every swatch sits
@@ -1532,19 +1582,13 @@ def add_legend(ax):
             label, style, *rest = entry
             depth = rest[0] if rest else 0
             if nested and depth == 0:
-                if index:  # separate this block from the one before
-                    spacer()
-                header_rows.append(len(labels))
+                if index and LEGEND["group_spacer"]:
+                    spacer()  # separate this block from the one before
+                if LEGEND["bold_groups"]:
+                    header_rows.append(len(labels))
             handles.append(legend_handle(style, size=45))
-            labels.append("   " * (depth + 1) + label)
-    leg = ax.legend(handles, labels, loc=LEGEND["location"], title=title,
-                    fontsize=LEGEND["fontsize"],
-                    title_fontsize=LEGEND["title_fontsize"],
-                    ncols=LEGEND["columns"],
-                    markerscale=LEGEND["marker_scale"],
-                    frameon=LEGEND["frame"], framealpha=0.85,
-                    handletextpad=0.4,
-                    labelspacing=LEGEND["label_spacing"])
+            labels.append(indent * (depth + 1) + label)
+    leg = ax.legend(handles, labels, **legend_kwargs())
     style_legend(ax.figure, leg, set(header_rows))
 
 
@@ -1587,6 +1631,39 @@ def _python_script(config: dict) -> str:
 
 # -------------------------------------------------------------- R template
 
+def _r_legend_notes(legend: dict) -> list[str]:
+    """Legend settings ggplot2's guide/theme system has no equivalent for.
+
+    Only settings the user actually changed are listed, so the header stays
+    a short list of real differences rather than a catalogue of everything
+    the two renderers disagree about.
+    """
+    defaults = LegendOptions()
+    notes = []
+    unsupported = [
+        ("group_swatch", "The nested key's group swatch style"),
+        ("symbol_swatch_color", "The crossed-key symbol swatch colour"),
+        ("indent", "The nested key's indent width"),
+        ("bold_groups", "Bolding of the nested key's group rows"),
+        ("group_spacer", "Blank rows between nested groups"),
+        ("handle_length", "Legend swatch width"),
+        ("border_pad", "Legend inner padding"),
+        ("column_spacing", "Legend column spacing"),
+        ("rounded", "Rounded legend corners"),
+        ("shadow", "The legend's drop shadow"),
+        ("title_align", "Legend title alignment"),
+        ("frame_width", "Legend border width"),
+    ]
+    for key, description in unsupported:
+        if legend.get(key) != getattr(defaults, key):
+            notes.append(f"{description} (no ggplot2 equivalent)")
+    # The stored gap is already resolved, so compare against the two values
+    # "automatic" can produce rather than against the unset default.
+    if legend.get("handle_text_pad") not in (0.4, 0.8):
+        notes.append("The swatch-to-label gap (no ggplot2 equivalent)")
+    return notes
+
+
 def _r_header(config: dict) -> str:
     notes = list(config["notes"])
     notes.append("The compass (north arrow)")
@@ -1598,6 +1675,7 @@ def _r_header(config: dict) -> str:
     if config["legend_sections"] is not None:
         notes.append("The sectioned two-attribute legend (rendered as one "
                      "row per combination)")
+    notes += _r_legend_notes(config["legend"])
     listed = "".join(f"\n#   - {note}" for note in notes)
     listed = ("\n# Shown in PyMappr but NOT reproduced by this script:"
               + listed)

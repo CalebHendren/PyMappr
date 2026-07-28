@@ -23,6 +23,7 @@ from pymappr.renderer import (_MARGINS_PLAIN, _MARGINS_WITH_TICKS,  # noqa: E402
                               ORIENTATION_ASPECT, MapRenderer,
                               _export_geometry, _oriented_axes_rect,
                               _refit_xlim)
+from pymappr.legend import LegendOptions  # noqa: E402
 from pymappr.styles import PointStyle  # noqa: E402
 
 
@@ -235,7 +236,7 @@ def _legend_renderer() -> MapRenderer:
     r = _renderer(9.0, 6.5)
     r.set_point_groups([("A", PointStyle(color="#d62728"),
                          np.array([-60.0]), np.array([-15.0]))])
-    r.set_legend(True, location="upper right")
+    r.set_legend(LegendOptions(location="upper right"))
     r.fig.canvas.draw()
     return r
 
@@ -301,9 +302,10 @@ def test_legend_text_formatting_applies_and_collects_underlines():
     r = _renderer(9.0, 6.5)
     r.set_point_groups([("Alpha", PointStyle(color="#d62728"),
                          np.array([-60.0]), np.array([-15.0]))])
-    r.set_legend(True, title="Sites", label_bold=True, label_italic=True,
-                 label_underline=True, title_bold=True, title_italic=False,
-                 title_underline=True)
+    r.set_legend(LegendOptions(
+        title="Sites", label_bold=True, label_italic=True,
+        label_underline=True, title_bold=True, title_italic=False,
+        title_underline=True))
     leg = r.ax.get_legend()
     text = leg.get_texts()[0]
     assert text.get_fontweight() == "bold"
@@ -319,9 +321,10 @@ def test_legend_underlines_cleared_when_hidden():
     r = _renderer(9.0, 6.5)
     r.set_point_groups([("Alpha", PointStyle(color="#d62728"),
                          np.array([-60.0]), np.array([-15.0]))])
-    r.set_legend(True, label_underline=True)
+    r.set_legend(LegendOptions(label_underline=True))
     assert r._legend_underline_texts
-    r.set_legend(False, label_underline=True)  # legend hidden: nothing to draw
+    # Legend hidden: nothing left to draw an underline under.
+    r.set_legend(LegendOptions(show=False, label_underline=True))
     assert r._legend_underline_texts == []
 
 
@@ -510,8 +513,8 @@ def test_empty_layer_does_not_crash_plotting():
 def _beetle_sections(**kwargs):
     import pandas as pd
 
-    from pymappr.styles import (attribute_style_maps, legend_counts,
-                                legend_sections)
+    from pymappr.legend import legend_counts, legend_sections
+    from pymappr.styles import attribute_style_maps
     path = (Path(__file__).resolve().parent.parent / "sample_data"
             / "south_america_beetles.csv")
     frame = pd.read_csv(path).rename(columns={"Genus": "name1",
@@ -534,7 +537,7 @@ def test_nested_legend_indents_species_under_their_genus():
     r = _renderer(9.0, 6.5)
     r.set_point_groups([("x", PointStyle(), [0.0], [0.0])])
     r.set_structured_legend(sections)
-    r.set_legend(True, None, "upper right")
+    r.set_legend(LegendOptions(location="upper right"))
     rows = _legend_rows(r)
     texts = [text for text, _weight in rows]
     assert "   Eleusis" in texts          # genus: one indent
@@ -548,8 +551,8 @@ def test_nested_legend_bolds_the_genus_rows_only():
     r = _renderer(9.0, 6.5)
     r.set_point_groups([("x", PointStyle(), [0.0], [0.0])])
     r.set_structured_legend(sections)
-    r.set_legend(True, None, "upper right", title_bold=True,
-                 label_bold=False)
+    r.set_legend(LegendOptions(location="upper right", title_bold=True,
+                               label_bold=False))
     weights = dict(_legend_rows(r))
     assert weights["   Eleusis"] == "bold"
     assert weights["      chapadensis"] == "normal"
@@ -558,7 +561,8 @@ def test_nested_legend_bolds_the_genus_rows_only():
 def test_crossed_legend_keeps_every_row_at_one_indent():
     import pandas as pd
 
-    from pymappr.styles import attribute_style_maps, legend_sections
+    from pymappr.legend import legend_sections
+    from pymappr.styles import attribute_style_maps
     frame = pd.DataFrame({
         "name1": ["forest", "forest", "scrub", "scrub"],
         "name2": ["male", "female", "male", "female"],
@@ -570,7 +574,8 @@ def test_crossed_legend_keeps_every_row_at_one_indent():
     r = _renderer(9.0, 6.5)
     r.set_point_groups([("x", PointStyle(), [0.0], [0.0])])
     r.set_structured_legend(sections)
-    r.set_legend(True, None, "upper right", title_bold=True, label_bold=False)
+    r.set_legend(LegendOptions(location="upper right", title_bold=True,
+                               label_bold=False))
     rows = _legend_rows(r)
     entries = [(text, weight) for text, weight in rows if text.strip()
                and text not in ("Habitat", "Sex")]
@@ -586,5 +591,145 @@ def test_legacy_two_tuple_entries_still_draw():
     r = _renderer(9.0, 6.5)
     r.set_point_groups([("x", PointStyle(), [0.0], [0.0])])
     r.set_structured_legend([("Dataset", [("Site A", PointStyle())])])
-    r.set_legend(True, None, "upper right")
+    r.set_legend(LegendOptions(location="upper right"))
     assert "   Site A" in [text for text, _w in _legend_rows(r)]
+
+
+# ------------------------------------------------- legend option plumbing
+
+
+def _legend_of(renderer):
+    return renderer.ax.get_legend()
+
+
+def test_default_options_reproduce_the_previous_legend_exactly():
+    # The settings below were hard-coded before they became options. If a
+    # default drifts, every existing project's legend silently changes, so
+    # pin them here rather than trusting the dataclass.
+    _frame, sections = _beetle_sections()
+    r = _renderer(9.0, 6.5)
+    r.set_point_groups([("x", PointStyle(), [0.0], [0.0])])
+    r.set_structured_legend(sections)
+    r.set_legend(LegendOptions(location="upper right"))
+    leg = _legend_of(r)
+    assert leg.get_frame().get_alpha() == pytest.approx(0.85)
+    assert leg.get_frame().get_linewidth() == pytest.approx(0.8)
+    # Three-space indent per level, group rows bold, blank spacer rows.
+    texts = [t.get_text() for t in leg.get_texts()]
+    assert "   Eleusis" in texts
+    assert "      chapadensis" in texts
+    assert " " in texts                       # the spacer between groups
+    weights = {t.get_text(): t.get_fontweight() for t in leg.get_texts()}
+    assert weights["   Eleusis"] == "bold"
+    assert weights["      chapadensis"] == "normal"
+
+
+def test_indent_width_is_configurable():
+    _frame, sections = _beetle_sections()
+    r = _renderer(9.0, 6.5)
+    r.set_point_groups([("x", PointStyle(), [0.0], [0.0])])
+    r.set_structured_legend(sections)
+    r.set_legend(LegendOptions(location="upper right", indent=1))
+    texts = [t.get_text() for t in _legend_of(r).get_texts()]
+    assert " Eleusis" in texts
+    assert "  chapadensis" in texts
+
+    r.set_legend(LegendOptions(location="upper right", indent=0))
+    texts = [t.get_text() for t in _legend_of(r).get_texts()]
+    assert "Eleusis" in texts
+    assert "chapadensis" in texts
+
+
+def test_group_rows_can_lose_their_bold_and_their_spacer():
+    _frame, sections = _beetle_sections()
+    r = _renderer(9.0, 6.5)
+    r.set_point_groups([("x", PointStyle(), [0.0], [0.0])])
+    r.set_structured_legend(sections)
+    r.set_legend(LegendOptions(location="upper right", bold_groups=False,
+                               group_spacer=False))
+    leg = _legend_of(r)
+    weights = {t.get_text(): t.get_fontweight() for t in leg.get_texts()}
+    assert weights["   Eleusis"] == "normal"
+    # Only the section title row is left; no blank rows between groups.
+    assert [t.get_text() for t in leg.get_texts()].count(" ") == 0
+
+
+def test_section_titles_off_removes_the_title_row():
+    _frame, sections = _beetle_sections(
+        options=LegendOptions(section_titles=False))
+    r = _renderer(9.0, 6.5)
+    r.set_point_groups([("x", PointStyle(), [0.0], [0.0])])
+    r.set_structured_legend(sections)
+    r.set_legend(LegendOptions(location="upper right"))
+    texts = [t.get_text() for t in _legend_of(r).get_texts()]
+    assert "Genus / Species" not in texts
+    assert "   Eleusis" in texts
+
+
+def test_frame_and_text_colours_reach_the_artists():
+    r = _renderer(9.0, 6.5)
+    r.set_point_groups([("Alpha", PointStyle(), np.array([0.0]),
+                         np.array([0.0]))])
+    r.set_legend(LegendOptions(
+        title="Key", location="upper right", frame_color="#102030",
+        frame_edge_color="#405060", frame_width=2.5, frame_alpha=0.5,
+        label_color="#a0b0c0", title_color="#d0e0f0"))
+    leg = _legend_of(r)
+    frame = leg.get_frame()
+    assert frame.get_facecolor()[:3] == pytest.approx(
+        (0x10 / 255, 0x20 / 255, 0x30 / 255), abs=1e-3)
+    assert frame.get_edgecolor()[:3] == pytest.approx(
+        (0x40 / 255, 0x50 / 255, 0x60 / 255), abs=1e-3)
+    assert frame.get_linewidth() == pytest.approx(2.5)
+    assert frame.get_alpha() == pytest.approx(0.5)
+    assert leg.get_texts()[0].get_color() == "#a0b0c0"
+    assert leg.get_title().get_color() == "#d0e0f0"
+
+
+def test_font_family_applies_to_labels_and_title():
+    r = _renderer(9.0, 6.5)
+    r.set_point_groups([("Alpha", PointStyle(), np.array([0.0]),
+                         np.array([0.0]))])
+    r.set_legend(LegendOptions(title="Key", font_family="monospace"))
+    leg = _legend_of(r)
+    assert leg.get_texts()[0].get_fontfamily() == ["monospace"]
+    assert leg.get_title().get_fontfamily() == ["monospace"]
+
+
+def test_a_row_with_no_swatch_still_draws():
+    # group_swatch="none" emits a None style; the handle must be blank
+    # rather than crash or fall back to a circle.
+    r = _renderer(9.0, 6.5)
+    r.set_point_groups([("x", PointStyle(), [0.0], [0.0])])
+    r.set_structured_legend([("Key", [("Headline", None, 0),
+                                      ("Child", PointStyle(), 1)])])
+    r.set_legend(LegendOptions(location="upper right"))
+    texts = [t.get_text() for t in _legend_of(r).get_texts()]
+    assert "   Headline" in texts
+    assert "      Child" in texts
+
+
+def test_plain_legend_row_order_follows_the_app_and_not_draw_order():
+    r = _renderer(9.0, 6.5)
+    groups = [(name, PointStyle(), np.array([0.0]), np.array([0.0]))
+              for name in ("Charlie", "Alpha", "Bravo")]
+    r.set_point_groups(groups)
+    r.set_legend(LegendOptions(location="upper right"))
+    assert [t.get_text() for t in _legend_of(r).get_texts()] == [
+        "Charlie", "Alpha", "Bravo"]
+
+    r.set_legend_row_order(["Alpha", "Bravo", "Charlie"])
+    assert [t.get_text() for t in _legend_of(r).get_texts()] == [
+        "Alpha", "Bravo", "Charlie"]
+    # Draw order is untouched: reordering the key must not restack points.
+    assert [label for label, *_rest in r._point_groups] == [
+        "Charlie", "Alpha", "Bravo"]
+
+
+def test_legend_anchor_round_trips_for_saving():
+    r = _renderer(9.0, 6.5)
+    assert r.legend_anchor() is None
+    r.set_legend_anchor((0.25, 0.75))
+    assert r.legend_anchor() == (0.25, 0.75)
+    r.set_legend_anchor(None)
+    assert r.legend_anchor() is None

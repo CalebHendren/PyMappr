@@ -11,6 +11,7 @@ from matplotlib.ticker import AutoLocator, FuncFormatter, MultipleLocator
 
 from pymappr.layers import (BATHYMETRY_STEPS, CONTINENT_EXTENTS, LAYER_SPECS,
                             LayerStore)
+from pymappr.legend import LegendOptions
 from pymappr.projections import GLOBE, get_projection
 from pymappr.styles import PointStyle
 
@@ -273,34 +274,25 @@ class MapRenderer:
         # (label, PointStyle, lons, lats) per group
         self._point_groups: list[tuple[str, PointStyle, np.ndarray, np.ndarray]] = []
         self._point_artists: list = []
-        self._legend_visible = True
-        self._legend_title: str | None = None
-        self._legend_loc = "best"
-        self._legend_fontsize = 8.0
-        self._legend_title_fontsize = 9.0
-        self._legend_columns = 1
-        self._legend_frame = True
-        self._legend_marker_scale = 1.0
-        self._legend_label_spacing = 0.5
-        # Text formatting for the legend labels and title. Weight/style are
-        # matplotlib keywords ("normal"/"bold", "normal"/"italic"); underline
-        # is drawn at draw time (matplotlib text has no underline property).
-        self._legend_label_weight = "normal"
-        self._legend_label_style = "normal"
-        self._legend_label_underline = False
-        self._legend_title_weight = "bold"
-        self._legend_title_style = "normal"
-        self._legend_title_underline = False
+        # Every legend setting lives in one options object; see
+        # pymappr.legend.LegendOptions. Weight/style are derived from its
+        # bold/italic flags at draw time, and underline is stroked on each
+        # draw (matplotlib text has no underline property).
+        self._legend = LegendOptions()
         # Legend Text artists that need an underline stroke on each draw.
         self._legend_underline_texts: list = []
         # Structured legend: list of (section title, [(label, PointStyle)]).
         # When set, it replaces the one-row-per-group legend.
         self._legend_sections: list | None = None
+        # Legend row order for the plain (one-row-per-group) legend, by
+        # label. The app works it out because ordering by count needs the
+        # data; None keeps the order the point groups were added in.
+        self._legend_row_order: list[str] | None = None
         self._point_alpha = 1.0
 
         # Manual legend placement: dragging the legend (when enabled) anchors
         # its lower-left corner here, in axes fraction, with no limit; None
-        # falls back to the automatic ``_legend_loc`` placement.
+        # falls back to the automatic ``LegendOptions.location`` placement.
         self._legend_anchor: tuple[float, float] | None = None
         self._legend_drag: dict | None = None
         self._legend_dragging_enabled = False
@@ -1472,38 +1464,33 @@ class MapRenderer:
         ]
         self._rebuild_points()
 
-    def set_legend(self, visible: bool, title: str | None = None,
-                   location: str = "best", fontsize: float = 8.0,
-                   columns: int = 1, frame: bool = True,
-                   title_fontsize: float | None = None,
-                   marker_scale: float = 1.0,
-                   label_spacing: float = 0.5,
-                   label_bold: bool = False, label_italic: bool = False,
-                   label_underline: bool = False,
-                   title_bold: bool = True, title_italic: bool = False,
-                   title_underline: bool = False) -> None:
-        self._legend_visible = visible
-        self._legend_title = title
-        self._legend_loc = location
-        self._legend_fontsize = fontsize
-        self._legend_title_fontsize = (fontsize if title_fontsize is None
-                                       else title_fontsize)
-        self._legend_columns = max(int(columns), 1)
-        self._legend_frame = frame
-        self._legend_marker_scale = max(float(marker_scale), 0.1)
-        self._legend_label_spacing = max(float(label_spacing), 0.0)
-        self._legend_label_weight = "bold" if label_bold else "normal"
-        self._legend_label_style = "italic" if label_italic else "normal"
-        self._legend_label_underline = bool(label_underline)
-        self._legend_title_weight = "bold" if title_bold else "normal"
-        self._legend_title_style = "italic" if title_italic else "normal"
-        self._legend_title_underline = bool(title_underline)
+    def set_legend(self, options: LegendOptions) -> None:
+        """Install the full set of legend settings and redraw the legend."""
+        self._legend = options
         self._update_legend()
 
     def set_structured_legend(self, sections: list | None) -> None:
         """Set (or clear with None) a sectioned color/symbol key legend."""
         self._legend_sections = sections
         self._update_legend()
+
+    def set_legend_row_order(self, labels: list[str] | None) -> None:
+        """Order the plain legend's rows by label; None keeps insertion
+        order. Ordering by count needs the data, so the app decides."""
+        self._legend_row_order = list(labels) if labels else None
+        self._update_legend()
+
+    def set_legend_anchor(self, anchor) -> None:
+        """Restore a previously dragged legend position (axes fraction)."""
+        if anchor is None:
+            self._legend_anchor = None
+        else:
+            x, y = anchor
+            self._legend_anchor = (float(x), float(y))
+
+    def legend_anchor(self) -> tuple[float, float] | None:
+        """The manual legend position, so it can be saved with the project."""
+        return self._legend_anchor
 
     def clear_legend_anchor(self) -> None:
         """Drop any manual (dragged) legend position, returning to automatic
@@ -1536,7 +1523,12 @@ class MapRenderer:
                         alpha=self._point_alpha, label=label))
         self._update_legend()
 
-    def _legend_handle(self, style: PointStyle, size: float | None = None):
+    def _legend_handle(self, style: PointStyle | None,
+                       size: float | None = None):
+        # A None style is a row that takes no swatch, e.g. a nested key's
+        # group row when the user has turned its marker off.
+        if style is None:
+            return Line2D([], [], linestyle="", marker="")
         area = style.size if size is None else size
         if style.is_open:
             face, edge, edge_w = "none", style.color, 1.2
@@ -1547,6 +1539,36 @@ class MapRenderer:
                       markerfacecolor=face, color=style.color,
                       markeredgecolor=edge, markeredgewidth=edge_w)
 
+    def _legend_kwargs(self, sectioned: bool) -> dict:
+        """The matplotlib legend keywords shared by both draw paths."""
+        opts = self._legend
+        return {
+            "title": opts.title,
+            "fontsize": opts.fontsize,
+            "title_fontsize": opts.title_fontsize,
+            "ncols": max(int(opts.columns), 1),
+            "markerscale": max(float(opts.marker_scale), 0.1),
+            "labelspacing": max(float(opts.label_spacing), 0.0),
+            "columnspacing": max(float(opts.column_spacing), 0.0),
+            "handletextpad": max(opts.pad_for(sectioned), 0.0),
+            "handlelength": max(float(opts.handle_length), 0.0),
+            "borderpad": max(float(opts.border_pad), 0.0),
+            "frameon": opts.frame,
+            "framealpha": opts.frame_alpha,
+            "facecolor": opts.frame_color,
+            "edgecolor": opts.frame_edge_color,
+            "fancybox": opts.rounded,
+            "shadow": opts.shadow,
+            "alignment": opts.title_align,
+            **self._legend_placement(),
+        }
+
+    def _finish_legend(self, leg) -> None:
+        """Apply the settings matplotlib takes no keyword for."""
+        frame = leg.get_frame()
+        if frame is not None:
+            frame.set_linewidth(max(float(self._legend.frame_width), 0.0))
+
     def _legend_placement(self) -> dict:
         """Legend ``loc``/``bbox_to_anchor`` kwargs: the automatic location,
         or - once the legend has been dragged - its manual lower-left anchor
@@ -1556,7 +1578,7 @@ class MapRenderer:
             # anchor, so grabbing an auto-placed legend doesn't make it hop.
             return {"loc": "lower left", "bbox_to_anchor": self._legend_anchor,
                     "borderaxespad": 0.0}
-        return {"loc": self._legend_loc}
+        return {"loc": self._legend.location}
 
     def _update_legend(self) -> None:
         legend = self.ax.get_legend()
@@ -1564,27 +1586,27 @@ class MapRenderer:
             legend.remove()
         # Rebuilt below for whatever legend (if any) is created this pass.
         self._legend_underline_texts = []
-        if not (self._legend_visible and self._point_groups):
+        if not (self._legend.show and self._point_groups):
             return
         if self._legend_sections is not None:
             self._draw_structured_legend()
             return
-        handles = [
-            self._legend_handle(style)
-            for _label, style, _, _ in self._point_groups
-        ]
-        for handle, (label, *_rest) in zip(handles, self._point_groups):
+        groups = self._ordered_point_groups()
+        handles = [self._legend_handle(style) for _label, style, _, _ in groups]
+        for handle, (label, *_rest) in zip(handles, groups):
             handle.set_label(label)
-        leg = self.ax.legend(handles=handles,
-                             title=self._legend_title,
-                             fontsize=self._legend_fontsize,
-                             title_fontsize=self._legend_title_fontsize,
-                             ncols=self._legend_columns,
-                             markerscale=self._legend_marker_scale,
-                             labelspacing=self._legend_label_spacing,
-                             frameon=self._legend_frame, framealpha=0.85,
-                             **self._legend_placement())
+        leg = self.ax.legend(handles=handles, **self._legend_kwargs(False))
+        self._finish_legend(leg)
         self._apply_legend_text_format(leg, leg.get_texts())
+
+    def _ordered_point_groups(self) -> list:
+        """Point groups in legend row order. Sorting the legend must not
+        disturb draw order, so this reorders a copy for the legend only."""
+        if not self._legend_row_order:
+            return list(self._point_groups)
+        rank = {label: i for i, label in enumerate(self._legend_row_order)}
+        return sorted(self._point_groups,
+                      key=lambda g: rank.get(g[0], len(rank)))
 
     def _draw_structured_legend(self) -> None:
         """A compact legend split into titled sections, so encoding two
@@ -1595,6 +1617,7 @@ class MapRenderer:
         indents a row under the one above it, which is how a nested key lists
         each symbol value beneath the color group it belongs to.
         """
+        opts = self._legend
         handles: list = []
         labels: list[str] = []
         header_rows: list[int] = []
@@ -1610,9 +1633,10 @@ class MapRenderer:
         for title, entries in self._legend_sections:
             if handles:  # spacer between sections
                 spacer()
-            header_rows.append(len(labels))
-            handles.append(blank())
-            labels.append(title)
+            if title:  # section titles can be turned off entirely
+                header_rows.append(len(labels))
+                handles.append(blank())
+                labels.append(title)
             # In a nested key the depth-0 rows head a block of children, so
             # they take the header formatting (bold by default) on top of
             # their swatch - indentation alone reads too weakly when every
@@ -1622,21 +1646,14 @@ class MapRenderer:
                 label, style, *rest = entry
                 depth = rest[0] if rest else 0
                 if nested and depth == 0:
-                    if index:  # separate this block from the one before
-                        spacer()
-                    header_rows.append(len(labels))
+                    if index and opts.group_spacer:
+                        spacer()  # separate this block from the one before
+                    if opts.bold_groups:
+                        header_rows.append(len(labels))
                 handles.append(self._legend_handle(style, size=45))
-                labels.append("   " * (depth + 1) + label)
-        leg = self.ax.legend(handles, labels,
-                             title=self._legend_title,
-                             fontsize=self._legend_fontsize,
-                             title_fontsize=self._legend_title_fontsize,
-                             ncols=self._legend_columns,
-                             markerscale=self._legend_marker_scale,
-                             frameon=self._legend_frame, framealpha=0.85,
-                             handletextpad=0.4,
-                             labelspacing=self._legend_label_spacing,
-                             **self._legend_placement())
+                labels.append(opts.indent_for(depth) + label)
+        leg = self.ax.legend(handles, labels, **self._legend_kwargs(True))
+        self._finish_legend(leg)
         texts = leg.get_texts()
         header_set = set(header_rows)
         entry_texts = [t for i, t in enumerate(texts) if i not in header_set]
@@ -1645,15 +1662,22 @@ class MapRenderer:
         # (kept bold by default) rather than the entry-label formatting.
         for row in header_rows:
             if row < len(texts):
-                self._format_text(texts[row], self._legend_title_weight,
-                                  self._legend_title_style,
-                                  self._legend_title_underline)
+                self._format_text(texts[row], title_role=True)
 
-    def _format_text(self, text, weight: str, style: str,
-                     underline: bool) -> None:
-        """Apply weight/style to a Text and register it for underlining."""
-        text.set_fontweight(weight)
-        text.set_fontstyle(style)
+    def _format_text(self, text, title_role: bool) -> None:
+        """Apply the label or title text settings to a Text, and register it
+        for underlining. Section headers take the title settings, which is
+        what keeps them reading as sub-titles."""
+        opts = self._legend
+        bold = opts.title_bold if title_role else opts.label_bold
+        italic = opts.title_italic if title_role else opts.label_italic
+        underline = (opts.title_underline if title_role
+                     else opts.label_underline)
+        text.set_fontweight("bold" if bold else "normal")
+        text.set_fontstyle("italic" if italic else "normal")
+        text.set_color(opts.title_color if title_role else opts.label_color)
+        if opts.font_family:
+            text.set_fontfamily(opts.font_family)
         if underline and text.get_text().strip():
             self._legend_underline_texts.append(text)
 
@@ -1665,13 +1689,9 @@ class MapRenderer:
             if t not in set(entry_texts) and t is not leg.get_title()]
         title = leg.get_title()
         if title is not None and title.get_text():
-            self._format_text(title, self._legend_title_weight,
-                              self._legend_title_style,
-                              self._legend_title_underline)
+            self._format_text(title, title_role=True)
         for text in entry_texts:
-            self._format_text(text, self._legend_label_weight,
-                              self._legend_label_style,
-                              self._legend_label_underline)
+            self._format_text(text, title_role=False)
 
     def _on_draw(self, event) -> None:
         self._draw_legend_underlines(getattr(event, "renderer", None))

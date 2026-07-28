@@ -180,23 +180,138 @@
             <summary>Legend</summary>
             <div class="body">
               <label class="check"><input type="checkbox" id="legShow" checked> Show legend</label>
-              <label class="check"><input type="checkbox" id="legFrame" checked> Draw frame</label>
-              <label class="check"><input type="checkbox" id="legCounts"> Show point counts</label>
               <div class="row"><label class="lbl grow">Position</label>
                 <select id="legPos" class="grow">
                   <option value="tr">Top right</option>
+                  <option value="tc">Top centre</option>
                   <option value="tl">Top left</option>
+                  <option value="cr">Centre right</option>
+                  <option value="cc">Centre</option>
+                  <option value="cl">Centre left</option>
                   <option value="br">Bottom right</option>
+                  <option value="bc">Bottom centre</option>
                   <option value="bl">Bottom left</option>
                 </select></div>
               <label class="block">Title <span class="muted">(blank = grouping column)</span></label>
               <input type="text" id="legTitle" placeholder="(auto)">
-              <div class="row"><label class="lbl grow">Font size</label>
-                <input type="number" id="legFont" min="6" max="28" step="1" value="12" style="width:74px"></div>
+              <p class="hintline">Tip: drag the legend on the map to place it freely;
+                double-click it to snap back.</p>
+            </div>
+          </details>
+
+          <details class="sec" open>
+            <summary>Rows and order</summary>
+            <div class="body">
+              <div class="row"><label class="lbl grow">Hierarchy</label>
+                <select id="legHierarchy" class="grow">
+                  <option value="auto">Auto (detect)</option>
+                  <option value="always">Always nest</option>
+                  <option value="never">Never nest</option>
+                </select></div>
+              <p class="hintline">Nesting also lets shapes repeat across colour groups,
+                so a hierarchy needs fewer of them.</p>
+              <div class="row"><label class="lbl grow">Order</label>
+                <select id="legOrder" class="grow">
+                  <option value="data">As in data</option>
+                  <option value="az">A &ndash; Z</option>
+                  <option value="za">Z &ndash; A</option>
+                  <option value="count_desc">Count, high to low</option>
+                  <option value="count_asc">Count, low to high</option>
+                </select></div>
+              <label class="check"><input type="checkbox" id="legCounts"> Show point counts</label>
+              <div class="row"><label class="lbl grow">Counts look like</label>
+                <select id="legCountFormat" class="grow">
+                  <option value="(n)">(12)</option>
+                  <option value="n">12</option>
+                  <option value="(n, %)">(12, 34%)</option>
+                  <option value="%">34%</option>
+                </select></div>
+              <div class="row"><label class="lbl grow">Blank values</label>
+                <input type="text" id="legBlankLabel" value="(blank)" style="width:110px"></div>
+              <label class="check"><input type="checkbox" id="legSectionTitles" checked> Show section titles</label>
+              <div class="row"><label class="lbl grow">Title separator</label>
+                <input type="text" id="legTitleSeparator" value=" / " style="width:74px"></div>
+              <label class="check"><input type="checkbox" id="legDatasetPrefix" checked> Prefix sections with the dataset name</label>
+            </div>
+          </details>
+
+          <details class="sec">
+            <summary>Nested keys</summary>
+            <div class="body">
+              <div class="row"><label class="lbl grow">Indent</label>
+                <input type="number" id="legIndent" min="0" max="12" step="1" value="3" style="width:74px"></div>
+              <label class="check"><input type="checkbox" id="legBoldGroups" checked> Bold the group rows</label>
+              <label class="check"><input type="checkbox" id="legGroupSpacer" checked> Blank row between groups</label>
+              <div class="row"><label class="lbl grow">Group swatch</label>
+                <select id="legGroupSwatch" class="grow">
+                  <option value="circle">Circle</option>
+                  <option value="child">Match first child</option>
+                  <option value="none">No swatch</option>
+                </select></div>
+              <div class="row"><label class="lbl grow">Crossed symbol colour</label>
+                <input type="color" id="legSymbolColor" value="#555555"></div>
+              <p class="hintline">The symbol colour is used only when the columns cross,
+                where a shape appears in every colour.</p>
+            </div>
+          </details>
+
+          <details class="sec">
+            <summary>Layout</summary>
+            <div class="body">
               <div class="row"><label class="lbl grow">Columns</label>
                 <input type="number" id="legCols" min="1" max="5" step="1" value="1" style="width:74px"></div>
               <div class="row"><label class="lbl grow">Marker scale</label>
                 <input type="number" id="legScale" min="0.5" max="3" step="0.25" value="1" style="width:74px"></div>
+              <div class="row"><label class="lbl grow">Row spacing</label>
+                <input type="number" id="legRowSpacing" min="0" max="3" step="0.1" value="0.5" style="width:74px"></div>
+              <div class="row"><label class="lbl grow">Swatch gap</label>
+                <input type="number" id="legSwatchGap" min="0" max="40" step="1" value="8" style="width:74px"></div>
+              <div class="row"><label class="lbl grow">Inner padding</label>
+                <input type="number" id="legPad" min="0" max="40" step="1" value="9" style="width:74px"></div>
+            </div>
+          </details>
+
+          <details class="sec">
+            <summary>Frame</summary>
+            <div class="body">
+              <label class="check"><input type="checkbox" id="legFrame" checked> Draw frame</label>
+              <div class="row"><label class="lbl grow">Fill</label>
+                <input type="color" id="legFrameColor" value="#ffffff"></div>
+              <div class="row"><label class="lbl grow">Fill opacity</label>
+                <input type="number" id="legFrameAlpha" min="0" max="1" step="0.05" value="0.92" style="width:74px"></div>
+              <div class="row"><label class="lbl grow">Border</label>
+                <input type="color" id="legFrameEdge" value="#c7ccd2"></div>
+              <div class="row"><label class="lbl grow">Border width</label>
+                <input type="number" id="legFrameWidth" min="0" max="6" step="0.5" value="1" style="width:74px"></div>
+              <div class="row"><label class="lbl grow">Corner radius</label>
+                <input type="number" id="legRadius" min="0" max="24" step="1" value="6" style="width:74px"></div>
+              <label class="check"><input type="checkbox" id="legShadow"> Drop shadow</label>
+            </div>
+          </details>
+
+          <details class="sec">
+            <summary>Text</summary>
+            <div class="body">
+              <div class="row"><label class="lbl grow">Font size</label>
+                <input type="number" id="legFont" min="6" max="28" step="1" value="12" style="width:74px"></div>
+              <div class="row"><label class="lbl grow">Title font size</label>
+                <input type="number" id="legTitleFont" min="6" max="40" step="1" value="13" style="width:74px"></div>
+              <div class="row"><label class="lbl grow">Font</label>
+                <select id="legFontFamily" class="grow">
+                  <option value="sans-serif">Sans-serif</option>
+                  <option value="serif">Serif</option>
+                  <option value="monospace">Monospace</option>
+                </select></div>
+              <div class="row"><label class="lbl grow">Title align</label>
+                <select id="legTitleAlign" class="grow">
+                  <option value="left">Left</option>
+                  <option value="center">Centre</option>
+                  <option value="right">Right</option>
+                </select></div>
+              <div class="row"><label class="lbl grow">Label colour</label>
+                <input type="color" id="legLabelColor" value="#22262c"></div>
+              <div class="row"><label class="lbl grow">Title colour</label>
+                <input type="color" id="legTitleColor" value="#1d2127"></div>
               <label class="block">Label text</label>
               <div class="btnrow">
                 <label class="check"><input type="checkbox" id="legLabelBold"> Bold</label>
@@ -209,8 +324,6 @@
                 <label class="check"><input type="checkbox" id="legTitleItalic"> Italic</label>
                 <label class="check"><input type="checkbox" id="legTitleUnderline"> Underline</label>
               </div>
-              <p class="hintline">Tip: drag the legend on the map to place it freely;
-                double-click it to snap back.</p>
             </div>
           </details>
         </section>

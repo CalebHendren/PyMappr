@@ -1,15 +1,13 @@
 """Tests for point styling: markers, palette assignment, color-by grouping."""
 
-from pathlib import Path
-
 import matplotlib.markers
 import pandas as pd
 
 from pymappr.styles import (DEFAULT_PALETTE, MARKER_CYCLE, MARKERS,
-                           NEUTRAL_MARKER_COLOR, OPEN_SUFFIX, PointStyle,
-                           attribute_style_maps, default_styles,
-                           group_points, legend_counts, legend_sections,
-                           marker_load, nests_within, style_by_attributes)
+                            OPEN_SUFFIX, PointStyle, attribute_style_maps,
+                            default_styles, group_points, marker_load,
+                            nests_within, resolve_nesting,
+                            style_by_attributes)
 
 
 def test_markers_are_valid_matplotlib_markers():
@@ -128,6 +126,25 @@ def test_nests_within_detects_hierarchy_and_cross_product():
     assert nests_within(frame.iloc[:0], "name1", "name2") is False
 
 
+def test_resolve_nesting_honours_the_users_choice():
+    frame = _insect_frame()
+    crossed = pd.DataFrame({
+        "name1": ["forest", "forest", "scrub", "scrub"],
+        "name2": ["male", "female", "male", "female"],
+        "lon": [1.0, 2.0, 3.0, 4.0], "lat": [1.0, 2.0, 3.0, 4.0],
+    })
+    # "auto" is what nests_within says.
+    assert resolve_nesting(frame, "name1", "name2", "auto") is True
+    assert resolve_nesting(crossed, "name1", "name2", "auto") is False
+    # The other two override it in either direction.
+    assert resolve_nesting(crossed, "name1", "name2", "always") is True
+    assert resolve_nesting(frame, "name1", "name2", "never") is False
+    # It still takes two real columns to nest, whatever the mode.
+    assert resolve_nesting(frame, "name1", None, "always") is False
+    assert resolve_nesting(frame, "name1", "nope", "always") is False
+    assert resolve_nesting(frame.iloc[:0], "name1", "name2", "always") is False
+
+
 def test_marker_load_counts_shapes_the_reader_must_tell_apart():
     frame = _insect_frame()
     # Nested: the biggest order holds two families, so two shapes suffice.
@@ -135,6 +152,10 @@ def test_marker_load_counts_shapes_the_reader_must_tell_apart():
     # Without a colour column to group them, all three need their own shape.
     assert marker_load(frame, None, "name2") == 3
     assert marker_load(frame, "name1", None) == 0
+    # Refusing to nest means shapes may no longer repeat across colours, so
+    # every family needs its own again - this is what keeps the map and the
+    # legend agreeing about how many shapes are in play.
+    assert marker_load(frame, "name1", "name2", "never") == 3
 
 
 def test_markers_stay_put_when_rows_are_filtered_out():
@@ -182,106 +203,3 @@ def test_attribute_maps_stable_when_a_value_is_filtered_out():
     hemiptera = next(style for label, style, _ in groups
                      if label.startswith("Hemiptera"))
     assert hemiptera.color == color_map["Hemiptera"]
-
-
-# ------------------------------------------------------------ legend sections
-
-
-def _beetle_frame():
-    """The shipped taxonomy sample: 3 genera x 3 species, perfectly nested."""
-    path = Path(__file__).resolve().parent.parent / "sample_data"
-    frame = pd.read_csv(path / "south_america_beetles.csv")
-    return frame.rename(columns={"Genus": "name1", "Species": "name2"})
-
-
-def _sections(frame, **kwargs):
-    color_map, symbol_map = attribute_style_maps(frame, "name1", "name2")
-    return legend_sections(frame, "name1", "name2", color_map, symbol_map,
-                           "Genus", "Species", **kwargs)
-
-
-def test_nested_legend_lists_species_under_their_genus():
-    frame = _beetle_frame()
-    sections = _sections(frame)
-    # One key, not two independent ones.
-    assert len(sections) == 1
-    title, entries = sections[0]
-    assert title == "Genus / Species"
-    genera = [(label, style) for label, style, depth in entries if depth == 0]
-    species = [(label, style) for label, style, depth in entries if depth == 1]
-    assert [label for label, _ in genera] == ["Eleusis", "Xanthopygus",
-                                              "Plociopterus"]
-    assert len(species) == 9
-
-
-def test_nested_legend_swatches_match_the_map():
-    # Every species swatch carries its genus's colour and its own marker -
-    # the exact marker drawn on the map. Nothing is the neutral grey.
-    frame = _beetle_frame()
-    color_map, symbol_map = attribute_style_maps(frame, "name1", "name2")
-    owner = dict(zip(frame["name2"], frame["name1"]))
-    _title, entries = _sections(frame)[0]
-    genus = None
-    for label, style, depth in entries:
-        assert style.color != NEUTRAL_MARKER_COLOR
-        if depth == 0:
-            genus = label
-            assert style.color == color_map[label]
-        else:
-            assert owner[label] == genus
-            assert style.color == color_map[genus]
-            assert style.marker == symbol_map[label]
-
-
-def test_nested_legend_prunes_filtered_out_values():
-    frame = _beetle_frame()
-    kept = frame[frame["name1"] != "Xanthopygus"]
-    sections = _sections(frame, shown_colors=set(kept["name1"]),
-                         shown_symbols=set(kept["name2"]))
-    _title, entries = sections[0]
-    assert [label for label, _s, depth in entries if depth == 0] == [
-        "Eleusis", "Plociopterus"]
-    assert len([1 for *_x, depth in entries if depth == 1]) == 6
-
-
-def test_crossed_columns_keep_two_independent_keys():
-    frame = pd.DataFrame({
-        "name1": ["forest", "forest", "scrub", "scrub"],
-        "name2": ["male", "female", "male", "female"],
-        "lon": [1.0, 2.0, 3.0, 4.0], "lat": [1.0, 2.0, 3.0, 4.0],
-    })
-    color_map, symbol_map = attribute_style_maps(frame, "name1", "name2")
-    sections = legend_sections(frame, "name1", "name2", color_map, symbol_map,
-                               "Habitat", "Sex")
-    assert [title for title, _rows in sections] == ["Habitat", "Sex"]
-    # A shape genuinely appears in every colour here, so neutral is honest.
-    _title, symbols = sections[1]
-    assert all(style.color == NEUTRAL_MARKER_COLOR
-               for _label, style, _depth in symbols)
-    assert all(depth == 0 for section in sections
-               for *_x, depth in section[1])
-
-
-def test_counts_are_appended_only_when_asked_for():
-    frame = _beetle_frame()
-    # Off by default: bare labels.
-    _title, plain = _sections(frame)[0]
-    assert [label for label, _s, _d in plain if label == "chapadensis"]
-
-    counts = legend_counts(frame, "name1", "name2")
-    _title, entries = _sections(frame, counts=counts)[0]
-    labels = [label for label, _s, _d in entries]
-    assert "Eleusis (18)" in labels        # genus total
-    assert "chapadensis (6)" in labels     # taxon total
-
-
-def test_counts_follow_the_filtered_frame():
-    frame = _beetle_frame()
-    kept = frame[frame["name2"] != "chapadensis"]
-    counts = legend_counts(kept, "name1", "name2")
-    _title, entries = _sections(frame, shown_colors=set(kept["name1"]),
-                                shown_symbols=set(kept["name2"]),
-                                counts=counts)[0]
-    labels = [label for label, _s, _d in entries]
-    assert "Eleusis (12)" in labels        # 18 minus the 6 hidden
-    assert not any(label.startswith("chapadensis") for label in labels)
