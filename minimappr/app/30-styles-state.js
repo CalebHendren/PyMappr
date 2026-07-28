@@ -39,19 +39,6 @@ function nestsWithin(rows, colorKey, symbolKey){
   }
   return true;
 }
-// How many shapes the reader has to tell apart: under nesting the largest group,
-// otherwise every symbol value needs its own.
-function markerLoad(rows, colorKey, symbolKey){
-  if(!symbolKey || !rows.length) return 0;
-  if(!nestsWithin(rows, colorKey, symbolKey))
-    return uniqueInOrder(rows.map(r=>r._attr[symbolKey]??"")).length;
-  const per={};
-  for(const r of rows){
-    const c=r._attr[colorKey]??"", s=r._attr[symbolKey]??"";
-    (per[c]=per[c]||new Set()).add(s);
-  }
-  return Math.max(0,...Object.values(per).map(s=>s.size));
-}
 function attributeStyleMaps(rows, colorKey, symbolKey){
   const colorMap={}, symbolMap={};
   if(colorKey){ uniqueInOrder(rows.map(r=>r._attr[colorKey]??"")).forEach(v=>{
