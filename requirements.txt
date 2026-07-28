@@ -1,10 +1,10 @@
 geopandas>=1.1.4
-pyogrio>=0.9
-shapely>=2.0
+pyogrio>=0.13.0
+shapely>=2.1.2
 matplotlib>=3.11.1
-numpy>=1.26
+numpy>=2.5.1
 pandas>=3.0.5
 pyproj>=3.6
-pillow>=10.0
-openpyxl>=3.1
+pillow>=12.3.0
+openpyxl>=3.1.5
 sv-ttk>=2.6.1
