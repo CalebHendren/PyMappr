@@ -391,6 +391,107 @@ def test_globe_view_is_circular_not_stretched():
     assert _view_aspect(r) == pytest.approx(_live_box_aspect(r), rel=1e-3)
 
 
+def _disk_frame(renderer):
+    """Where the globe's disk sits in the view: ``(centre x fraction, centre
+    y fraction, diameter / view height)``."""
+    x0, x1 = renderer.ax.get_xlim()
+    y0, y1 = renderer.ax.get_ylim()
+    cx, cy, radius = renderer._globe_disk()
+    return ((cx - x0) / (x1 - x0), (cy - y0) / (y1 - y0),
+            2 * radius / abs(y1 - y0))
+
+
+def test_globe_sits_centred_with_a_margin_not_filling_the_canvas():
+    from pymappr.projections import GLOBE
+    from pymappr.renderer import _GLOBE_FILL
+
+    r = _renderer(9.0, 6.5)
+    r.set_projection(GLOBE, 0.0, 0.0)
+    frac_x, frac_y, fill = _disk_frame(r)
+    assert frac_x == pytest.approx(0.5) and frac_y == pytest.approx(0.5)
+    # The disk spans the box's short side only partly, leaving a margin.
+    assert fill == pytest.approx(_GLOBE_FILL)
+    assert fill < 1.0
+
+
+@pytest.mark.parametrize("extent", ["World", "Europe", "South America"])
+def test_spinning_the_globe_never_shifts_or_resizes_it(extent):
+    # The bug: the view was rebuilt from the extent request on every spin, and
+    # a lon/lat box's projected bounding box lurches sideways and changes width
+    # as parts of it swing behind the horizon - so the globe jumped left and
+    # right mid-drag. The disk must stay dead centre at a constant size.
+    from pymappr.projections import GLOBE
+
+    r = _renderer(9.0, 6.5)
+    r.set_extent(extent)
+    r.set_projection(GLOBE, 0.0, 0.0)
+    start_fill = _disk_frame(r)[2]
+    for lon0 in range(-180, 180, 30):
+        for lat0 in (-66.0, -17.0, 0.0, 40.0, 89.0):
+            r.set_projection(GLOBE, float(lon0), lat0)
+            frac_x, frac_y, fill = _disk_frame(r)
+            assert frac_x == pytest.approx(0.5), (lon0, lat0)
+            assert frac_y == pytest.approx(0.5), (lon0, lat0)
+            assert fill == pytest.approx(start_fill), (lon0, lat0)
+            assert _view_aspect(r) == pytest.approx(_live_box_aspect(r),
+                                                    rel=1e-3)
+
+
+def test_spinning_the_globe_preserves_the_zoom_level():
+    from pymappr.projections import GLOBE
+
+    r = _renderer(9.0, 6.5)
+    r.set_projection(GLOBE, 0.0, 0.0)
+    r.zoom(2.0)
+    span = r.ax.get_xlim()[1] - r.ax.get_xlim()[0]
+    r.set_projection(GLOBE, 25.0, 10.0)
+    assert r.ax.get_xlim()[1] - r.ax.get_xlim()[0] == pytest.approx(span)
+    assert _disk_frame(r)[0] == pytest.approx(0.5)
+
+
+def test_zooming_the_globe_keeps_it_centred():
+    # Zooming about the cursor would slide the disk off centre and the next
+    # spin would snap it back; on the globe the cursor is ignored.
+    from pymappr.projections import GLOBE
+
+    r = _renderer(9.0, 6.5)
+    r.set_projection(GLOBE, 0.0, 0.0)
+    r.zoom(1.5, (4.0e6, -3.0e6))
+    frac_x, frac_y, _fill = _disk_frame(r)
+    assert frac_x == pytest.approx(0.5) and frac_y == pytest.approx(0.5)
+
+
+def test_globe_stays_centred_and_whole_in_portrait():
+    from pymappr.projections import GLOBE
+    from pymappr.renderer import _GLOBE_FILL
+
+    r = _renderer(9.0, 6.5)
+    r.set_projection(GLOBE, 0.0, 0.0)
+    r.set_orientation("portrait")
+    x0, x1 = r.ax.get_xlim()
+    cx, _cy, radius = r._globe_disk()
+    # Portrait's short side is the width, so the disk is fitted across it.
+    assert (cx - x0) / (x1 - x0) == pytest.approx(0.5)
+    assert 2 * radius / abs(x1 - x0) == pytest.approx(_GLOBE_FILL)
+    assert _disk_frame(r)[1] == pytest.approx(0.5)
+    r.set_orientation("landscape")
+    assert _disk_frame(r)[2] == pytest.approx(_GLOBE_FILL)
+
+
+def test_globe_survives_a_window_resize():
+    from pymappr.projections import GLOBE
+    from pymappr.renderer import _GLOBE_FILL
+
+    r = _renderer(9.0, 6.5)
+    r.set_projection(GLOBE, 0.0, 0.0)
+    r.fig.set_size_inches(5.0, 8.0)
+    r._on_resize(None)
+    frac_x, frac_y, _fill = _disk_frame(r)
+    assert frac_x == pytest.approx(0.5) and frac_y == pytest.approx(0.5)
+    x0, x1 = r.ax.get_xlim()
+    assert 2 * r._globe_disk()[2] / abs(x1 - x0) == pytest.approx(_GLOBE_FILL)
+
+
 def test_empty_layer_does_not_crash_plotting():
     # A layer that clips to nothing in the current projection (e.g. a regional
     # layer on the far side of the globe) must not raise when it is drawn.
