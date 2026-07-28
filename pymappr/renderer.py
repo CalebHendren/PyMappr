@@ -119,8 +119,10 @@ Z_POINTS = 2.6
 Z_LABELS = 3.0
 Z_COMPASS = 4.0
 
-_MARGINS_WITH_TICKS = (0.055, 0.045, 0.99, 0.99)   # left, bottom, right, top
-_MARGINS_PLAIN = (0.01, 0.012, 0.99, 0.988)
+# Axes margins as figure fractions. Public: the code export bakes the same
+# values into the script it writes, so an exported map keeps the app's framing.
+MARGINS_WITH_TICKS = (0.055, 0.045, 0.99, 0.99)   # left, bottom, right, top
+MARGINS_PLAIN = (0.01, 0.012, 0.99, 0.988)
 
 # Map orientation -> target width:height for the map axes box. "landscape"
 # is None, meaning the map fills the whole canvas (the original behaviour);
@@ -262,7 +264,7 @@ class MapRenderer:
         self._orientation = "landscape"
         # Base axes margins currently in effect (with or without room for
         # tick labels); the orientation narrows this into the axes box.
-        self._axes_margins = _MARGINS_PLAIN
+        self._axes_margins = MARGINS_PLAIN
         # In portrait the map is a tall box centred on the figure; the blank
         # side bars are painted this "mat" colour (the app's background) so
         # the framing reads as a centred page instead of stray whitespace.
@@ -1430,8 +1432,8 @@ class MapRenderer:
         self._sync_wrap_copies()
         self.ax.tick_params(labelbottom=labels_on, labelleft=labels_on,
                             bottom=labels_on, left=labels_on)
-        self._axes_margins = (_MARGINS_WITH_TICKS if labels_on
-                              else _MARGINS_PLAIN)
+        self._axes_margins = (MARGINS_WITH_TICKS if labels_on
+                              else MARGINS_PLAIN)
         self._apply_axes_position()
 
     def _projected_graticule(self) -> list:

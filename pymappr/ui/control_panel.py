@@ -12,7 +12,6 @@ from __future__ import annotations
 import tkinter as tk
 from tkinter import ttk
 
-from pymappr import projects
 from pymappr.layers import CONTINENT_EXTENTS
 from pymappr.projections import (PROJECTIONS, default_origin,
                                  has_custom_origin)
