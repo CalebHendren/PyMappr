@@ -137,6 +137,10 @@ _WRAP_OFFSETS = (-1, 0, 1)
 # Warped-basemap grid (columns x rows) for projected satellite rendering.
 _WARP_GRID = (1600, 800)
 
+# Fraction of the shorter side of the map box the globe's disk spans, so it
+# sits centred with a margin instead of running the full length of the canvas.
+_GLOBE_FILL = 0.88
+
 
 def _oriented_axes_rect(margins: tuple[float, float, float, float],
                         fig_w: float, fig_h: float,
@@ -376,8 +380,14 @@ class MapRenderer:
         The extent is padded to the canvas aspect ratio so map units stay
         square, but never beyond the world bounds; extents too wide to fit
         (World, Antarctica) simply fill the canvas.
+
+        The globe ignores the extent and always frames its whole disk - see
+        :meth:`_frame_globe`.
         """
         self._extent_request = extent
+        if self.proj.hemisphere:
+            self._frame_globe()
+            return
         if isinstance(extent, str):
             extent = CONTINENT_EXTENTS[extent]
         x0, x1, y0, y1 = self.proj.project_extent(extent)
@@ -437,12 +447,57 @@ class MapRenderer:
             ORIENTATION_ASPECT.get(self._orientation))
         self.ax.set_position(list(rect))
 
+    def _globe_disk(self) -> tuple[float, float, float]:
+        """The globe's disk as ``(centre x, centre y, radius)`` in map
+        coordinates.
+
+        On the WGS84 ellipsoid the orthographic disk is very slightly off
+        centre and non-circular, and both drift with the origin, so the disk
+        is measured from the projection's own bounds rather than assumed to
+        be a circle about (0, 0)."""
+        wx0, wx1, wy0, wy1 = self.proj.bounds
+        return ((wx0 + wx1) / 2.0, (wy0 + wy1) / 2.0,
+                max(wx1 - wx0, wy1 - wy0) / 2.0)
+
+    def _frame_globe(self, keep_zoom: bool = False) -> None:
+        """Centre the globe's disk in the map box, with a margin around it.
+
+        The view follows the disk itself, never the requested extent: a
+        lon/lat extent's projected bounding box lurches sideways and changes
+        width as parts of it swing behind the horizon, which is what made a
+        spin jump left and right. The disk, by contrast, stays put whatever
+        the origin, so re-deriving the view on every spin is a no-op.
+
+        With *keep_zoom* the current zoom level is preserved and only the
+        aspect is re-fitted (a window resize or an orientation switch)."""
+        self._apply_axes_position()
+        pos = self.ax.get_position()
+        fig_w, fig_h = self.fig.get_size_inches()
+        box_ratio = max((pos.width * fig_w) / (pos.height * fig_h), 1e-6)
+        cx, cy, radius = self._globe_disk()
+        short = radius / _GLOBE_FILL  # half-span across the box's short side
+        if keep_zoom:
+            x0, x1 = self.ax.get_xlim()
+            y0, y1 = self.ax.get_ylim()
+            zoomed = min(abs(x1 - x0), abs(y1 - y0)) / 2.0
+            if zoomed > 0:
+                short = zoomed
+        half_h = short if box_ratio >= 1.0 else short / box_ratio
+        half_w = half_h * box_ratio
+        self.ax.set_xlim(cx - half_w, cx + half_w)
+        self.ax.set_ylim(cy - half_h, cy + half_h)
+
     def _refit_view_to_box(self) -> None:
         """Re-fit the current view to the current orientation's axes box.
 
         The view centre and its vertical span are kept; the horizontal span
         is set to match the box aspect, so map units stay square. Landscape
         never widens past the world; portrait only ever narrows."""
+        if self.proj.hemisphere:
+            # Keeping the vertical span would crop the disk when a wide box
+            # turns tall; re-centre it in the new box instead.
+            self._frame_globe(keep_zoom=True)
+            return
         self._apply_axes_position()
         pos = self.ax.get_position()
         fig_w, fig_h = self.fig.get_size_inches()
@@ -490,6 +545,11 @@ class MapRenderer:
         factor = min(factor, width / (world_w * 1e-6))
         if abs(factor - 1.0) < 1e-9:
             return
+        if self.proj.hemisphere:
+            # The globe is pinned to the middle of the map box; zooming about
+            # the cursor would slide the disk off centre, and a spin would
+            # then snap it back.
+            center = None
         cx = center[0] if center is not None else (x0 + x1) / 2
         cy = center[1] if center is not None else (y0 + y1) / 2
         self.ax.set_xlim(cx - (cx - x0) / factor, cx + (x1 - cx) / factor)
@@ -551,12 +611,18 @@ class MapRenderer:
         proj = get_projection(name, lon_0, lat_0)
         if proj == self.proj:
             return
+        # Spinning the globe only moves its origin: the disk keeps the same
+        # size in map coordinates, so the view is re-centred on it at the
+        # current zoom rather than rebuilt from the extent request. That keeps
+        # the spin perfectly steady and preserves however far the user has
+        # zoomed in.
+        respin = self.proj.hemisphere and proj.hemisphere
         self.proj = proj
         # Manual label offsets are in map coordinates, which just changed
         # scale/shape entirely - start fresh in the new projection.
         self._label_offsets.clear()
         self._clear_artists()
-        self._rebuild_scene()
+        self._rebuild_scene(respin=respin)
         # The globe takes over pan/zoom drags to spin; other projections hand
         # them back to matplotlib.
         self._sync_navigation()
@@ -582,11 +648,15 @@ class MapRenderer:
         if legend is not None:
             legend.remove()
 
-    def _rebuild_scene(self) -> None:
+    def _rebuild_scene(self, respin: bool = False) -> None:
         # Move the camera into the new projection's coordinates first:
         # everything downstream (graticule locators, label culling) reads
-        # the axis limits.
-        self.set_extent(self._extent_request)
+        # the axis limits. A *respin* only re-centred the globe, so the view
+        # is re-fitted to the disk at the zoom it already has.
+        if respin:
+            self._frame_globe(keep_zoom=True)
+        else:
+            self.set_extent(self._extent_request)
         if self._basemap != "simple":
             self.set_basemap(self._basemap)
         for key in list(self._line_visible):
@@ -606,12 +676,6 @@ class MapRenderer:
         self._rebuild_points()
         self._refresh_point_layers()
         self._refresh_labels()
-        # The globe's projected bounds are a square disk; set_extent leaves the
-        # view at those raw bounds, which the wide map axes would stretch into
-        # an ellipse. Re-fit the horizontal span to the axes box so the globe
-        # stays circular after a projection switch or a spin (re-centre).
-        if self.proj.hemisphere:
-            self._refit_view_to_box()
 
     def _offsets(self) -> tuple[float, ...]:
         # The orthographic globe is a single disk: no wrap-around copies.
@@ -1220,6 +1284,16 @@ class MapRenderer:
         if self.proj.hemisphere and event.button == 1:
             self._globe_press(event)
 
+    def _globe_disk_px(self) -> float:
+        """The globe disk's diameter on screen, in pixels."""
+        ext = self.ax.get_window_extent()
+        diameter = 2.0 * self._globe_disk()[2]
+        x0, x1 = self.ax.get_xlim()
+        y0, y1 = self.ax.get_ylim()
+        px = min(diameter / max(abs(x1 - x0), 1e-9) * ext.width,
+                 diameter / max(abs(y1 - y0), 1e-9) * ext.height)
+        return max(px, 1.0)
+
     def _globe_press(self, event) -> None:
         self._globe_drag = {"x": event.x, "y": event.y,
                             "lon0": self.proj.lon_0, "lat0": self.proj.lat_0}
@@ -1229,10 +1303,10 @@ class MapRenderer:
             return
         drag = self._globe_drag
         # ~180 degrees span the visible disk; scale the pixel drag to that so
-        # grabbing and dragging turns the globe about that much.
-        ext = self.ax.get_window_extent()
-        disk_px = max(min(ext.width, ext.height), 1.0)
-        scale = 180.0 / disk_px
+        # grabbing and dragging turns the globe about that much. The disk is
+        # measured on screen, not assumed to fill the box, so the gesture keeps
+        # tracking the surface under the cursor at any zoom.
+        scale = 180.0 / self._globe_disk_px()
         lon0 = drag["lon0"] - (event.x - drag["x"]) * scale
         lat0 = drag["lat0"] - (event.y - drag["y"]) * scale
         lat0 = max(-90.0, min(90.0, lat0))
