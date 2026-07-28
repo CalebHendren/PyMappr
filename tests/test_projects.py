@@ -4,6 +4,7 @@ import pytest
 
 from pymappr import projects
 from pymappr.data_loader import build_manual_dataset, load_csv
+from pymappr.legend import row_key
 from pymappr.projects import DatasetEntry
 from pymappr.styles import PointStyle
 
@@ -134,3 +135,51 @@ def test_settings_and_projects_dir(tmp_path, monkeypatch):
     assert projects.projects_dir() == target
     assert target.is_dir()  # created lazily
     assert projects.session_path().parent == projects.config_dir()
+
+
+# ------------------------------------------------- legend row overrides
+
+
+def test_legend_overrides_roundtrip():
+    entry = make_entry()
+    key = row_key("pair", "Eleusis", "andina")
+    entry.legend_overrides[key] = {"label": "A.", "hidden": True, "order": 2,
+                                   "color": "#abcdef", "marker": "Star",
+                                   "size": 60.0}
+    restored = projects.entry_from_dict(
+        json.loads(json.dumps(projects.entry_to_dict(entry))))
+    assert restored.legend_overrides[key] == entry.legend_overrides[key]
+
+
+def test_legend_overrides_drop_unknown_and_empty_fields():
+    entry = make_entry()
+    entry.legend_overrides["x"] = {"label": "keep", "bogus": 1, "color": None}
+    restored = projects.entry_from_dict(
+        json.loads(json.dumps(projects.entry_to_dict(entry))))
+    assert restored.legend_overrides["x"] == {"label": "keep"}
+
+
+def test_old_projects_migrate_their_styles_into_row_overrides():
+    # A project saved before per-row customization exists carries only
+    # "styles", keyed by group label. That is the same thing said a
+    # different way, so it becomes a group row rather than being dropped.
+    entry = projects.entry_from_dict({
+        "name": "old", "columns": ["name1", "lon", "lat"],
+        "name_labels": ["Species"],
+        "rows": [["Pardosa", -100.0, 38.0]],
+        "styles": {"Pardosa": {"color": "#123456", "marker": "Star",
+                               "size": 45.0}},
+    })
+    override = entry.legend_overrides[row_key("group", "Pardosa")]
+    assert override == {"color": "#123456", "marker": "Star", "size": 45.0}
+    # The legacy field is still populated, so nothing that reads it breaks.
+    assert entry.styles["Pardosa"].marker == "Star"
+
+
+def test_saving_still_writes_styles_for_older_builds():
+    # An older PyMappr knows nothing about legend_overrides; writing both
+    # keeps a project saved here openable there.
+    entry = make_entry()
+    data = projects.entry_to_dict(entry)
+    assert data["styles"]["Pardosa distincta"]["marker"] == "Star"
+    assert "legend_overrides" in data

@@ -1475,9 +1475,14 @@ class MapRenderer:
         self._update_legend()
 
     def set_legend_row_order(self, labels: list[str] | None) -> None:
-        """Order the plain legend's rows by label; None keeps insertion
-        order. Ordering by count needs the data, so the app decides."""
-        self._legend_row_order = list(labels) if labels else None
+        """The plain legend's rows, in order. None keeps every point group
+        in insertion order; otherwise this is the whole legend - a group
+        left out of the list keeps its points but loses its row.
+
+        The app decides, because ordering by count and hiding rows both
+        need the data.
+        """
+        self._legend_row_order = list(labels) if labels is not None else None
         self._update_legend()
 
     def set_legend_anchor(self, anchor) -> None:
@@ -1600,13 +1605,16 @@ class MapRenderer:
         self._apply_legend_text_format(leg, leg.get_texts())
 
     def _ordered_point_groups(self) -> list:
-        """Point groups in legend row order. Sorting the legend must not
-        disturb draw order, so this reorders a copy for the legend only."""
-        if not self._legend_row_order:
+        """The point groups that get a legend row, in order.
+
+        Sorting or hiding a legend row must not disturb what is drawn, so
+        this filters and reorders a copy for the legend only.
+        """
+        if self._legend_row_order is None:
             return list(self._point_groups)
         rank = {label: i for i, label in enumerate(self._legend_row_order)}
-        return sorted(self._point_groups,
-                      key=lambda g: rank.get(g[0], len(rank)))
+        return sorted((g for g in self._point_groups if g[0] in rank),
+                      key=lambda g: rank[g[0]])
 
     def _draw_structured_legend(self) -> None:
         """A compact legend split into titled sections, so encoding two

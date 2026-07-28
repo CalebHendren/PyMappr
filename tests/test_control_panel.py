@@ -10,7 +10,9 @@ import tkinter as tk
 
 import pytest
 
-from pymappr.legend import LegendOptions
+from pymappr.legend import LegendOptions, row_key
+from pymappr.styles import PointStyle
+from pymappr.ui.legend_editor import LegendEditorDialog
 from pymappr.ui.control_panel import ControlPanel
 
 
@@ -108,3 +110,105 @@ def test_colour_swatches_repaint_when_options_are_restored(panel):
     panel.set_legend_options(LegendOptions(frame_color="#abcdef"))
     button = panel._color_buttons[str(panel.legend_frame_color_var)]
     assert button.cget("bg") == "#abcdef"
+
+
+# ----------------------------------------------------- legend row editor
+
+
+def _rows():
+    return [(row_key("color", "Eleusis"), "Eleusis",
+             PointStyle(color="#d62728", marker="Circle"), 0),
+            (row_key("pair", "Eleusis", "andina"), "andina",
+             PointStyle(color="#d62728", marker="Triangle"), 1),
+            (row_key("pair", "Eleusis", "chapadensis"), "chapadensis",
+             PointStyle(color="#d62728", marker="Square"), 1),
+            (row_key("color", "Xanthopygus"), "Xanthopygus",
+             PointStyle(color="#1f77b4", marker="Circle"), 0)]
+
+
+@pytest.fixture
+def editor(tk_root):
+    overrides: dict = {}
+    changes: list = []
+    dialog = LegendEditorDialog(tk_root, _rows(), overrides,
+                                lambda: changes.append("change"))
+    tk_root.update_idletasks()
+    yield dialog, overrides, changes
+    if dialog.winfo_exists():
+        dialog.destroy()
+
+
+def test_editor_opens_for_attribute_mode_rows(editor):
+    # It used to refuse outright whenever Symbol by was set, which left
+    # nested and crossed rows uncustomizable in any way.
+    dialog, _overrides, _changes = editor
+    assert len(dialog.rows) == 4
+
+
+def test_setting_a_field_records_only_that_field(editor):
+    dialog, overrides, changes = editor
+    key = row_key("pair", "Eleusis", "andina")
+    dialog._set(key, "label", "A. andina")
+    assert overrides[key] == {"label": "A. andina"}
+    assert changes  # the map is told to redraw
+
+
+def test_clearing_a_field_drops_the_override_entirely(editor):
+    # A row back at its defaults should leave nothing behind in the project.
+    dialog, overrides, _changes = editor
+    key = row_key("color", "Eleusis")
+    dialog._set(key, "label", "Genus E")
+    assert key in overrides
+    dialog._set(key, "label", "")
+    assert key not in overrides
+
+
+def test_hiding_and_unhiding_a_row(editor):
+    dialog, overrides, _changes = editor
+    key = row_key("color", "Eleusis")
+    dialog._set(key, "hidden", True)
+    assert overrides[key]["hidden"] is True
+    dialog._set(key, "hidden", False)
+    assert key not in overrides
+
+
+def test_a_half_typed_size_is_ignored(editor):
+    dialog, overrides, _changes = editor
+    key = row_key("color", "Eleusis")
+    var = tk.StringVar(value="")
+    dialog._set_size(key, var)
+    assert key not in overrides
+    var.set("55")
+    dialog._set_size(key, var)
+    assert overrides[key]["size"] == 55.0
+
+
+def test_moving_a_row_writes_a_position_for_every_row(tk_root):
+    # A partial ordering would let untouched rows fall to the end, which is
+    # not what moving one row up should do.
+    overrides: dict = {}
+    dialog = LegendEditorDialog(tk_root, _rows(), overrides, lambda: None)
+    dialog._move(2, -1)          # chapadensis above andina
+    tk_root.update_idletasks()
+    assert len(overrides) == 4
+    order = {key: value["order"] for key, value in overrides.items()}
+    assert order[row_key("pair", "Eleusis", "chapadensis")] < \
+        order[row_key("pair", "Eleusis", "andina")]
+
+
+def test_a_child_cannot_be_moved_out_of_its_parents_block(tk_root):
+    # Swapping across the depth boundary would file a species under the
+    # wrong genus.
+    overrides: dict = {}
+    dialog = LegendEditorDialog(tk_root, _rows(), overrides, lambda: None)
+    dialog._move(1, -1)          # andina is the first child; up is its genus
+    tk_root.update_idletasks()
+    assert overrides == {}
+
+
+def test_reset_clears_every_override(tk_root):
+    overrides = {row_key("color", "Eleusis"): {"label": "x"}}
+    dialog = LegendEditorDialog(tk_root, _rows(), overrides, lambda: None)
+    dialog._reset_all()
+    tk_root.update_idletasks()
+    assert overrides == {}

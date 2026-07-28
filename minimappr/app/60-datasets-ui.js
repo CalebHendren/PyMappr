@@ -142,29 +142,107 @@ function syncStylePanel(){
   $("#opacityRange").value=ds.opacity; $("#opacityVal").textContent=Number(ds.opacity).toFixed(2);
   renderGroupOverrides(ds);
 }
+// Every legend row of a dataset, as {key, value, style, depth} - groups in
+// group-by mode, or colour values, symbol values and nested pairs in the
+// two-attribute modes. Mirrors PyMapprApp._legend_rows.
+function legendRowsFor(ds){
+  const res=resolveGroups(ds);
+  if(res.mode!=="attr"){
+    return res.groups.map(g=>({key:rowKey("group",g.label), value:g.label,
+                               style:g.style, depth:0}));
+  }
+  const rows=[];
+  if(resolveNesting(ds.rows,res.colorKey,res.symbolKey,opts.legHierarchy)){
+    const owner=ownerMap(ds.rows,res.symbolKey,res.colorKey);
+    for(const [cv,color] of Object.entries(res.colorMap)){
+      rows.push({key:rowKey("color",cv), value:cv, depth:0,
+                 style:{color,marker:"Circle",size:ds.base.size}});
+      for(const sv of Object.keys(res.symbolMap).filter(s=>(owner[s]??"")===cv))
+        rows.push({key:rowKey("pair",cv,sv), value:sv, depth:1,
+                   style:{color,marker:res.symbolMap[sv],size:ds.base.size}});
+    }
+    return rows;
+  }
+  for(const [cv,color] of Object.entries(res.colorMap))
+    rows.push({key:rowKey("color",cv), value:cv, depth:0,
+               style:{color,marker:"Circle",size:ds.base.size}});
+  for(const [sv,marker] of Object.entries(res.symbolMap))
+    rows.push({key:rowKey("symbol",sv), value:sv, depth:0,
+               style:{color:opts.legSymbolColor,marker,size:ds.base.size}});
+  return rows;
+}
+
 function renderGroupOverrides(ds){
   const box=$("#groupList");
-  const res=resolveGroups(ds);
-  if(res.mode==="attr" || (res.groups.length<=1 && !ds.groupBy)){
+  const rows=legendRowsFor(ds);
+  if(!rows.length || (rows.length<=1 && !ds.groupBy && !ds.symbolBy)){
     box.innerHTML='<span class="muted">Group the data to fine-tune each entry.</span>'; return;
   }
   box.innerHTML="";
-  res.groups.forEach(g=>{
+  rows.forEach((r,index)=>{
+    const o=ds.overrides[r.key]||{};
     const row=document.createElement("div"); row.className="row wrap";
     row.style.margin="6px 0";
-    const c=document.createElement("input"); c.type="color"; c.value=g.style.color;
-    c.addEventListener("input",()=>{ setOverride(ds,g.label,{color:c.value}); render(); renderDatasetList(); });
+    if(r.depth) row.style.paddingLeft="14px";
+
+    // Untick to leave the row out of the legend; its points stay on the map.
+    const show=document.createElement("input"); show.type="checkbox";
+    show.checked=!o.hidden; show.title="Show this row in the legend";
+    show.style.cssText="flex:0 0 auto";
+    show.addEventListener("change",()=>{ setOverride(ds,r.key,{hidden:!show.checked}); render(); });
+
+    const c=document.createElement("input"); c.type="color"; c.value=o.color||r.style.color;
+    c.addEventListener("input",()=>{ setOverride(ds,r.key,{color:c.value}); render(); renderDatasetList(); });
+
     const m=document.createElement("select"); m.style.flex="1 1 auto";
-    fillSelect(m, MARKERS, g.style.marker);
-    m.addEventListener("change",()=>{ setOverride(ds,g.label,{marker:m.value}); render(); });
+    fillSelect(m, MARKERS, o.marker||r.style.marker);
+    m.addEventListener("change",()=>{ setOverride(ds,r.key,{marker:m.value}); render(); });
+
     const sz=document.createElement("input"); sz.type="number"; sz.min="6"; sz.max="200"; sz.step="2";
-    sz.value=g.style.size; sz.title="Point size"; sz.style.cssText="width:62px;flex:0 0 auto";
-    sz.addEventListener("input",()=>{ setOverride(ds,g.label,{size:Math.max(6,Math.min(200,+sz.value||30))}); render(); });
-    const lbl=document.createElement("span"); lbl.className="nm"; lbl.style.cssText="flex:1 1 100%;font-size:12px;color:var(--muted)";
-    lbl.textContent=g.label;
-    row.appendChild(c); row.appendChild(m); row.appendChild(sz); row.appendChild(lbl);
+    sz.value=o.size||r.style.size; sz.title="Point size"; sz.style.cssText="width:62px;flex:0 0 auto";
+    sz.addEventListener("input",()=>{ setOverride(ds,r.key,{size:Math.max(6,Math.min(200,+sz.value||30))}); render(); });
+
+    // Blank label = use the value from the data.
+    const name=document.createElement("input"); name.type="text";
+    name.placeholder=r.value||"(blank)"; name.value=o.label||"";
+    name.title="Legend label (blank = the value from the data)";
+    name.style.cssText="flex:1 1 100%;font-size:12px";
+    name.addEventListener("input",()=>{ setOverride(ds,r.key,{label:name.value.trim()}); render(); });
+
+    const up=document.createElement("button"); up.textContent="↑"; up.title="Move up";
+    up.style.cssText="flex:0 0 auto;padding:2px 6px";
+    up.addEventListener("click",()=>moveRow(ds,rows,index,-1));
+    const down=document.createElement("button"); down.textContent="↓"; down.title="Move down";
+    down.style.cssText="flex:0 0 auto;padding:2px 6px";
+    down.addEventListener("click",()=>moveRow(ds,rows,index,1));
+
+    row.appendChild(show); row.appendChild(c); row.appendChild(m);
+    row.appendChild(sz); row.appendChild(up); row.appendChild(down);
+    row.appendChild(name);
     box.appendChild(row);
   });
 }
-function setOverride(ds,label,patch){ ds.overrides[label]={...(ds.overrides[label]||{}),...patch}; }
+
+// Moving writes a position for every row, not just the two that swapped: a
+// partial ordering would let untouched rows fall to the end. A nested child
+// may only move inside its own parent's block.
+function moveRow(ds, rows, index, step){
+  const target=index+step;
+  if(target<0 || target>=rows.length) return;
+  if(rows[index].depth!==rows[target].depth) return;
+  const reordered=[...rows];
+  [reordered[index],reordered[target]]=[reordered[target],reordered[index]];
+  reordered.forEach((r,position)=>setOverride(ds,r.key,{order:position}));
+  // Moving is meaningless while the legend sorts itself, so switch it over.
+  opts.legOrder="manual";
+  const sel=$("#legOrder"); if(sel) sel.value="manual";
+  render(); renderGroupOverrides(ds);
+}
+
+function setOverride(ds,key,patch){
+  const merged={...(ds.overrides[key]||{}),...patch};
+  // Drop fields that are back at their default so saved state stays clean.
+  for(const k of Object.keys(merged)) if(merged[k]===""||merged[k]===false||merged[k]==null) delete merged[k];
+  if(Object.keys(merged).length) ds.overrides[key]=merged; else delete ds.overrides[key];
+}
 

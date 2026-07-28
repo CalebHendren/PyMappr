@@ -1,4 +1,5 @@
 import math
+import re
 import shutil
 import subprocess
 import sys
@@ -11,6 +12,7 @@ import pytest
 from pymappr import codecheck, codegen
 from pymappr.data_loader import build_manual_dataset
 from pymappr.projections import get_projection
+from pymappr.legend import row_key
 from pymappr.projects import DatasetEntry, entry_from_dict
 from pymappr.styles import PointStyle
 
@@ -856,3 +858,41 @@ def test_counts_option_reaches_the_exported_legend():
     ns = exec_python(codegen.generate_code(state, [beetle_entry()], "Python"))
     labels = [label for label, _s, _d in ns["LEGEND_SECTIONS"][0][1]]
     assert "Eleusis (18)" in labels and "chapadensis (6)" in labels
+
+
+# ------------------------------------------------- per-row customization
+
+
+def test_row_overrides_reach_the_exported_legend():
+    entry = beetle_entry()
+    entry.legend_overrides = {
+        row_key("pair", "Eleusis", "chapadensis"): {"label": "E. chapadensis",
+                                                    "color": "#123456"},
+        row_key("pair", "Eleusis", "andina"): {"hidden": True},
+    }
+    code = codegen.generate_code(make_state(), [entry], "Python")
+    assert "E. chapadensis" in code
+    assert "#123456" in code
+    # A hidden row leaves the legend but keeps its points, so the section
+    # loses the row while the dataset still carries every point.
+    sections = re.search(r"LEGEND_SECTIONS = \[(.*?)\n\]", code, re.S).group(1)
+    assert "andina" not in sections
+
+
+def test_hidden_group_rows_keep_their_points_in_the_export():
+    entry = manual_entry()
+    entry.legend_overrides = {row_key("group", "spiders"): {"hidden": True}}
+    code = codegen.generate_code(make_state(), [entry], "Python")
+    # Out of the legend...
+    assert "LEGEND_ROWS = []" in code
+    # ...but still styled and drawn.
+    assert "'spiders'" in code
+
+
+def test_renamed_group_rows_carry_their_new_name_through_styles():
+    entry = manual_entry()
+    entry.legend_overrides = {row_key("group", "spiders"): {"label": "Araneae"}}
+    code = codegen.generate_code(make_state(), [entry], "Python")
+    ns = exec_python(code)
+    assert "Araneae" in ns["STYLES"]
+    assert ns["LEGEND_ROWS"] == ["Araneae"]
