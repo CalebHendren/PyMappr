@@ -221,9 +221,6 @@ def build_dataset(frame: pd.DataFrame, mapping: ColumnMapping,
     else:
         labels = [f"Name {i + 1}" for i in range(len(name_cols))]
     result.attrs["name_labels"] = list(labels)
-    # Backwards-compatible attrs used by older callers.
-    result.attrs["name1_label"] = labels[0] if labels else "Name 1"
-    result.attrs["name2_label"] = labels[1] if len(labels) > 1 else "Name 2"
     return PointDataset(frame=result, source_path=source_path, skipped=skipped)
 
 
@@ -281,6 +278,4 @@ def build_manual_dataset(legend: str, text: str,
         rows = [[row[0], row[2], row[3]] for row in rows]
     frame = pd.DataFrame(rows, columns=[*keys, "lon", "lat"])
     frame.attrs["name_labels"] = labels
-    frame.attrs["name1_label"] = labels[0]
-    frame.attrs["name2_label"] = labels[1] if len(labels) > 1 else "Name 2"
     return PointDataset(frame=frame, source_path="", skipped=skipped)

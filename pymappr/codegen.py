@@ -4,22 +4,21 @@ import math
 import re
 
 from pymappr import __version__
+from pymappr.codecheck import LANGUAGES
 from pymappr.layers import (BATHYMETRY_STEPS, CONTINENT_EXTENTS,
                             LAYER_SPECS)
-from pymappr.projections import (CAP_CLIP_RADIUS, get_projection, is_globe,
-                                 proj4_string)
-from pymappr.renderer import (BATHYMETRY_COLORS, FILL_COLORS, FILL_LAYERS,
-                              LABEL_STYLES, LINE_LAYERS, POINT_LAYERS,
-                              Z_BATHYMETRY, Z_LAKE_FILL, Z_OCEAN,
-                              Z_POINT_LAYERS)
+from pymappr.projections import CAP_CLIP_RADIUS, get_projection, is_globe
 from pymappr.legend import (LegendOptions, legend_counts, legend_sections,
                             order_labels)
+from pymappr.renderer import (BATHYMETRY_COLORS, FILL_COLORS, FILL_LAYERS,
+                              LABEL_STYLES, LINE_LAYERS, MARGINS_PLAIN,
+                              MARGINS_WITH_TICKS, POINT_LAYERS, Z_BATHYMETRY,
+                              Z_LAKE_FILL, Z_OCEAN, Z_POINT_LAYERS)
 from pymappr.styles import (PointStyle, attribute_style_maps,
                             default_styles, group_points,
                             style_by_attributes)
 from pymappr.updates import GITHUB_REPO
 
-LANGUAGES = ("Python", "R")
 CODE_EXTENSIONS = {"Python": ".py", "R": ".R"}
 
 # Home page for the attribution comment at the top of every script.
@@ -29,10 +28,6 @@ WORLD_EXTENT = (-180.0, 180.0, -90.0, 90.0)
 
 # Default figure size (inches): the app's initial canvas.
 DEFAULT_FIGSIZE = (9.0, 6.5)
-
-# Axes margins as figure fractions, mirroring pymappr.renderer.
-MARGINS_WITH_TICKS = (0.055, 0.045, 0.99, 0.99)   # left, bottom, right, top
-MARGINS_PLAIN = (0.01, 0.012, 0.99, 0.988)
 
 # Grid spacing dropdown -> degrees (mirrors the control panel choices).
 _GRATICULE_DEGREES = {"1\N{DEGREE SIGN}": 1.0, "5\N{DEGREE SIGN}": 5.0,

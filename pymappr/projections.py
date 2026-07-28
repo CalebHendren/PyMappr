@@ -68,7 +68,6 @@ GLOBE = "Globe (Orthographic)"
 # horizon for the transform to blow up. Public: the code export bakes the
 # same radius into the script it writes.
 CAP_CLIP_RADIUS = 88.0
-_CAP_CLIP_RADIUS = CAP_CLIP_RADIUS
 # The drawn globe outline (and the projected bounds) sit just inside the
 # exact horizon, where the forward transform is still finite everywhere.
 _HORIZON_RADIUS = 89.9
@@ -320,12 +319,12 @@ def _cap_clip(lon_0: float, lat_0: float):
     from shapely.geometry import Polygon
     from shapely.ops import unary_union
 
-    lons, lats = _cap_ring(lon_0, lat_0, _CAP_CLIP_RADIUS)
-    if lat_0 + _CAP_CLIP_RADIUS >= 90.0:  # cap encloses the north pole
+    lons, lats = _cap_ring(lon_0, lat_0, CAP_CLIP_RADIUS)
+    if lat_0 + CAP_CLIP_RADIUS >= 90.0:  # cap encloses the north pole
         order = np.argsort(lons)
         shell = list(zip(lons[order], lats[order]))
         shell += [(lon_0 + 180.0, 90.0), (lon_0 - 180.0, 90.0)]
-    elif lat_0 - _CAP_CLIP_RADIUS <= -90.0:  # ... the south pole
+    elif lat_0 - CAP_CLIP_RADIUS <= -90.0:  # ... the south pole
         order = np.argsort(lons)
         shell = list(zip(lons[order], lats[order]))
         shell += [(lon_0 + 180.0, -90.0), (lon_0 - 180.0, -90.0)]
