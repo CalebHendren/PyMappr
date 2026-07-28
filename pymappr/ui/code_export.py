@@ -4,6 +4,9 @@ Selecting a language box pastes the pre-made functions from
 ``pymappr/codegen.py`` (filled in with the current map settings) into the
 preview.
 
+**Check code** parses the previewed script and flags anything left to fill
+in by hand. It is a syntax check, not a run.
+
 Two ways to take it away, both ready to run with no setup:
 
 * **Save code as** writes a single, self-contained ``.py``/``.R`` file -
@@ -20,7 +23,7 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
-from pymappr import codegen, projects
+from pymappr import codecheck, codegen, projects
 
 WRAP = 560
 NOTE = ("The script installs any missing packages on first run and "
@@ -80,8 +83,10 @@ class CodeExportDialog(tk.Toplevel):
 
         row = ttk.Frame(body)
         row.pack(fill="x", pady=(8, 0))
+        ttk.Button(row, text="Check code",
+                   command=self._check).pack(side="left")
         ttk.Button(row, text="Copy code",
-                   command=self._copy).pack(side="left")
+                   command=self._copy).pack(side="left", padx=(6, 0))
         ttk.Button(row, text="Save code as\N{HORIZONTAL ELLIPSIS}",
                    command=self._save).pack(side="left", padx=(6, 0))
         ttk.Button(row, text="Save as working directory"
@@ -135,6 +140,33 @@ class CodeExportDialog(tk.Toplevel):
 
     def _code_text(self) -> str:
         return self._output.get("1.0", "end").strip()
+
+    def _check(self) -> None:
+        """Syntax-check the previewed script and report what turned up.
+
+        This is a parse-and-placeholder check, not a run: it catches a script
+        that could not possibly run and any marker left to fill in by hand.
+        """
+        code = self._code_text()
+        if not code:
+            self._status.config(text="There is no code to check.")
+            return
+        language = self._language_var.get()
+        issues = codecheck.validate_code(language, code)
+        summary = codecheck.summarize(language, issues)
+        if codecheck.has_errors(issues):
+            messagebox.showerror("Code check", summary, parent=self)
+        elif issues:
+            messagebox.showwarning("Code check", summary, parent=self)
+        else:
+            messagebox.showinfo("Code check", summary, parent=self)
+        if issues:
+            errors = sum(issue.severity == "error" for issue in issues)
+            warnings = len(issues) - errors
+            note = f"{errors} error(s), {warnings} warning(s)"
+        else:
+            note = "passed"
+        self._status.config(text=f"{language} check: {note}")
 
     def _copy(self) -> None:
         code = self._code_text()

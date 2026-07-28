@@ -58,13 +58,13 @@ def parse_coordinate(value: object, kind: str = "longitude") -> float:
 
     # Pull out an optional hemisphere letter from either end.
     sign = None
-    m = re.match(rf"^([NSEW])\s*(.*)$", text, re.IGNORECASE)
+    m = re.match(r"^([NSEW])\s*(.*)$", text, re.IGNORECASE)
     if m:
         sign = _HEMI_SIGN[m.group(1).upper()]
         hemi_letter = m.group(1).upper()
         text = m.group(2)
     else:
-        m = re.match(rf"^(.*?)\s*([NSEW])$", text, re.IGNORECASE)
+        m = re.match(r"^(.*?)\s*([NSEW])$", text, re.IGNORECASE)
         if m:
             sign = _HEMI_SIGN[m.group(2).upper()]
             hemi_letter = m.group(2).upper()

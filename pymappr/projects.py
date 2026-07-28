@@ -152,8 +152,6 @@ def entry_from_dict(data: dict) -> DatasetEntry:
             frame[column] = pd.to_numeric(frame[column], errors="coerce")
     labels = [str(v) for v in data.get("name_labels", [])]
     frame.attrs["name_labels"] = labels
-    frame.attrs["name1_label"] = labels[0] if labels else "Name 1"
-    frame.attrs["name2_label"] = labels[1] if len(labels) > 1 else "Name 2"
     dataset = PointDataset(frame=frame,
                            source_path=str(data.get("source_path", "")))
     styles = {}

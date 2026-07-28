@@ -39,19 +39,7 @@ function nestsWithin(rows, colorKey, symbolKey){
   }
   return true;
 }
-// How many shapes the reader has to tell apart: under nesting the largest group,
-// otherwise every symbol value needs its own.
-function markerLoad(rows, colorKey, symbolKey){
-  if(!symbolKey || !rows.length) return 0;
-  if(!nestsWithin(rows, colorKey, symbolKey))
-    return uniqueInOrder(rows.map(r=>r._attr[symbolKey]??"")).length;
-  const per={};
-  for(const r of rows){
-    const c=r._attr[colorKey]??"", s=r._attr[symbolKey]??"";
-    (per[c]=per[c]||new Set()).add(s);
-  }
-  return Math.max(0,...Object.values(per).map(s=>s.size));
-}
+
 // Legend rows are identified by a tagged key - the same tagging legendCounts
 // uses - so a value in both the colour and the symbol column cannot have one
 // row's customization land on the other. NUL separates the parts because it
@@ -71,6 +59,7 @@ function isHidden(o){ return !!(o && o.hidden); }
 function manualOrder(o){
   return (o && o.order!=null) ? Number(o.order) : Number.MAX_SAFE_INTEGER;
 }
+
 // Whether to treat the two columns as a hierarchy, honouring the user's
 // choice: "auto" detects it, "always" forces it, "never" refuses. Every
 // caller goes through here so the map's shapes and the legend's layout can
@@ -120,6 +109,7 @@ function legendLabel(value, n, total){
   if(opts.legCountFormat==="%") return `${label} ${pct}%`;
   return `${label} (${n})`;
 }
+
 function attributeStyleMaps(rows, colorKey, symbolKey){
   const colorMap={}, symbolMap={};
   if(colorKey){ uniqueInOrder(rows.map(r=>r._attr[colorKey]??"")).forEach(v=>{

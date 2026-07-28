@@ -4,6 +4,9 @@ import ast
 import re
 from dataclasses import dataclass
 
+# The languages the code export writes, and therefore the ones this module
+# knows how to check. Kept here rather than in pymappr.codegen so that
+# checking stays importable without pulling in matplotlib and geopandas.
 LANGUAGES = ("Python", "R")
 
 _MAX_REPORTED = 12

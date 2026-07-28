@@ -137,7 +137,7 @@ function updateFromMapping(id, parsed, mapping, name){
   if(bad){ flashStage(`${bad} row${bad!==1?"s":""} skipped (unreadable coordinates).`); }
   return true;
 }
-function flashStage(msg){ const b=$("#stagebar"); const old=b.textContent; b.textContent=msg;
+function flashStage(msg){ $("#stagebar").textContent=msg;
   setTimeout(()=>updateStagebar(),3000); }
 
 // manual entry
