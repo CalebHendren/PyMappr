@@ -118,3 +118,41 @@ def test_generated_index_is_in_sync_with_its_sources():
     spec.loader.exec_module(module)
     assert module.build() == INDEX.read_text(encoding="utf-8"), (
         "index.html is stale - run: python minimappr/build.py")
+
+
+# ------------------------------------------------------- row overrides
+
+
+def test_row_key_scheme_matches_the_python_side(app_js):
+    # The two apps write the same project-shaped override keys, so the
+    # separator and the tag names have to agree exactly.
+    from pymappr.legend import ROW_SEP
+
+    separator = re.search(r'const ROW_SEP="([^"]*)"', app_js)
+    assert separator, "ROW_SEP not found"
+    assert separator.group(1).encode().decode("unicode_escape") == ROW_SEP
+
+    tags = set(re.findall(r'rowKey\("(\w+)"', app_js))
+    assert tags <= {"group", "color", "symbol", "pair"}, tags
+
+
+def test_sources_carry_no_nul_bytes():
+    # A literal NUL in a source file makes git treat it as binary and hides
+    # every future diff; the separator must be written as an escape.
+    for path in list(APP.glob("*.js")) + [BODY, INDEX]:
+        assert b"\x00" not in path.read_bytes(), path.name
+
+
+def test_override_helpers_exist_in_the_js(app_js):
+    # These mirror pymappr.styles.apply_override and friends; the render
+    # path and the editor both depend on them.
+    for name in ("applyOverride", "overrideLabel", "isHidden", "manualOrder",
+                 "rowKey", "legendRowsFor", "moveRow", "setOverride"):
+        assert f"function {name}(" in app_js, name
+
+
+def test_manual_is_offered_as_an_order(body, app_js):
+    # Reordering only takes effect under manual order, so the option has to
+    # exist in the markup and the reorder has to switch to it.
+    assert '<option value="manual">' in body
+    assert 'opts.legOrder="manual"' in app_js

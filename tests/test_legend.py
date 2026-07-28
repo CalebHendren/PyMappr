@@ -5,8 +5,8 @@ from pathlib import Path
 import pandas as pd
 
 from pymappr.legend import (NEUTRAL_MARKER_COLOR, LegendOptions, legend_counts,
-                            legend_sections, order_labels)
-from pymappr.styles import attribute_style_maps
+                            legend_sections, order_labels, row_key)
+from pymappr.styles import apply_override, attribute_style_maps
 
 
 def _beetle_frame():
@@ -355,3 +355,131 @@ def test_indent_and_pad_helpers():
     assert LegendOptions().pad_for(sectioned=True) == 0.4
     assert LegendOptions().pad_for(sectioned=False) == 0.8
     assert LegendOptions(handle_text_pad=1.5).pad_for(True) == 1.5
+
+
+# --------------------------------------------------------- row overrides
+
+
+def test_row_keys_are_tagged_so_channels_cannot_collide():
+    # "unknown" can legitimately appear in both the colour and the symbol
+    # column; their rows must stay separate customizations.
+    assert row_key("color", "unknown") != row_key("symbol", "unknown")
+    assert row_key("group", "a") != row_key("color", "a")
+
+
+def test_row_keys_survive_values_containing_punctuation():
+    # Separators people reach for first - "/" and ":" - turn up in real
+    # values all the time, which is why the key uses NUL instead.
+    assert row_key("pair", "a/b", "c") != row_key("pair", "a", "b/c")
+    assert row_key("pair", "a:b", "c") != row_key("pair", "a", "b:c")
+    assert row_key("pair", "a b", "c") != row_key("pair", "a", "b c")
+
+
+def test_a_row_can_be_renamed():
+    frame = _beetle_frame()
+    overrides = {row_key("pair", "Eleusis", "chapadensis"):
+                 {"label": "E. chapadensis"}}
+    _title, entries = _sections(frame, overrides=overrides)[0]
+    labels = [label for label, _s, _d in entries]
+    assert "E. chapadensis" in labels
+    assert "chapadensis" not in labels
+
+
+def test_a_renamed_row_still_gets_its_count():
+    # Renaming is about what the row is called, not about dropping numbers.
+    frame = _beetle_frame()
+    counts = legend_counts(frame, "name1", "name2")
+    overrides = {row_key("color", "Eleusis"): {"label": "Genus E"}}
+    _title, entries = _sections(frame, LegendOptions(counts=True),
+                                counts=counts, overrides=overrides)[0]
+    assert "Genus E (18)" in [label for label, _s, _d in entries]
+
+
+def test_a_hidden_row_leaves_the_legend():
+    frame = _beetle_frame()
+    overrides = {row_key("pair", "Eleusis", "andina"): {"hidden": True}}
+    _title, entries = _sections(frame, overrides=overrides)[0]
+    assert "andina" not in [label for label, _s, _d in entries]
+    # Its siblings and its genus stay.
+    assert "chapadensis" in [label for label, _s, _d in entries]
+    assert "Eleusis" in [label for label, _s, _d in entries]
+
+
+def test_hiding_a_group_hides_the_block_it_heads():
+    # The children are drawn in the group's colour, so leaving them behind
+    # would orphan them under whatever row happened to precede them.
+    frame = _beetle_frame()
+    overrides = {row_key("color", "Eleusis"): {"hidden": True}}
+    _title, entries = _sections(frame, overrides=overrides)[0]
+    labels = [label for label, _s, _d in entries]
+    assert "Eleusis" not in labels
+    assert "chapadensis" not in labels
+    assert "Xanthopygus" in labels
+
+
+def test_a_row_can_be_restyled():
+    frame = _beetle_frame()
+    overrides = {row_key("pair", "Eleusis", "andina"):
+                 {"color": "#123456", "marker": "Star", "size": 90.0}}
+    _title, entries = _sections(frame, overrides=overrides)[0]
+    style = next(s for label, s, _d in entries if label == "andina")
+    assert (style.color, style.marker, style.size) == ("#123456", "Star", 90.0)
+
+
+def test_an_override_only_replaces_what_it_sets():
+    # A row that was only renamed keeps following the palette.
+    frame = _beetle_frame()
+    plain = _sections(frame)[0][1]
+    base = next(s for label, s, _d in plain if label == "andina")
+    overrides = {row_key("pair", "Eleusis", "andina"): {"label": "A."}}
+    _title, entries = _sections(frame, overrides=overrides)[0]
+    style = next(s for label, s, _d in entries if label == "A.")
+    assert (style.color, style.marker, style.size) == (base.color, base.marker,
+                                                       base.size)
+
+
+def test_crossed_rows_take_their_own_overrides():
+    frame = _crossed_frame()
+    overrides = {row_key("color", "forest"): {"label": "Woodland"},
+                 row_key("symbol", "male"): {"hidden": True}}
+    color_map, symbol_map = attribute_style_maps(frame, "name1", "name2")
+    sections = legend_sections(frame, "name1", "name2", color_map, symbol_map,
+                               "Habitat", "Sex", overrides=overrides)
+    colors = [label for label, _s, _d in sections[0][1]]
+    symbols = [label for label, _s, _d in sections[1][1]]
+    assert "Woodland" in colors and "forest" not in colors
+    assert "male" not in symbols and "female" in symbols
+
+
+def test_manual_order_places_rows_and_leaves_the_rest_in_data_order():
+    frame = _beetle_frame()
+    overrides = {row_key("color", "Plociopterus"): {"order": 0},
+                 row_key("color", "Eleusis"): {"order": 1}}
+    options = LegendOptions(order="manual")
+    _title, entries = _sections(frame, options, overrides=overrides)[0]
+    parents = [label for label, _s, depth in entries if depth == 0]
+    # The two placed genera lead, and the one never placed falls to the end.
+    assert parents == ["Plociopterus", "Eleusis", "Xanthopygus"]
+
+
+def test_manual_order_sorts_children_inside_their_own_group():
+    frame = _beetle_frame()
+    overrides = {row_key("pair", "Eleusis", "andina"): {"order": 0}}
+    options = LegendOptions(order="manual")
+    _title, entries = _sections(frame, options, overrides=overrides)[0]
+    block: list = []
+    for label, _style, depth in entries:
+        if depth == 0 and label == "Eleusis":
+            block = []
+            current = True
+        elif depth == 0:
+            current = False
+        elif current:
+            block.append(label)
+    assert block[0] == "andina"
+
+
+def test_apply_override_leaves_a_missing_style_alone():
+    # group_swatch="none" emits None; an override must not conjure one up.
+    assert apply_override(None, {"color": "#fff"}) is None
+    assert apply_override(None, None) is None

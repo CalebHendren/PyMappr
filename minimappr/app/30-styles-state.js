@@ -40,6 +40,26 @@ function nestsWithin(rows, colorKey, symbolKey){
   return true;
 }
 
+// Legend rows are identified by a tagged key - the same tagging legendCounts
+// uses - so a value in both the colour and the symbol column cannot have one
+// row's customization land on the other. NUL separates the parts because it
+// cannot occur in a data value, unlike "/" or ":" which routinely do.
+const ROW_SEP="\u0000";
+function rowKey(kind, ...parts){ return [kind,...parts].join(ROW_SEP); }
+// A style with whatever colour/marker/size the user pinned for that row.
+// Absent fields mean "whatever the styling rules worked out", so a row that
+// was only renamed still follows a palette change.
+function applyOverride(style, o){
+  if(!style || !o) return style;
+  return {color:o.color||style.color, marker:o.marker||style.marker,
+          size:o.size||style.size};
+}
+function overrideLabel(o){ return (o && o.label) ? String(o.label) : null; }
+function isHidden(o){ return !!(o && o.hidden); }
+function manualOrder(o){
+  return (o && o.order!=null) ? Number(o.order) : Number.MAX_SAFE_INTEGER;
+}
+
 // Whether to treat the two columns as a hierarchy, honouring the user's
 // choice: "auto" detects it, "always" forces it, "never" refuses. Every
 // caller goes through here so the map's shapes and the legend's layout can
@@ -223,15 +243,26 @@ function resolveGroups(ds){
   const rows = ds.rows;
   if(ds.symbolBy){
     const {colorMap,symbolMap} = attributeStyleMaps(rows, ds.colorBy, ds.symbolBy);
+    const nestedNow = resolveNesting(rows, ds.colorBy, ds.symbolBy, opts.legHierarchy);
     const combos = uniqueInOrder(rows.map(r=>JSON.stringify([r._attr[ds.colorBy]??"", r._attr[ds.symbolBy]??""])));
     const groups = combos.map(js=>{
       const [cv,sv]=JSON.parse(js);
       const sub = rows.filter(r=>(r._attr[ds.colorBy]??"")===cv && (r._attr[ds.symbolBy]??"")===sv);
       const label = [cv,sv].filter(Boolean).join(" / ") || "All points";
       const defColor = Object.values(colorMap)[0]||DEFAULT_PALETTE[0];
-      return {label, rows:sub, style:{color:colorMap[cv]||defColor, marker:symbolMap[sv]||"Circle", size:ds.base.size}};
+      let style={color:colorMap[cv]||defColor, marker:symbolMap[sv]||"Circle", size:ds.base.size};
+      // The row that governs a combination depends on the shape of the key:
+      // a nested leaf owns the whole combination, while a crossed key takes
+      // its colour from the colour row and its shape from the symbol row.
+      if(nestedNow){
+        style=applyOverride(style, ds.overrides[rowKey("pair",cv,sv)]);
+      } else {
+        style=applyOverride(style, ds.overrides[rowKey("symbol",sv)]);
+        const co=ds.overrides[rowKey("color",cv)];
+        if(co&&co.color) style={...style, color:co.color};
+      }
+      return {label, rows:sub, style};
     });
-    applyOverrides(ds, groups);
     return {mode:"attr", groups, colorMap, symbolMap, colorKey:ds.colorBy, symbolKey:ds.symbolBy};
   }
   const grp = groupPoints(rows, ds.groupBy);
@@ -240,10 +271,7 @@ function resolveGroups(ds){
   const styles = defaultStyles(labels, colorKeys, ds.varySymbols, ds.base);
   const groups = grp.map(([label,sub])=>({label, rows:sub, style:{...styles[label]}}));
   if(!ds.groupBy && groups.length===1) groups[0].label = ds.name;
-  applyOverrides(ds, groups);
+  for(const g of groups) g.style=applyOverride(g.style, ds.overrides[rowKey("group",g.label)]);
   return {mode:"group", groups};
-}
-function applyOverrides(ds, groups){
-  for(const g of groups){ const o=ds.overrides[g.label]; if(o) g.style={...g.style,...o}; }
 }
 

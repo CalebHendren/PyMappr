@@ -21,12 +21,30 @@ from dataclasses import asdict, dataclass, fields
 
 import pandas as pd
 
-from pymappr.styles import PointStyle, owner_map, resolve_nesting
+from pymappr.styles import (PointStyle, apply_override, owner_map,
+                            resolve_nesting)
 
 __all__ = ["NEUTRAL_MARKER_COLOR", "LEGEND_LOCATIONS", "HIERARCHY_MODES",
            "ENTRY_ORDERS", "COUNT_FORMATS", "GROUP_SWATCHES", "FONT_FAMILIES",
            "TITLE_ALIGNMENTS", "LegendOptions", "legend_counts",
-           "legend_sections", "order_labels"]
+           "legend_sections", "order_labels", "ROW_SEP", "row_key",
+           "apply_override", "override_label", "is_hidden", "manual_order"]
+
+# Legend rows are identified by a tagged key - the same tagging
+# :func:`legend_counts` uses - so a value that appears in both the color and
+# the symbol column cannot have one row's customization land on the other.
+# NUL separates the parts because it cannot occur in a data value, unlike
+# "/" or ":" which routinely do.
+ROW_SEP = "\x00"
+
+
+def row_key(kind: str, *parts: str) -> str:
+    """A legend row's identity: ``row_key("pair", genus, species)``.
+
+    *kind* is ``"group"`` (a group-by row), ``"color"``, ``"symbol"``, or
+    ``"pair"`` (a nested key's leaf).
+    """
+    return ROW_SEP.join((kind,) + tuple(str(p) for p in parts))
 
 # Marker color used in the legend's "symbol" key, where shape (not color)
 # carries the meaning. Only meaningful for crossed data, where a shape really
@@ -50,7 +68,8 @@ ENTRY_ORDERS = {"As in data": "data",
                 "A \N{EN DASH} Z": "az",
                 "Z \N{EN DASH} A": "za",
                 "Count, high to low": "count_desc",
-                "Count, low to high": "count_asc"}
+                "Count, low to high": "count_asc",
+                "Manual": "manual"}
 
 # Keys are samples rather than descriptions - the shape of the result is
 # easier to pick from than a name for it.
@@ -200,6 +219,40 @@ class LegendOptions:
         return 0.4 if sectioned else 0.8
 
 
+# --------------------------------------------------------------- overrides
+
+# A per-row customization is a plain dict so it serializes straight into a
+# project file. Every field is optional: an absent one means "whatever the
+# styling rules worked out", which is what keeps a customized row following
+# a palette change it did not ask to opt out of.
+#
+#   label  - replacement text, or None/"" to use the data value
+#   hidden - leave the row out of the legend (the points still draw)
+#   order  - position under manual ordering
+#   color / marker / size - style overrides
+
+def override_label(override: dict | None) -> str | None:
+    """A row's replacement text, or None to use the data value."""
+    if not override:
+        return None
+    label = override.get("label")
+    return str(label) if label else None
+
+
+def is_hidden(override: dict | None) -> bool:
+    return bool(override and override.get("hidden"))
+
+
+def manual_order(override: dict | None) -> int:
+    """Where a row sits under manual ordering; unplaced rows sort last."""
+    if not override or override.get("order") is None:
+        return 1 << 30
+    try:
+        return int(override["order"])
+    except (TypeError, ValueError):
+        return 1 << 30
+
+
 # ------------------------------------------------------------------ counts
 
 def legend_counts(frame: pd.DataFrame, color_key: str | None,
@@ -231,11 +284,13 @@ def legend_counts(frame: pd.DataFrame, color_key: str | None,
     return counts
 
 
-def _legend_label(value: str, counts: dict, key,
-                  options: LegendOptions) -> str:
-    """A legend row's text: the value, or a stand-in when it is blank, with
-    its count appended in the chosen format."""
-    label = value or options.blank_label
+def _legend_label(value: str, counts: dict, key, options: LegendOptions,
+                  override: dict | None = None) -> str:
+    """A legend row's text: the value (or the name the user gave it, or a
+    stand-in when it is blank), with its count appended in the chosen
+    format. A renamed row still gets its count - the rename is about what
+    the row is called, not about dropping its numbers."""
+    label = override_label(override) or value or options.blank_label
     if not options.counts:
         return label
     n = counts.get(key)
@@ -274,6 +329,20 @@ def order_labels(values, order: str, count_of=None) -> list:
     return values
 
 
+def _ordered_rows(values, options: LegendOptions, count_of, override_of):
+    """Legend row values in display order.
+
+    Manual order is separate from the sort modes: it is whatever the user
+    dragged the rows into, and rows they never touched fall to the end in
+    their original order.
+    """
+    values = list(values)
+    if options.order == "manual":
+        return sorted(values, key=lambda v: (manual_order(override_of(v)),
+                                             values.index(v)))
+    return order_labels(values, options.order, count_of)
+
+
 # ----------------------------------------------------------------- sections
 
 def legend_sections(frame: pd.DataFrame, color_key: str | None,
@@ -282,7 +351,8 @@ def legend_sections(frame: pd.DataFrame, color_key: str | None,
                     symbol_label: str, shown_colors: set | None = None,
                     shown_symbols: set | None = None,
                     counts: dict | None = None, prefix: str = "",
-                    options: LegendOptions | None = None) -> list:
+                    options: LegendOptions | None = None,
+                    overrides: dict | None = None) -> list:
     """Legend sections for a dataset styled by a color and a symbol column.
 
     Returns ``[(title, [(label, PointStyle | None, depth), ...]), ...]``,
@@ -305,17 +375,22 @@ def legend_sections(frame: pd.DataFrame, color_key: str | None,
 
     *shown_colors* / *shown_symbols* limit the rows to the values still
     visible under a filter (None = no filtering).
+
+    *overrides* maps a :func:`row_key` to that row's customization - a
+    replacement label, a hidden flag, a manual position, and pinned
+    color/marker/size.
     """
     options = options or LegendOptions()
     counts = counts or {}
+    overrides = overrides or {}
     if resolve_nesting(frame, color_key, symbol_key, options.hierarchy):
         return _nested_sections(frame, color_key, symbol_key, color_map,
                                 symbol_map, shown_colors, shown_symbols,
                                 counts, prefix, color_label, symbol_label,
-                                options)
+                                options, overrides)
     return _crossed_sections(color_map, symbol_map, shown_colors,
                              shown_symbols, counts, prefix, color_label,
-                             symbol_label, options)
+                             symbol_label, options, overrides)
 
 
 def _group_swatch(color: str, kids: list, symbol_map: dict,
@@ -332,15 +407,17 @@ def _group_swatch(color: str, kids: list, symbol_map: dict,
 
 def _nested_sections(frame, color_key, symbol_key, color_map, symbol_map,
                      shown_colors, shown_symbols, counts, prefix,
-                     color_label, symbol_label, options) -> list:
+                     color_label, symbol_label, options, overrides) -> list:
     owner = owner_map(frame, symbol_key, color_key)
     children: dict[str, list[str]] = {value: [] for value in color_map}
     for value in symbol_map:
         if shown_symbols is None or value in shown_symbols:
             children.setdefault(owner.get(value, ""), []).append(value)
     entries: list = []
-    parents = order_labels(color_map.keys(), options.order,
-                           lambda v: counts.get(("color", v), 0))
+    parent_of = {v: overrides.get(row_key("color", v)) for v in color_map}
+    parents = _ordered_rows(color_map.keys(), options,
+                            lambda v: counts.get(("color", v), 0),
+                            parent_of.get)
     # A childless group means the filter hid everything inside it, so it goes
     # too - but only when a filter is actually running. Forcing nesting onto
     # crossed columns also leaves groups childless, because each symbol value
@@ -349,19 +426,33 @@ def _nested_sections(frame, color_key, symbol_key, color_map, symbol_map,
     filtering = shown_symbols is not None
     for value in parents:
         color = color_map[value]
+        parent = parent_of.get(value)
         kids = children.get(value, [])
         if shown_colors is not None and value not in shown_colors:
             continue
         if not kids and filtering and not options.empty_groups:
             continue
-        kids = order_labels(kids, options.order,
-                            lambda k, p=value: counts.get(("pair", p, k), 0))
-        entries.append((_legend_label(value, counts, ("color", value),
-                                      options),
-                        _group_swatch(color, kids, symbol_map, options), 0))
-        entries += [(_legend_label(kid, counts, ("pair", value, kid), options),
-                     PointStyle(color=color, marker=symbol_map[kid]), 1)
-                    for kid in kids]
+        leaf_of = {k: overrides.get(row_key("pair", value, k)) for k in kids}
+        kids = _ordered_rows(kids, options,
+                             lambda k, p=value: counts.get(("pair", p, k), 0),
+                             leaf_of.get)
+        # Hiding a group hides the block it heads: its children are drawn in
+        # its colour, so leaving them behind would orphan them.
+        if is_hidden(parent):
+            continue
+        visible = [k for k in kids if not is_hidden(leaf_of.get(k))]
+        entries.append(
+            (_legend_label(value, counts, ("color", value), options, parent),
+             apply_override(
+                 _group_swatch(color, visible, symbol_map, options), parent),
+             0))
+        entries += [
+            (_legend_label(kid, counts, ("pair", value, kid), options,
+                           leaf_of.get(kid)),
+             apply_override(PointStyle(color=color, marker=symbol_map[kid]),
+                            leaf_of.get(kid)),
+             1)
+            for kid in visible]
     if not entries:
         return []
     return [(_section_title(options, prefix, color_label, symbol_label),
@@ -383,30 +474,27 @@ def _section_title(options: LegendOptions, prefix: str, *parts: str) -> str:
 
 def _crossed_sections(color_map, symbol_map, shown_colors, shown_symbols,
                       counts, prefix, color_label, symbol_label,
-                      options) -> list:
+                      options, overrides) -> list:
     sections = []
+
+    def build(source, kind, shown, base_style, label):
+        picked = [v for v in source if shown is None or v in shown]
+        of = {v: overrides.get(row_key(kind, v)) for v in picked}
+        picked = _ordered_rows(picked, options,
+                               lambda v: counts.get((kind, v), 0), of.get)
+        entries = [(_legend_label(v, counts, (kind, v), options, of.get(v)),
+                    apply_override(base_style(v), of.get(v)), 0)
+                   for v in picked if not is_hidden(of.get(v))]
+        if entries:
+            sections.append((_section_title(options, prefix, label), entries))
+
     if color_map:
-        values = order_labels(
-            [v for v in color_map if shown_colors is None or v in shown_colors],
-            options.order, lambda v: counts.get(("color", v), 0))
-        entries = [(_legend_label(v, counts, ("color", v), options),
-                    PointStyle(color=color_map[v], marker="Circle"), 0)
-                   for v in values]
-        if entries:
-            sections.append(
-                (_section_title(options, prefix, color_label or "Color"),
-                 entries))
+        build(color_map, "color", shown_colors,
+              lambda v: PointStyle(color=color_map[v], marker="Circle"),
+              color_label or "Color")
     if symbol_map:
-        values = order_labels(
-            [v for v in symbol_map
-             if shown_symbols is None or v in shown_symbols],
-            options.order, lambda v: counts.get(("symbol", v), 0))
-        entries = [(_legend_label(v, counts, ("symbol", v), options),
-                    PointStyle(color=options.symbol_swatch_color,
-                               marker=symbol_map[v]), 0)
-                   for v in values]
-        if entries:
-            sections.append(
-                (_section_title(options, prefix, symbol_label or "Symbol"),
-                 entries))
+        build(symbol_map, "symbol", shown_symbols,
+              lambda v: PointStyle(color=options.symbol_swatch_color,
+                                   marker=symbol_map[v]),
+              symbol_label or "Symbol")
     return sections

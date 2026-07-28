@@ -363,7 +363,10 @@
                   <option value="za">Z &ndash; A</option>
                   <option value="count_desc">Count, high to low</option>
                   <option value="count_asc">Count, low to high</option>
+                  <option value="manual">Manual</option>
                 </select></div>
+              <p class="hintline">Manual order comes from the arrows beside each
+                entry under <b>Style &rarr; Per-entry</b>.</p>
               <label class="check"><input type="checkbox" id="legCounts"> Show point counts</label>
               <div class="row"><label class="lbl grow">Counts look like</label>
                 <select id="legCountFormat" class="grow">
@@ -822,6 +825,26 @@ function nestsWithin(rows, colorKey, symbolKey){
   return true;
 }
 
+// Legend rows are identified by a tagged key - the same tagging legendCounts
+// uses - so a value in both the colour and the symbol column cannot have one
+// row's customization land on the other. NUL separates the parts because it
+// cannot occur in a data value, unlike "/" or ":" which routinely do.
+const ROW_SEP="\u0000";
+function rowKey(kind, ...parts){ return [kind,...parts].join(ROW_SEP); }
+// A style with whatever colour/marker/size the user pinned for that row.
+// Absent fields mean "whatever the styling rules worked out", so a row that
+// was only renamed still follows a palette change.
+function applyOverride(style, o){
+  if(!style || !o) return style;
+  return {color:o.color||style.color, marker:o.marker||style.marker,
+          size:o.size||style.size};
+}
+function overrideLabel(o){ return (o && o.label) ? String(o.label) : null; }
+function isHidden(o){ return !!(o && o.hidden); }
+function manualOrder(o){
+  return (o && o.order!=null) ? Number(o.order) : Number.MAX_SAFE_INTEGER;
+}
+
 // Whether to treat the two columns as a hierarchy, honouring the user's
 // choice: "auto" detects it, "always" forces it, "never" refuses. Every
 // caller goes through here so the map's shapes and the legend's layout can
@@ -1005,15 +1028,26 @@ function resolveGroups(ds){
   const rows = ds.rows;
   if(ds.symbolBy){
     const {colorMap,symbolMap} = attributeStyleMaps(rows, ds.colorBy, ds.symbolBy);
+    const nestedNow = resolveNesting(rows, ds.colorBy, ds.symbolBy, opts.legHierarchy);
     const combos = uniqueInOrder(rows.map(r=>JSON.stringify([r._attr[ds.colorBy]??"", r._attr[ds.symbolBy]??""])));
     const groups = combos.map(js=>{
       const [cv,sv]=JSON.parse(js);
       const sub = rows.filter(r=>(r._attr[ds.colorBy]??"")===cv && (r._attr[ds.symbolBy]??"")===sv);
       const label = [cv,sv].filter(Boolean).join(" / ") || "All points";
       const defColor = Object.values(colorMap)[0]||DEFAULT_PALETTE[0];
-      return {label, rows:sub, style:{color:colorMap[cv]||defColor, marker:symbolMap[sv]||"Circle", size:ds.base.size}};
+      let style={color:colorMap[cv]||defColor, marker:symbolMap[sv]||"Circle", size:ds.base.size};
+      // The row that governs a combination depends on the shape of the key:
+      // a nested leaf owns the whole combination, while a crossed key takes
+      // its colour from the colour row and its shape from the symbol row.
+      if(nestedNow){
+        style=applyOverride(style, ds.overrides[rowKey("pair",cv,sv)]);
+      } else {
+        style=applyOverride(style, ds.overrides[rowKey("symbol",sv)]);
+        const co=ds.overrides[rowKey("color",cv)];
+        if(co&&co.color) style={...style, color:co.color};
+      }
+      return {label, rows:sub, style};
     });
-    applyOverrides(ds, groups);
     return {mode:"attr", groups, colorMap, symbolMap, colorKey:ds.colorBy, symbolKey:ds.symbolBy};
   }
   const grp = groupPoints(rows, ds.groupBy);
@@ -1022,11 +1056,8 @@ function resolveGroups(ds){
   const styles = defaultStyles(labels, colorKeys, ds.varySymbols, ds.base);
   const groups = grp.map(([label,sub])=>({label, rows:sub, style:{...styles[label]}}));
   if(!ds.groupBy && groups.length===1) groups[0].label = ds.name;
-  applyOverrides(ds, groups);
+  for(const g of groups) g.style=applyOverride(g.style, ds.overrides[rowKey("group",g.label)]);
   return {mode:"group", groups};
-}
-function applyOverrides(ds, groups){
-  for(const g of groups){ const o=ds.overrides[g.label]; if(o) g.style={...g.style,...o}; }
 }
 
 /* ---------------- projection + frame ---------------- */
@@ -1191,13 +1222,20 @@ function render(){
       // in the attribute branch is what used to make "Show point counts" do
       // nothing at all in plain Group-by mode.
       const total=res.groups.reduce((a,g)=>a+g.rows.length,0);
-      const sizes={};
+      const sizes={}, place={};
       let rows=res.groups.map(grp=>{
-        const label=legendLabel(grp.label, grp.rows.length, total);
+        const o=ds.overrides[rowKey("group",grp.label)];
+        // Hidden rows keep their points on the map but leave the legend.
+        if(isHidden(o)) return null;
+        const label=legendLabel(overrideLabel(o)||grp.label, grp.rows.length, total);
         sizes[label]=grp.rows.length;
+        place[label]=manualOrder(o);
         return {label, style:grp.style};
-      });
-      const order=orderLabels(rows.map(r=>r.label), opts.legOrder, l=>sizes[l]||0);
+      }).filter(Boolean);
+      const labels=rows.map(r=>r.label);
+      const order = opts.legOrder==="manual"
+        ? [...labels].sort((a,b)=>(place[a]-place[b])||(labels.indexOf(a)-labels.indexOf(b)))
+        : orderLabels(labels, opts.legOrder, l=>sizes[l]||0);
       const rank={}; order.forEach((l,i)=>{ rank[l]=i; });
       rows=rows.sort((a,b)=>(rank[a.label]??0)-(rank[b.label]??0));
       const prefix=(datasets.filter(d=>d.visible).length>1 && opts.legDatasetPrefix)
@@ -1259,7 +1297,17 @@ function legendItems(entries, attrLegends){
       ? legendCounts(ds.rows,res.colorKey,res.symbolKey) : null;
     const total=counts?counts["_total"]:0;
     const countOf=key=>(counts&&counts[key])||0;
-    const lab=(v,key)=>legendLabel(v, counts?counts[key]:null, total);
+    const lab=(v,key,o)=>legendLabel(overrideLabel(o)||v, counts?counts[key]:null, total);
+    const ov=key=>ds.overrides[key];
+    // Rows in display order; manual ordering is whatever the user dragged
+    // them into, with rows they never touched falling to the end.
+    const ordered=(values, keyOf, countKey)=>{
+      if(opts.legOrder!=="manual")
+        return orderLabels(values, opts.legOrder, v=>countOf(countKey(v)));
+      return [...values].sort((a,b)=>
+        (manualOrder(ov(keyOf(a)))-manualOrder(ov(keyOf(b))))
+        || (values.indexOf(a)-values.indexOf(b)));
+    };
     if(resolveNesting(ds.rows, res.colorKey, res.symbolKey, opts.legHierarchy)){
       // The two columns form a hierarchy, so list each symbol value under the
       // colour group it belongs to, drawn in the marker and colour it has on
@@ -1272,17 +1320,24 @@ function legendItems(entries, attrLegends){
       // way a group ends up childless is forced nesting, where each symbol
       // is claimed by the first group it appears under - and dropping those
       // would take colours off the legend that are still drawn on the map.
-      const parents=orderLabels(Object.keys(res.colorMap), opts.legOrder,
-        v=>countOf("c "+v));
+      const parents=ordered(Object.keys(res.colorMap),
+        cv=>rowKey("color",cv), v=>"c "+v);
       for(const cv of parents){
         const color=res.colorMap[cv];
-        const kids=orderLabels(
+        const parentOverride=ov(rowKey("color",cv));
+        // Hiding a group hides the block it heads: its children are drawn in
+        // its colour, so leaving them behind would orphan them.
+        if(isHidden(parentOverride)) continue;
+        const kids=ordered(
           Object.keys(res.symbolMap).filter(sv=>(owner[sv]??"")===cv),
-          opts.legOrder, k=>countOf("p "+cv+" "+k));
-        rows.push({label:lab(cv,"c "+cv), depth:0,
-          style:groupSwatch(color, kids, res.symbolMap, ds.base.size)});
-        for(const sv of kids) rows.push({label:lab(sv,"p "+cv+" "+sv), depth:1,
-          style:{color, marker:res.symbolMap[sv], size:ds.base.size}});
+          sv=>rowKey("pair",cv,sv), k=>"p "+cv+" "+k)
+          .filter(sv=>!isHidden(ov(rowKey("pair",cv,sv))));
+        rows.push({label:lab(cv,"c "+cv,parentOverride), depth:0,
+          style:applyOverride(groupSwatch(color, kids, res.symbolMap, ds.base.size),
+                              parentOverride)});
+        for(const sv of kids) rows.push({label:lab(sv,"p "+cv+" "+sv,ov(rowKey("pair",cv,sv))), depth:1,
+          style:applyOverride({color, marker:res.symbolMap[sv], size:ds.base.size},
+                              ov(rowKey("pair",cv,sv)))});
       }
       if(rows.length) sections.push({title:sectionTitle(prefix,res.colorKey,res.symbolKey),
         rows, nested:true});
@@ -1291,14 +1346,20 @@ function legendItems(entries, attrLegends){
     // Genuinely crossed: a shape really does appear in every colour here, so
     // the neutral symbol swatches are honest and the two keys stay separate.
     if(Object.keys(res.colorMap).length){
-      const values=orderLabels(Object.keys(res.colorMap), opts.legOrder, v=>countOf("c "+v));
-      sections.push({title:sectionTitle(prefix,res.colorKey||"Colour"), rows:values.map(v=>
-        ({label:lab(v,"c "+v), style:{color:res.colorMap[v],marker:"Circle",size:ds.base.size}, colorOnly:true}))});
+      const values=ordered(Object.keys(res.colorMap), v=>rowKey("color",v), v=>"c "+v)
+        .filter(v=>!isHidden(ov(rowKey("color",v))));
+      const rows=values.map(v=>({label:lab(v,"c "+v,ov(rowKey("color",v))), colorOnly:true,
+        style:applyOverride({color:res.colorMap[v],marker:"Circle",size:ds.base.size},
+                            ov(rowKey("color",v)))}));
+      if(rows.length) sections.push({title:sectionTitle(prefix,res.colorKey||"Colour"), rows});
     }
     if(Object.keys(res.symbolMap).length){
-      const values=orderLabels(Object.keys(res.symbolMap), opts.legOrder, v=>countOf("s "+v));
-      sections.push({title:sectionTitle(prefix,res.symbolKey||"Symbol"), rows:values.map(v=>
-        ({label:lab(v,"s "+v), style:{color:opts.legSymbolColor,marker:res.symbolMap[v],size:ds.base.size}, symbolOnly:true}))});
+      const values=ordered(Object.keys(res.symbolMap), v=>rowKey("symbol",v), v=>"s "+v)
+        .filter(v=>!isHidden(ov(rowKey("symbol",v))));
+      const rows=values.map(v=>({label:lab(v,"s "+v,ov(rowKey("symbol",v))), symbolOnly:true,
+        style:applyOverride({color:opts.legSymbolColor,marker:res.symbolMap[v],size:ds.base.size},
+                            ov(rowKey("symbol",v)))}));
+      if(rows.length) sections.push({title:sectionTitle(prefix,res.symbolKey||"Symbol"), rows});
     }
   }
   return sections;
@@ -1604,31 +1665,109 @@ function syncStylePanel(){
   $("#opacityRange").value=ds.opacity; $("#opacityVal").textContent=Number(ds.opacity).toFixed(2);
   renderGroupOverrides(ds);
 }
+// Every legend row of a dataset, as {key, value, style, depth} - groups in
+// group-by mode, or colour values, symbol values and nested pairs in the
+// two-attribute modes. Mirrors PyMapprApp._legend_rows.
+function legendRowsFor(ds){
+  const res=resolveGroups(ds);
+  if(res.mode!=="attr"){
+    return res.groups.map(g=>({key:rowKey("group",g.label), value:g.label,
+                               style:g.style, depth:0}));
+  }
+  const rows=[];
+  if(resolveNesting(ds.rows,res.colorKey,res.symbolKey,opts.legHierarchy)){
+    const owner=ownerMap(ds.rows,res.symbolKey,res.colorKey);
+    for(const [cv,color] of Object.entries(res.colorMap)){
+      rows.push({key:rowKey("color",cv), value:cv, depth:0,
+                 style:{color,marker:"Circle",size:ds.base.size}});
+      for(const sv of Object.keys(res.symbolMap).filter(s=>(owner[s]??"")===cv))
+        rows.push({key:rowKey("pair",cv,sv), value:sv, depth:1,
+                   style:{color,marker:res.symbolMap[sv],size:ds.base.size}});
+    }
+    return rows;
+  }
+  for(const [cv,color] of Object.entries(res.colorMap))
+    rows.push({key:rowKey("color",cv), value:cv, depth:0,
+               style:{color,marker:"Circle",size:ds.base.size}});
+  for(const [sv,marker] of Object.entries(res.symbolMap))
+    rows.push({key:rowKey("symbol",sv), value:sv, depth:0,
+               style:{color:opts.legSymbolColor,marker,size:ds.base.size}});
+  return rows;
+}
+
 function renderGroupOverrides(ds){
   const box=$("#groupList");
-  const res=resolveGroups(ds);
-  if(res.mode==="attr" || (res.groups.length<=1 && !ds.groupBy)){
+  const rows=legendRowsFor(ds);
+  if(!rows.length || (rows.length<=1 && !ds.groupBy && !ds.symbolBy)){
     box.innerHTML='<span class="muted">Group the data to fine-tune each entry.</span>'; return;
   }
   box.innerHTML="";
-  res.groups.forEach(g=>{
+  rows.forEach((r,index)=>{
+    const o=ds.overrides[r.key]||{};
     const row=document.createElement("div"); row.className="row wrap";
     row.style.margin="6px 0";
-    const c=document.createElement("input"); c.type="color"; c.value=g.style.color;
-    c.addEventListener("input",()=>{ setOverride(ds,g.label,{color:c.value}); render(); renderDatasetList(); });
+    if(r.depth) row.style.paddingLeft="14px";
+
+    // Untick to leave the row out of the legend; its points stay on the map.
+    const show=document.createElement("input"); show.type="checkbox";
+    show.checked=!o.hidden; show.title="Show this row in the legend";
+    show.style.cssText="flex:0 0 auto";
+    show.addEventListener("change",()=>{ setOverride(ds,r.key,{hidden:!show.checked}); render(); });
+
+    const c=document.createElement("input"); c.type="color"; c.value=o.color||r.style.color;
+    c.addEventListener("input",()=>{ setOverride(ds,r.key,{color:c.value}); render(); renderDatasetList(); });
+
     const m=document.createElement("select"); m.style.flex="1 1 auto";
-    fillSelect(m, MARKERS, g.style.marker);
-    m.addEventListener("change",()=>{ setOverride(ds,g.label,{marker:m.value}); render(); });
+    fillSelect(m, MARKERS, o.marker||r.style.marker);
+    m.addEventListener("change",()=>{ setOverride(ds,r.key,{marker:m.value}); render(); });
+
     const sz=document.createElement("input"); sz.type="number"; sz.min="6"; sz.max="200"; sz.step="2";
-    sz.value=g.style.size; sz.title="Point size"; sz.style.cssText="width:62px;flex:0 0 auto";
-    sz.addEventListener("input",()=>{ setOverride(ds,g.label,{size:Math.max(6,Math.min(200,+sz.value||30))}); render(); });
-    const lbl=document.createElement("span"); lbl.className="nm"; lbl.style.cssText="flex:1 1 100%;font-size:12px;color:var(--muted)";
-    lbl.textContent=g.label;
-    row.appendChild(c); row.appendChild(m); row.appendChild(sz); row.appendChild(lbl);
+    sz.value=o.size||r.style.size; sz.title="Point size"; sz.style.cssText="width:62px;flex:0 0 auto";
+    sz.addEventListener("input",()=>{ setOverride(ds,r.key,{size:Math.max(6,Math.min(200,+sz.value||30))}); render(); });
+
+    // Blank label = use the value from the data.
+    const name=document.createElement("input"); name.type="text";
+    name.placeholder=r.value||"(blank)"; name.value=o.label||"";
+    name.title="Legend label (blank = the value from the data)";
+    name.style.cssText="flex:1 1 100%;font-size:12px";
+    name.addEventListener("input",()=>{ setOverride(ds,r.key,{label:name.value.trim()}); render(); });
+
+    const up=document.createElement("button"); up.textContent="↑"; up.title="Move up";
+    up.style.cssText="flex:0 0 auto;padding:2px 6px";
+    up.addEventListener("click",()=>moveRow(ds,rows,index,-1));
+    const down=document.createElement("button"); down.textContent="↓"; down.title="Move down";
+    down.style.cssText="flex:0 0 auto;padding:2px 6px";
+    down.addEventListener("click",()=>moveRow(ds,rows,index,1));
+
+    row.appendChild(show); row.appendChild(c); row.appendChild(m);
+    row.appendChild(sz); row.appendChild(up); row.appendChild(down);
+    row.appendChild(name);
     box.appendChild(row);
   });
 }
-function setOverride(ds,label,patch){ ds.overrides[label]={...(ds.overrides[label]||{}),...patch}; }
+
+// Moving writes a position for every row, not just the two that swapped: a
+// partial ordering would let untouched rows fall to the end. A nested child
+// may only move inside its own parent's block.
+function moveRow(ds, rows, index, step){
+  const target=index+step;
+  if(target<0 || target>=rows.length) return;
+  if(rows[index].depth!==rows[target].depth) return;
+  const reordered=[...rows];
+  [reordered[index],reordered[target]]=[reordered[target],reordered[index]];
+  reordered.forEach((r,position)=>setOverride(ds,r.key,{order:position}));
+  // Moving is meaningless while the legend sorts itself, so switch it over.
+  opts.legOrder="manual";
+  const sel=$("#legOrder"); if(sel) sel.value="manual";
+  render(); renderGroupOverrides(ds);
+}
+
+function setOverride(ds,key,patch){
+  const merged={...(ds.overrides[key]||{}),...patch};
+  // Drop fields that are back at their default so saved state stays clean.
+  for(const k of Object.keys(merged)) if(merged[k]===""||merged[k]===false||merged[k]==null) delete merged[k];
+  if(Object.keys(merged).length) ds.overrides[key]=merged; else delete ds.overrides[key];
+}
 
 /* ---------------- events ---------------- */
 function openModal(id){ $("#"+id).classList.add("on"); }

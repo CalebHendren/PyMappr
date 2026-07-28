@@ -7,15 +7,16 @@ from pymappr import __version__
 from pymappr.codecheck import LANGUAGES
 from pymappr.layers import (BATHYMETRY_STEPS, CONTINENT_EXTENTS,
                             LAYER_SPECS)
+from pymappr.legend import (LegendOptions, is_hidden, legend_counts,
+                            legend_sections, manual_order, order_labels,
+                            override_label, row_key)
 from pymappr.projections import CAP_CLIP_RADIUS, get_projection, is_globe
-from pymappr.legend import (LegendOptions, legend_counts, legend_sections,
-                            order_labels)
 from pymappr.renderer import (BATHYMETRY_COLORS, FILL_COLORS, FILL_LAYERS,
                               LABEL_STYLES, LINE_LAYERS, MARGINS_PLAIN,
                               MARGINS_WITH_TICKS, POINT_LAYERS, Z_BATHYMETRY,
                               Z_LAKE_FILL, Z_OCEAN, Z_POINT_LAYERS)
-from pymappr.styles import (PointStyle, attribute_style_maps,
-                            default_styles, group_points,
+from pymappr.styles import (PointStyle, apply_override, attribute_style_maps,
+                            default_styles, group_points, resolve_nesting,
                             style_by_attributes)
 from pymappr.updates import GITHUB_REPO
 
@@ -429,8 +430,11 @@ def _dataset_configs(entries, data_mode: str = "inline",
             color_map, symbol_map = attribute_style_maps(frame, color_key,
                                                          symbol_key,
                                                          options.hierarchy)
+            nested = resolve_nesting(frame, color_key, symbol_key,
+                                     options.hierarchy)
             combos = style_by_attributes(frame, color_key, symbol_key,
-                                         color_map, symbol_map)
+                                         color_map, symbol_map,
+                                         entry.legend_overrides, nested)
             raw = [label for label, _style, _sub in combos]
             display = _display_labels(raw, entry.name, multi, True, used)
             for label, style, _sub in combos:
@@ -444,7 +448,7 @@ def _dataset_configs(entries, data_mode: str = "inline",
                 entry.color_by, entry.symbol_by, prefix=prefix,
                 counts=legend_counts(frame, color_key, symbol_key)
                 if (options.counts or options.orders_by_count) else None,
-                options=options)
+                options=options, overrides=entry.legend_overrides)
         else:
             group_key = key_by_label.get(entry.group_by)
             groups = group_points(frame, group_key)
@@ -458,6 +462,12 @@ def _dataset_configs(entries, data_mode: str = "inline",
                                    palette_offset=palette_offset)
             palette_offset += len(labels)
             display = _display_labels(labels, entry.name, multi, False, used)
+            # A row the user named themselves keeps that name; the rest get
+            # the disambiguated one worked out above.
+            over = {label: entry.legend_overrides.get(row_key("group", label))
+                    for label in labels}
+            display = {label: override_label(over[label]) or text
+                       for label, text in display.items()}
             # Counts ride on the display label, exactly as the app puts them
             # on the point-group label, so the exported legend matches.
             total = sum(len(sub) for _label, sub in groups)
@@ -467,24 +477,40 @@ def _dataset_configs(entries, data_mode: str = "inline",
                            for label, text in display.items()}
             entry_styles = {}
             for label in labels:
-                style = entry.styles.get(label, fresh[label])
+                # entry.styles is the app's resolved style for the group, so
+                # it is the base here; an entry built without going through
+                # the app has only its defaults and the overrides.
+                style = apply_override(entry.styles.get(label, fresh[label]),
+                                       over[label])
                 styles[display[label]] = style
-                entry_styles[display[label]] = style
+                # Hidden rows keep their points but leave the legend.
+                if not is_hidden(over[label]):
+                    entry_styles[display[label]] = style
             by_text = {display[label]: sizes[label] for label in labels}
-            row_order += order_labels(list(entry_styles), options.order,
-                                      lambda t: by_text.get(t, 0))
+            place = {display[label]: manual_order(over[label])
+                     for label in labels}
+            ordered = _order_rows(list(entry_styles), options,
+                                  lambda t: by_text.get(t, 0), place)
+            row_order += ordered
             if group_key is not None:
                 config["group_col"] = entry.group_by
             if entry_styles:
                 title = entry.name if options.section_titles else ""
-                ordered = order_labels(list(entry_styles), options.order,
-                                       lambda t: by_text.get(t, 0))
                 sections.append((title, [(t, entry_styles[t])
                                          for t in ordered]))
         config["label_map"] = display
         configs.append(config)
     return (configs, styles, data_files, (sections if any_attr else None),
             (None if any_attr else row_order))
+
+
+def _order_rows(labels: list, options: LegendOptions, count_of,
+                place: dict) -> list:
+    """Legend row order for group-by mode, manual ordering included."""
+    if options.order == "manual":
+        return sorted(labels, key=lambda t: (place.get(t, 1 << 30),
+                                             labels.index(t)))
+    return order_labels(labels, options.order, count_of)
 
 
 def _counted(label: str, n: int, total: int, options: LegendOptions) -> str:
@@ -585,7 +611,9 @@ def build_config(state: dict, entries, project_name: str = "map",
         "data_files": data_files,
         "styles": styles,
         "legend_sections": sections,
-        "legend_rows": row_order or None,
+        # None = no explicit ordering (the sectioned legend owns its rows).
+        # An empty list is different: it means every row was hidden.
+        "legend_rows": row_order,
         # Straight from LegendOptions, so a new setting reaches the exported
         # script without another entry here. "title" is the resolved one.
         "legend": {**options.to_dict(), "title": title,
@@ -1541,9 +1569,15 @@ def add_legend(ax):
         return
     if LEGEND_SECTIONS is None:
         rows = list(STYLES)
-        if LEGEND_ROWS:
+        if LEGEND_ROWS is not None:
+            # LEGEND_ROWS is the whole legend, in order: a group left out of
+            # it keeps its points but loses its row. Empty means every row
+            # was hidden, which is not the same as "no ordering given".
             rank = {label: i for i, label in enumerate(LEGEND_ROWS)}
-            rows.sort(key=lambda label: rank.get(label, len(rank)))
+            rows = sorted((r for r in rows if r in rank),
+                          key=lambda label: rank[label])
+        if not rows:
+            return
         handles = [legend_handle(STYLES[label]) for label in rows]
         for handle, label in zip(handles, rows):
             handle.set_label(label)

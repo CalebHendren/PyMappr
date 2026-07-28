@@ -100,13 +100,20 @@ function render(){
       // in the attribute branch is what used to make "Show point counts" do
       // nothing at all in plain Group-by mode.
       const total=res.groups.reduce((a,g)=>a+g.rows.length,0);
-      const sizes={};
+      const sizes={}, place={};
       let rows=res.groups.map(grp=>{
-        const label=legendLabel(grp.label, grp.rows.length, total);
+        const o=ds.overrides[rowKey("group",grp.label)];
+        // Hidden rows keep their points on the map but leave the legend.
+        if(isHidden(o)) return null;
+        const label=legendLabel(overrideLabel(o)||grp.label, grp.rows.length, total);
         sizes[label]=grp.rows.length;
+        place[label]=manualOrder(o);
         return {label, style:grp.style};
-      });
-      const order=orderLabels(rows.map(r=>r.label), opts.legOrder, l=>sizes[l]||0);
+      }).filter(Boolean);
+      const labels=rows.map(r=>r.label);
+      const order = opts.legOrder==="manual"
+        ? [...labels].sort((a,b)=>(place[a]-place[b])||(labels.indexOf(a)-labels.indexOf(b)))
+        : orderLabels(labels, opts.legOrder, l=>sizes[l]||0);
       const rank={}; order.forEach((l,i)=>{ rank[l]=i; });
       rows=rows.sort((a,b)=>(rank[a.label]??0)-(rank[b.label]??0));
       const prefix=(datasets.filter(d=>d.visible).length>1 && opts.legDatasetPrefix)
@@ -168,7 +175,17 @@ function legendItems(entries, attrLegends){
       ? legendCounts(ds.rows,res.colorKey,res.symbolKey) : null;
     const total=counts?counts["_total"]:0;
     const countOf=key=>(counts&&counts[key])||0;
-    const lab=(v,key)=>legendLabel(v, counts?counts[key]:null, total);
+    const lab=(v,key,o)=>legendLabel(overrideLabel(o)||v, counts?counts[key]:null, total);
+    const ov=key=>ds.overrides[key];
+    // Rows in display order; manual ordering is whatever the user dragged
+    // them into, with rows they never touched falling to the end.
+    const ordered=(values, keyOf, countKey)=>{
+      if(opts.legOrder!=="manual")
+        return orderLabels(values, opts.legOrder, v=>countOf(countKey(v)));
+      return [...values].sort((a,b)=>
+        (manualOrder(ov(keyOf(a)))-manualOrder(ov(keyOf(b))))
+        || (values.indexOf(a)-values.indexOf(b)));
+    };
     if(resolveNesting(ds.rows, res.colorKey, res.symbolKey, opts.legHierarchy)){
       // The two columns form a hierarchy, so list each symbol value under the
       // colour group it belongs to, drawn in the marker and colour it has on
@@ -181,17 +198,24 @@ function legendItems(entries, attrLegends){
       // way a group ends up childless is forced nesting, where each symbol
       // is claimed by the first group it appears under - and dropping those
       // would take colours off the legend that are still drawn on the map.
-      const parents=orderLabels(Object.keys(res.colorMap), opts.legOrder,
-        v=>countOf("c "+v));
+      const parents=ordered(Object.keys(res.colorMap),
+        cv=>rowKey("color",cv), v=>"c "+v);
       for(const cv of parents){
         const color=res.colorMap[cv];
-        const kids=orderLabels(
+        const parentOverride=ov(rowKey("color",cv));
+        // Hiding a group hides the block it heads: its children are drawn in
+        // its colour, so leaving them behind would orphan them.
+        if(isHidden(parentOverride)) continue;
+        const kids=ordered(
           Object.keys(res.symbolMap).filter(sv=>(owner[sv]??"")===cv),
-          opts.legOrder, k=>countOf("p "+cv+" "+k));
-        rows.push({label:lab(cv,"c "+cv), depth:0,
-          style:groupSwatch(color, kids, res.symbolMap, ds.base.size)});
-        for(const sv of kids) rows.push({label:lab(sv,"p "+cv+" "+sv), depth:1,
-          style:{color, marker:res.symbolMap[sv], size:ds.base.size}});
+          sv=>rowKey("pair",cv,sv), k=>"p "+cv+" "+k)
+          .filter(sv=>!isHidden(ov(rowKey("pair",cv,sv))));
+        rows.push({label:lab(cv,"c "+cv,parentOverride), depth:0,
+          style:applyOverride(groupSwatch(color, kids, res.symbolMap, ds.base.size),
+                              parentOverride)});
+        for(const sv of kids) rows.push({label:lab(sv,"p "+cv+" "+sv,ov(rowKey("pair",cv,sv))), depth:1,
+          style:applyOverride({color, marker:res.symbolMap[sv], size:ds.base.size},
+                              ov(rowKey("pair",cv,sv)))});
       }
       if(rows.length) sections.push({title:sectionTitle(prefix,res.colorKey,res.symbolKey),
         rows, nested:true});
@@ -200,14 +224,20 @@ function legendItems(entries, attrLegends){
     // Genuinely crossed: a shape really does appear in every colour here, so
     // the neutral symbol swatches are honest and the two keys stay separate.
     if(Object.keys(res.colorMap).length){
-      const values=orderLabels(Object.keys(res.colorMap), opts.legOrder, v=>countOf("c "+v));
-      sections.push({title:sectionTitle(prefix,res.colorKey||"Colour"), rows:values.map(v=>
-        ({label:lab(v,"c "+v), style:{color:res.colorMap[v],marker:"Circle",size:ds.base.size}, colorOnly:true}))});
+      const values=ordered(Object.keys(res.colorMap), v=>rowKey("color",v), v=>"c "+v)
+        .filter(v=>!isHidden(ov(rowKey("color",v))));
+      const rows=values.map(v=>({label:lab(v,"c "+v,ov(rowKey("color",v))), colorOnly:true,
+        style:applyOverride({color:res.colorMap[v],marker:"Circle",size:ds.base.size},
+                            ov(rowKey("color",v)))}));
+      if(rows.length) sections.push({title:sectionTitle(prefix,res.colorKey||"Colour"), rows});
     }
     if(Object.keys(res.symbolMap).length){
-      const values=orderLabels(Object.keys(res.symbolMap), opts.legOrder, v=>countOf("s "+v));
-      sections.push({title:sectionTitle(prefix,res.symbolKey||"Symbol"), rows:values.map(v=>
-        ({label:lab(v,"s "+v), style:{color:opts.legSymbolColor,marker:res.symbolMap[v],size:ds.base.size}, symbolOnly:true}))});
+      const values=ordered(Object.keys(res.symbolMap), v=>rowKey("symbol",v), v=>"s "+v)
+        .filter(v=>!isHidden(ov(rowKey("symbol",v))));
+      const rows=values.map(v=>({label:lab(v,"s "+v,ov(rowKey("symbol",v))), symbolOnly:true,
+        style:applyOverride({color:opts.legSymbolColor,marker:res.symbolMap[v],size:ds.base.size},
+                            ov(rowKey("symbol",v)))}));
+      if(rows.length) sections.push({title:sectionTitle(prefix,res.symbolKey||"Symbol"), rows});
     }
   }
   return sections;

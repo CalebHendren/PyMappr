@@ -107,6 +107,12 @@ class DatasetEntry:
     symbol_by: str = ""
     vary_symbols: bool = False
     styles: dict[str, PointStyle] = field(default_factory=dict)
+    # Per-legend-row customization, keyed by pymappr.legend.row_key: a
+    # replacement label, a hidden flag, a manual position, and pinned
+    # color/marker/size. Unlike *styles* this covers the two-attribute
+    # modes as well, where rows are color values, symbol values and pairs
+    # rather than groups.
+    legend_overrides: dict[str, dict] = field(default_factory=dict)
     # For typed-in datasets: {"text": ..., "order": ...} so they can be
     # re-opened in the manual entry dialog and edited.
     manual: dict | None = None
@@ -127,9 +133,13 @@ def entry_to_dict(entry: DatasetEntry) -> dict:
         "color_by": entry.color_by,
         "symbol_by": entry.symbol_by,
         "vary_symbols": entry.vary_symbols,
+        # "styles" is still written so a project saved here still opens in
+        # an older PyMappr, which knows nothing about legend_overrides.
         "styles": {label: {"color": style.color, "marker": style.marker,
                            "size": style.size}
                    for label, style in entry.styles.items()},
+        "legend_overrides": {key: dict(value) for key, value
+                             in entry.legend_overrides.items()},
         "manual": entry.manual,
     }
 
@@ -152,6 +162,7 @@ def entry_from_dict(data: dict) -> DatasetEntry:
                                        size=float(raw.get("size", 30.0)))
         except (TypeError, ValueError, AttributeError):
             continue
+    overrides = _overrides_from_dict(data, styles)
     manual = data.get("manual")
     return DatasetEntry(
         dataset=dataset,
@@ -162,8 +173,35 @@ def entry_from_dict(data: dict) -> DatasetEntry:
         symbol_by=str(data.get("symbol_by", "")),
         vary_symbols=bool(data.get("vary_symbols", False)),
         styles=styles,
+        legend_overrides=overrides,
         manual=dict(manual) if isinstance(manual, dict) else None,
     )
+
+
+_OVERRIDE_FIELDS = ("label", "hidden", "order", "color", "marker", "size")
+
+
+def _overrides_from_dict(data: dict, styles: dict) -> dict[str, dict]:
+    """Read the per-row legend customizations, migrating a project saved
+    before they existed.
+
+    Older projects carry only *styles*, keyed by group label. Those are the
+    same thing said a different way, so they are folded into group rows here
+    and the two never have to be kept in step at read time.
+    """
+    from pymappr.legend import row_key
+
+    overrides: dict[str, dict] = {}
+    for label, style in styles.items():
+        overrides[row_key("group", label)] = {
+            "color": style.color, "marker": style.marker, "size": style.size}
+    for key, raw in dict(data.get("legend_overrides", {})).items():
+        if not isinstance(raw, dict):
+            continue
+        kept = {k: raw[k] for k in _OVERRIDE_FIELDS if raw.get(k) is not None}
+        if kept:
+            overrides.setdefault(str(key), {}).update(kept)
+    return overrides
 
 
 # ---------------------------------------------------------------- projects

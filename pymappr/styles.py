@@ -9,7 +9,7 @@ import pandas as pd
 __all__ = ["PointStyle", "MARKERS", "OPEN_SUFFIX", "DEFAULT_PALETTE",
            "group_points", "default_styles", "attribute_style_maps",
            "style_by_attributes", "LEGIBLE_MARKER_LIMIT", "nests_within",
-           "resolve_nesting", "owner_map", "marker_load"]
+           "resolve_nesting", "owner_map", "marker_load", "apply_override"]
 
 # How many distinct shapes stay tellable apart at map point sizes. MARKER_CYCLE
 # runs much longer, but past roughly this many the tail (triangle down, thin
@@ -70,6 +70,22 @@ class PointStyle:
     def is_open(self) -> bool:
         """Open markers draw only the outline in the style's color."""
         return self.marker.endswith(OPEN_SUFFIX)
+
+
+def apply_override(style: PointStyle | None,
+                   override: dict | None) -> PointStyle | None:
+    """*style* with any color/marker/size the user pinned for that legend row.
+
+    Absent fields mean "whatever the styling rules worked out", which is what
+    keeps a row the user only renamed following a palette change it never
+    asked to opt out of.
+    """
+    if not override or style is None:
+        return style
+    return PointStyle(
+        color=override.get("color") or style.color,
+        marker=override.get("marker") or style.marker,
+        size=float(override.get("size") or style.size))
 
 
 def group_points(frame: pd.DataFrame, group_by: str | None):
@@ -242,7 +258,9 @@ def attribute_style_maps(frame: pd.DataFrame, color_key: str | None,
 def style_by_attributes(frame: pd.DataFrame, color_key: str | None,
                         symbol_key: str | None,
                         color_map: dict[str, str],
-                        symbol_map: dict[str, str]):
+                        symbol_map: dict[str, str],
+                        overrides: dict | None = None,
+                        nested: bool = False):
     """Split *frame* into render groups by (color value, symbol value).
 
     Returns ``(label, PointStyle, sub_frame)`` for each distinct
@@ -250,9 +268,16 @@ def style_by_attributes(frame: pd.DataFrame, color_key: str | None,
     scatter call per combination keeps rendering fast even with hundreds of
     species, while the legend is built separately from the two maps so it
     stays compact.
+
+    *overrides* are the per-legend-row customizations, applied here as well
+    as in the legend so a restyled row still describes its points. Which row
+    governs a combination depends on the shape of the key: under a nested
+    key the leaf row owns the whole combination, while a crossed key takes
+    the color from its color row and the shape from its symbol row.
     """
     if frame.empty:
         return []
+    overrides = overrides or {}
     ckey = color_key if (color_key and color_key in frame.columns) else None
     skey = symbol_key if (symbol_key and symbol_key in frame.columns) else None
     blank = pd.Series([""] * len(frame), index=frame.index)
@@ -266,5 +291,26 @@ def style_by_attributes(frame: pd.DataFrame, color_key: str | None,
         label = " / ".join(p for p in (cval, sval) if p) or "All points"
         style = PointStyle(color=color_map.get(cval, default_color),
                            marker=symbol_map.get(sval, "Circle"))
+        if overrides:
+            style = _override_for(style, overrides, cval, sval, nested)
         groups.append((label, style, sub))
     return groups
+
+
+def _override_for(style: PointStyle, overrides: dict, cval: str, sval: str,
+                  nested: bool) -> PointStyle:
+    """Apply whichever legend row's customization governs this combination.
+
+    Keys are built inline rather than imported from pymappr.legend, which
+    imports this module.
+    """
+    sep = "\x00"
+    if nested:
+        return apply_override(style, overrides.get(sep.join(("pair", cval,
+                                                             sval))))
+    # Crossed: color comes from the color row, shape and size from the
+    # symbol row, exactly as the two independent keys show them.
+    style = apply_override(style, overrides.get(sep.join(("symbol", sval))))
+    color = (overrides.get(sep.join(("color", cval))) or {}).get("color")
+    return PointStyle(color=color or style.color, marker=style.marker,
+                      size=style.size)
