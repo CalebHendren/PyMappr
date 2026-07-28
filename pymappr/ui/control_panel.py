@@ -270,6 +270,12 @@ class ControlPanel(ttk.Frame):
         self._check(sec, "Draw legend frame", self.legend_frame_var,
                     self.app.on_legend_options)
 
+        # Counts are built into the legend rows themselves, so changing this
+        # has to re-derive the groups rather than just restyle the legend.
+        self.legend_counts_var = tk.BooleanVar(value=False)
+        self._check(sec, "Show point counts", self.legend_counts_var,
+                    self.app.on_legend_counts)
+
         self.legend_loc_var = tk.StringVar(value="best")
         self._combo_row(sec, "Position:", self.legend_loc_var,
                         LEGEND_LOCATIONS, self.app.on_legend_position,

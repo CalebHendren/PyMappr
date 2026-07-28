@@ -88,7 +88,8 @@ function syncMapControls(){
   $("#mapTitle").value=opts.title; $("#showCompass").checked=opts.compass; $("#showLabels").checked=opts.labels;
   $("#matColor").value=opts.matColor;
   $("#lineWidth").value=opts.lineWidth; $("#lwVal").textContent=Number(opts.lineWidth).toFixed(2);
-  $("#legShow").checked=opts.legShow; $("#legFrame").checked=opts.legFrame; $("#legPos").value=opts.legPos;
+  $("#legShow").checked=opts.legShow; $("#legFrame").checked=opts.legFrame;
+  $("#legCounts").checked=opts.legCounts; $("#legPos").value=opts.legPos;
   $("#legTitle").value=opts.legTitle; $("#legFont").value=opts.legFont;
   $("#legCols").value=opts.legCols; $("#legScale").value=opts.legScale;
   $("#legLabelBold").checked=opts.legLabelBold; $("#legLabelItalic").checked=opts.legLabelItalic;

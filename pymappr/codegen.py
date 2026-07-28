@@ -12,9 +12,9 @@ from pymappr.renderer import (BATHYMETRY_COLORS, FILL_COLORS, FILL_LAYERS,
                               LABEL_STYLES, LINE_LAYERS, POINT_LAYERS,
                               Z_BATHYMETRY, Z_LAKE_FILL, Z_OCEAN,
                               Z_POINT_LAYERS)
-from pymappr.styles import (NEUTRAL_MARKER_COLOR, PointStyle,
-                            attribute_style_maps, default_styles,
-                            group_points, style_by_attributes)
+from pymappr.styles import (PointStyle, attribute_style_maps,
+                            default_styles, group_points, legend_counts,
+                            legend_sections, style_by_attributes)
 from pymappr.updates import GITHUB_REPO
 
 LANGUAGES = ("Python", "R")
@@ -365,7 +365,8 @@ def _style_dict(style: PointStyle) -> dict:
             "size": style.size, "open": style.is_open}
 
 
-def _dataset_configs(entries, data_mode: str = "inline"
+def _dataset_configs(entries, data_mode: str = "inline",
+                     show_counts: bool = False
                      ) -> tuple[list[dict], dict[str, PointStyle],
                                 dict[str, str], list | None]:
     """Per-dataset script configs, the combined legend-label -> style map
@@ -432,17 +433,13 @@ def _dataset_configs(entries, data_mode: str = "inline"
             for label, style, _sub in combos:
                 styles[display[label]] = style
             prefix = f"{entry.name}: " if multi else ""
-            if color_map:
-                sections.append((prefix + (entry.color_by or "Color"),
-                                 [(value, PointStyle(color=color,
-                                                     marker="Circle"))
-                                  for value, color in color_map.items()]))
-            if symbol_map:
-                sections.append((prefix + (entry.symbol_by or "Symbol"),
-                                 [(value,
-                                   PointStyle(color=NEUTRAL_MARKER_COLOR,
-                                              marker=marker))
-                                  for value, marker in symbol_map.items()]))
+            # Same builder the app draws with, so an exported script's legend
+            # matches the map it was exported from.
+            sections += legend_sections(
+                frame, color_key, symbol_key, color_map, symbol_map,
+                entry.color_by, entry.symbol_by, prefix=prefix,
+                counts=legend_counts(frame, color_key, symbol_key)
+                if show_counts else None)
         else:
             group_key = key_by_label.get(entry.group_by)
             groups = group_points(frame, group_key)
@@ -516,8 +513,8 @@ def build_config(state: dict, entries, project_name: str = "map",
 
     layers, notes = _base_layers(m, zoom)
     label_layers = _label_layers(m, zoom)
-    datasets, styles, data_files, sections = _dataset_configs(entries,
-                                                              data_mode)
+    datasets, styles, data_files, sections = _dataset_configs(
+        entries, data_mode, bool(legend.get("counts", False)))
     title = str(legend.get("title", "")).strip()
     if not title and len(datasets) == 1 and datasets[0]["group_col"]:
         title = datasets[0]["group_col"]
@@ -771,15 +768,19 @@ def _py_config(config: dict) -> str:
         lines.append("LEGEND_SECTIONS = None"
                      "  # plain legend: one row per STYLES entry")
     else:
-        lines.append("# Sectioned legend (color key + symbol key), like "
-                     "the app's.")
+        lines.append("# Sectioned legend, like the app's: (label, style, "
+                     "depth) rows, where")
+        lines.append("# depth indents a row under the one above it (a "
+                     "nested genus/species key).")
         lines.append("LEGEND_SECTIONS = [")
         for title, entries in sections:
             lines.append(f"    ({_py(title)}, [")
-            for label, style in entries:
+            for label, style, *rest in entries:
+                depth = rest[0] if rest else 0
                 body = ", ".join(f"{_py(k)}: {_py(v)}"
                                  for k, v in _style_dict(style).items())
-                lines.append(f"        ({_py(label)}, {{{body}}}),")
+                lines.append(
+                    f"        ({_py(label)}, {{{body}}}, {depth}),")
             lines.append("    ]),")
         lines.append("]")
     lines.append("")
@@ -1511,17 +1512,31 @@ def add_legend(ax):
     def blank():
         return Line2D([], [], linestyle="", marker="")
 
+    def spacer():
+        header_rows.append(len(labels))
+        handles.append(blank())
+        labels.append(" ")
+
     for section_title, entries in LEGEND_SECTIONS:
         if handles:  # spacer between sections
-            header_rows.append(len(labels))
-            handles.append(blank())
-            labels.append(" ")
+            spacer()
         header_rows.append(len(labels))
         handles.append(blank())
         labels.append(section_title)
-        for label, style in entries:
+        # In a nested key the depth-0 rows head a block of children, so they
+        # take the header formatting (bold by default) on top of their
+        # swatch - indentation alone reads too weakly when every swatch sits
+        # in the same column.
+        nested = any(len(entry) > 2 and entry[2] for entry in entries)
+        for index, entry in enumerate(entries):
+            label, style, *rest = entry
+            depth = rest[0] if rest else 0
+            if nested and depth == 0:
+                if index:  # separate this block from the one before
+                    spacer()
+                header_rows.append(len(labels))
             handles.append(legend_handle(style, size=45))
-            labels.append("   " + label)
+            labels.append("   " * (depth + 1) + label)
     leg = ax.legend(handles, labels, loc=LEGEND["location"], title=title,
                     fontsize=LEGEND["fontsize"],
                     title_fontsize=LEGEND["title_fontsize"],

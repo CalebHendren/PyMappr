@@ -1587,9 +1587,14 @@ class MapRenderer:
         self._apply_legend_text_format(leg, leg.get_texts())
 
     def _draw_structured_legend(self) -> None:
-        """A compact legend split into titled sections (a color key and a
-        symbol key), so encoding two columns needs only ``colors + symbols``
-        rows instead of one row per combination."""
+        """A compact legend split into titled sections, so encoding two
+        columns needs only ``colors + symbols`` rows instead of one row per
+        combination.
+
+        Entries are ``(label, style)`` or ``(label, style, depth)``; *depth*
+        indents a row under the one above it, which is how a nested key lists
+        each symbol value beneath the color group it belongs to.
+        """
         handles: list = []
         labels: list[str] = []
         header_rows: list[int] = []
@@ -1597,17 +1602,31 @@ class MapRenderer:
         def blank():
             return Line2D([], [], linestyle="", marker="")
 
+        def spacer():
+            header_rows.append(len(labels))
+            handles.append(blank())
+            labels.append(" ")
+
         for title, entries in self._legend_sections:
             if handles:  # spacer between sections
-                header_rows.append(len(labels))
-                handles.append(blank())
-                labels.append(" ")
+                spacer()
             header_rows.append(len(labels))
             handles.append(blank())
             labels.append(title)
-            for label, style in entries:
+            # In a nested key the depth-0 rows head a block of children, so
+            # they take the header formatting (bold by default) on top of
+            # their swatch - indentation alone reads too weakly when every
+            # swatch sits in the same column.
+            nested = any(len(entry) > 2 and entry[2] for entry in entries)
+            for index, entry in enumerate(entries):
+                label, style, *rest = entry
+                depth = rest[0] if rest else 0
+                if nested and depth == 0:
+                    if index:  # separate this block from the one before
+                        spacer()
+                    header_rows.append(len(labels))
                 handles.append(self._legend_handle(style, size=45))
-                labels.append("   " + label)
+                labels.append("   " * (depth + 1) + label)
         leg = self.ax.legend(handles, labels,
                              title=self._legend_title,
                              fontsize=self._legend_fontsize,

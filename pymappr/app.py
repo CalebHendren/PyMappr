@@ -27,9 +27,10 @@ from pymappr.data_loader import (OPEN_FILETYPES, PointDataset,  # noqa: E402
 from pymappr.layers import LayerStore  # noqa: E402
 from pymappr.projects import PROJECT_EXTENSION, DatasetEntry  # noqa: E402
 from pymappr.renderer import MapRenderer  # noqa: E402
-from pymappr.styles import (NEUTRAL_MARKER_COLOR, PointStyle,  # noqa: E402
+from pymappr.styles import (LEGIBLE_MARKER_LIMIT, PointStyle,  # noqa: E402
                             attribute_style_maps, default_styles,
-                            group_points, style_by_attributes)
+                            group_points, legend_counts, legend_sections,
+                            marker_load, style_by_attributes)
 from pymappr.ui.column_mapper import ColumnMapperDialog  # noqa: E402
 from pymappr.ui.control_panel import ControlPanel  # noqa: E402
 from pymappr.ui.filter_bar import FilterBar  # noqa: E402
@@ -544,6 +545,7 @@ class PyMapprApp:
             "legend": {
                 "show": p.legend_show_var.get(),
                 "frame": p.legend_frame_var.get(),
+                "counts": p.legend_counts_var.get(),
                 "location": p.legend_loc_var.get(),
                 "fontsize": p.legend_fontsize_var.get(),
                 "title_fontsize": p.legend_title_fontsize_var.get(),
@@ -605,6 +607,7 @@ class PyMapprApp:
                 var.set(bool(stored.get(key, False)))
         p.legend_show_var.set(legend["show"])
         p.legend_frame_var.set(legend["frame"])
+        p.legend_counts_var.set(legend["counts"])
         p.legend_loc_var.set(legend["location"])
         p.legend_fontsize_var.set(legend["fontsize"])
         p.legend_title_fontsize_var.set(legend["title_fontsize"])
@@ -930,6 +933,28 @@ class PyMapprApp:
         self.renderer.set_point_groups(render_groups)
         self._apply_legend(redraw=False)
         self.renderer.redraw()
+        self._warn_marker_load(visible)
+
+    def _warn_marker_load(self, visible: list[DatasetEntry]) -> None:
+        """Say so when a symbol column asks for more shapes than stay
+        tellable apart, rather than quietly drawing an unreadable map."""
+        worst, worst_entry = 0, None
+        for entry in visible:
+            symbol_key = self._entry_key(entry, entry.symbol_by)
+            if symbol_key is None:
+                continue
+            load = marker_load(entry.dataset.frame,
+                               self._entry_key(entry, entry.color_by),
+                               symbol_key)
+            if load > worst:
+                worst, worst_entry = load, entry
+        if worst > LEGIBLE_MARKER_LIMIT and worst_entry is not None:
+            self.set_status(
+                f"{worst_entry.name}: \N{LEFT DOUBLE QUOTATION MARK}"
+                f"{worst_entry.symbol_by}\N{RIGHT DOUBLE QUOTATION MARK} "
+                f"needs {worst} shapes, more than the {LEGIBLE_MARKER_LIMIT} "
+                "that stay easy to tell apart. Consider a Color by column "
+                "that groups them, or filtering to fewer values.")
 
     def _plain_groups(self, entry: DatasetEntry, palette_offset: int,
                       multi: bool, used_labels: set[str]):
@@ -1000,22 +1025,12 @@ class PyMapprApp:
         prefix = f"{entry.name}: " if multi else ""
         shown_colors = shown_values(color_key)
         shown_symbols = shown_values(symbol_key)
-        sections = []
-        if color_map:
-            entries = [(value, PointStyle(color=color, marker="Circle"))
-                       for value, color in color_map.items()
-                       if shown_colors is None or value in shown_colors]
-            if entries:
-                sections.append((prefix + (entry.color_by or "Color"),
-                                 entries))
-        if symbol_map:
-            entries = [(value, PointStyle(color=NEUTRAL_MARKER_COLOR,
-                                          marker=marker))
-                       for value, marker in symbol_map.items()
-                       if shown_symbols is None or value in shown_symbols]
-            if entries:
-                sections.append((prefix + (entry.symbol_by or "Symbol"),
-                                 entries))
+        counts = (legend_counts(shown_frame, color_key, symbol_key)
+                  if self.panel.legend_counts_var.get() else {})
+        sections = legend_sections(
+            frame, color_key, symbol_key, color_map, symbol_map,
+            entry.color_by, entry.symbol_by, shown_colors=shown_colors,
+            shown_symbols=shown_symbols, counts=counts, prefix=prefix)
         return render, sections
 
     def on_filter(self) -> None:
@@ -1078,6 +1093,11 @@ class PyMapprApp:
 
     def on_legend_options(self) -> None:
         self._apply_legend()
+
+    def on_legend_counts(self) -> None:
+        # The counts live in the legend row labels, so the groups have to be
+        # rebuilt, not just the legend restyled.
+        self._push_points()
 
     def on_legend_position(self) -> None:
         # Choosing a preset position discards any manual (dragged) placement.

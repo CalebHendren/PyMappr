@@ -328,6 +328,7 @@
             <div class="body">
               <label class="check"><input type="checkbox" id="legShow" checked> Show legend</label>
               <label class="check"><input type="checkbox" id="legFrame" checked> Draw frame</label>
+              <label class="check"><input type="checkbox" id="legCounts"> Show point counts</label>
               <div class="row"><label class="lbl grow">Position</label>
                 <select id="legPos" class="grow">
                   <option value="tr">Top right</option>
@@ -695,12 +696,49 @@ function defaultStyles(labels, colorKeys, varySymbols, base){
   });
   return styles;
 }
+// True when every value of symbolKey sits under exactly one value of colorKey -
+// a hierarchy (genus/species) rather than a cross-product. Nesting is what makes
+// it safe to reuse shapes across colour groups and to draw one nested key.
+function nestsWithin(rows, colorKey, symbolKey){
+  if(!colorKey || !symbolKey || !rows.length) return false;
+  const owner={};
+  for(const r of rows){
+    const c=r._attr[colorKey]??"", s=r._attr[symbolKey]??"";
+    if(owner[s]!==undefined && owner[s]!==c) return false;
+    owner[s]=c;
+  }
+  return true;
+}
+// How many shapes the reader has to tell apart: under nesting the largest group,
+// otherwise every symbol value needs its own.
+function markerLoad(rows, colorKey, symbolKey){
+  if(!symbolKey || !rows.length) return 0;
+  if(!nestsWithin(rows, colorKey, symbolKey))
+    return uniqueInOrder(rows.map(r=>r._attr[symbolKey]??"")).length;
+  const per={};
+  for(const r of rows){
+    const c=r._attr[colorKey]??"", s=r._attr[symbolKey]??"";
+    (per[c]=per[c]||new Set()).add(s);
+  }
+  return Math.max(0,...Object.values(per).map(s=>s.size));
+}
 function attributeStyleMaps(rows, colorKey, symbolKey){
   const colorMap={}, symbolMap={};
   if(colorKey){ uniqueInOrder(rows.map(r=>r._attr[colorKey]??"")).forEach(v=>{
     colorMap[v]=DEFAULT_PALETTE[Object.keys(colorMap).length%DEFAULT_PALETTE.length]; }); }
-  if(symbolKey){ uniqueInOrder(rows.map(r=>r._attr[symbolKey]??"")).forEach(v=>{
-    symbolMap[v]=MARKER_CYCLE[Object.keys(symbolMap).length%MARKER_CYCLE.length]; }); }
+  if(symbolKey){
+    // Shapes may only repeat when a colour tells the repeats apart, so the
+    // cycle restarts per colour group when the columns nest: three genera of
+    // three species each then need three shapes rather than nine.
+    const nested=nestsWithin(rows, colorKey, symbolKey);
+    const owner={};
+    if(nested) for(const r of rows) owner[r._attr[symbolKey]??""]=r._attr[colorKey]??"";
+    const seen={};
+    uniqueInOrder(rows.map(r=>r._attr[symbolKey]??"")).forEach(v=>{
+      const g=nested?(owner[v]??""):"";
+      const i=seen[g]||0; seen[g]=i+1;
+      symbolMap[v]=MARKER_CYCLE[i%MARKER_CYCLE.length]; });
+  }
   return {colorMap, symbolMap};
 }
 
@@ -731,7 +769,7 @@ const opts = {
   orientation:"landscape", showLand:true, landColor:"#ffffff", showBorders:true,
   showCoast:true, ocean:"blue", graticule:0, title:"", compass:false, labels:false,
   matColor:"#ffffff", lineWidth:1,
-  legShow:true, legFrame:true, legPos:"tr", legTitle:"", legFont:12, legCols:1, legScale:1,
+  legShow:true, legFrame:true, legCounts:false, legPos:"tr", legTitle:"", legFont:12, legCols:1, legScale:1,
   legLabelBold:false, legLabelItalic:false, legLabelUnderline:false,
   legTitleBold:true, legTitleItalic:false, legTitleUnderline:false,
 };
@@ -988,16 +1026,57 @@ function legendItems(entries, attrLegends){
     sections.push({title, rows:entries.map(e=>({label:e.label, style:e.style}))});
   }
   for(const {ds,res} of attrLegends){
+    const counts=opts.legCounts?legendCounts(ds.rows,res.colorKey,res.symbolKey):null;
+    const lab=(v,key)=>{ const n=counts&&counts[key];
+      return (v||"(blank)")+(n===undefined||n===null?"":" ("+n+")"); };
+    if(nestsWithin(ds.rows, res.colorKey, res.symbolKey)){
+      // The two columns form a hierarchy, so list each symbol value under the
+      // colour group it belongs to, drawn in the marker and colour it has on
+      // the map. Two independent keys would imply colours x symbols
+      // combinations when only `symbols` of them exist, and leave the reader
+      // to work out which colour each symbol goes with by hunting the map.
+      const owner={};
+      for(const r of ds.rows) owner[r._attr[res.symbolKey]??""]=r._attr[res.colorKey]??"";
+      const rows=[];
+      for(const [cv,color] of Object.entries(res.colorMap)){
+        const kids=Object.keys(res.symbolMap).filter(sv=>(owner[sv]??"")===cv);
+        if(!kids.length) continue;
+        rows.push({label:lab(cv,"c "+cv), depth:0,
+          style:{color, marker:"Circle", size:ds.base.size}});
+        for(const sv of kids) rows.push({label:lab(sv,"p "+cv+" "+sv), depth:1,
+          style:{color, marker:res.symbolMap[sv], size:ds.base.size}});
+      }
+      if(rows.length) sections.push({
+        title:[res.colorKey,res.symbolKey].filter(Boolean).join(" / ")||"Key",
+        rows, nested:true});
+      continue;
+    }
+    // Genuinely crossed: a shape really does appear in every colour here, so
+    // the neutral symbol swatches are honest and the two keys stay separate.
     if(Object.keys(res.colorMap).length){
       sections.push({title:res.colorKey||"Colour", rows:Object.entries(res.colorMap).map(([v,c])=>
-        ({label:v||"(blank)", style:{color:c,marker:"Circle",size:ds.base.size}, colorOnly:true}))});
+        ({label:lab(v,"c "+v), style:{color:c,marker:"Circle",size:ds.base.size}, colorOnly:true}))});
     }
     if(Object.keys(res.symbolMap).length){
       sections.push({title:res.symbolKey||"Symbol", rows:Object.entries(res.symbolMap).map(([v,m])=>
-        ({label:v||"(blank)", style:{color:"#555",marker:m,size:ds.base.size}, symbolOnly:true}))});
+        ({label:lab(v,"s "+v), style:{color:"#555",marker:m,size:ds.base.size}, symbolOnly:true}))});
     }
   }
   return sections;
+}
+
+// Point counts for legend rows: by column value, and by "colour\0symbol" for
+// the leaf rows of a nested key.
+function legendCounts(rows, colorKey, symbolKey){
+  const counts={};
+  const bump=k=>{ counts[k]=(counts[k]||0)+1; };
+  for(const r of rows){
+    const c=r._attr[colorKey]??"", s=r._attr[symbolKey]??"";
+    if(colorKey) bump("c "+c);
+    if(symbolKey) bump("s "+s);
+    if(colorKey&&symbolKey) bump("p "+c+" "+s);
+  }
+  return counts;
 }
 
 function drawLegend(svg, W, H, entries, attrLegends){
@@ -1013,14 +1092,26 @@ function drawLegend(svg, W, H, entries, attrLegends){
 
   let maxLabel=0; let totalRows=0;
   const flat=[];
+  // A nested key's group rows head a block of children, so they take the
+  // title weight on top of their swatch - indenting alone reads too weakly
+  // when every swatch sits in the same column.
+  const indent=fs*0.9;
+  let maxIndent=0;
   for(const sec of sections){
     if(sec.title){ flat.push({type:"title",text:sec.title}); }
-    for(const r of sec.rows){ flat.push({type:"row",...r}); maxLabel=Math.max(maxLabel,textW(r.label)); totalRows++; }
+    sec.rows.forEach((r,i)=>{
+      const depth=r.depth||0;
+      if(sec.nested && depth===0 && i) flat.push({type:"gap"});
+      flat.push({type:"row",...r,depth,head:!!sec.nested&&depth===0});
+      maxLabel=Math.max(maxLabel,textW(r.label));
+      maxIndent=Math.max(maxIndent,depth*indent);
+      totalRows++;
+    });
     flat.push({type:"gap"});
   }
   // layout in columns
   const perCol=Math.ceil(flat.length/cols);
-  const colW=swW+8+maxLabel+16;
+  const colW=swW+8+maxLabel+maxIndent+16;
   let maxColRows=0;
   const colItems=[];
   for(let c=0;c<cols;c++){ colItems.push(flat.slice(c*perCol,(c+1)*perCol)); maxColRows=Math.max(maxColRows,colItems[c].length); }
@@ -1056,7 +1147,8 @@ function drawLegend(svg, W, H, entries, attrLegends){
         t.textContent=item.text; g.appendChild(t);
         yy+=rowH;
       } else if(item.type==="row"){
-        const mx=cx0+swW/2, my=yy;
+        const dx=(item.depth||0)*indent;
+        const mx=cx0+dx+swW/2, my=yy;
         const r_=Math.min(sizePx(item.style.size)*scale, fs*0.8*scale);
         const rr=Math.max(3.2, r_);
         const p=el("path",{d:markerPath(item.style.marker,rr),
@@ -1065,10 +1157,11 @@ function drawLegend(svg, W, H, entries, attrLegends){
           p.setAttribute("stroke",item.style.color); p.setAttribute("stroke-width",Math.max(1,rr*0.24)); }
         else { p.setAttribute("fill",item.style.color); p.setAttribute("stroke","none"); }
         g.appendChild(p);
-        const t=el("text",{x:cx0+swW+8, y:my+fs*0.34,"font-family":"sans-serif","font-size":fs,fill:"#22262c",
-          "font-weight":opts.legLabelBold?700:400});
-        if(opts.legLabelItalic) t.setAttribute("font-style","italic");
-        if(opts.legLabelUnderline) t.setAttribute("text-decoration","underline");
+        const bold=item.head?opts.legTitleBold:opts.legLabelBold;
+        const t=el("text",{x:cx0+dx+swW+8, y:my+fs*0.34,"font-family":"sans-serif","font-size":fs,fill:"#22262c",
+          "font-weight":bold?700:400});
+        if(item.head?opts.legTitleItalic:opts.legLabelItalic) t.setAttribute("font-style","italic");
+        if(item.head?opts.legTitleUnderline:opts.legLabelUnderline) t.setAttribute("text-decoration","underline");
         t.textContent=item.label; g.appendChild(t);
         yy+=rowH;
       } else { yy+=rowH*0.4; }
@@ -1525,6 +1618,7 @@ $("#lineWidth").addEventListener("input",e=>{ opts.lineWidth=+e.target.value; $(
 // legend controls
 $("#legShow").addEventListener("change",e=>{ opts.legShow=e.target.checked; render(); });
 $("#legFrame").addEventListener("change",e=>{ opts.legFrame=e.target.checked; render(); });
+$("#legCounts").addEventListener("change",e=>{ opts.legCounts=e.target.checked; render(); });
 $("#legPos").addEventListener("change",e=>{ opts.legPos=e.target.value; legendDrag=null; render(); });
 $("#legTitle").addEventListener("input",e=>{ opts.legTitle=e.target.value; render(); });
 $("#legFont").addEventListener("input",e=>{ opts.legFont=+e.target.value||12; render(); });
@@ -1652,7 +1746,8 @@ function syncMapControls(){
   $("#mapTitle").value=opts.title; $("#showCompass").checked=opts.compass; $("#showLabels").checked=opts.labels;
   $("#matColor").value=opts.matColor;
   $("#lineWidth").value=opts.lineWidth; $("#lwVal").textContent=Number(opts.lineWidth).toFixed(2);
-  $("#legShow").checked=opts.legShow; $("#legFrame").checked=opts.legFrame; $("#legPos").value=opts.legPos;
+  $("#legShow").checked=opts.legShow; $("#legFrame").checked=opts.legFrame;
+  $("#legCounts").checked=opts.legCounts; $("#legPos").value=opts.legPos;
   $("#legTitle").value=opts.legTitle; $("#legFont").value=opts.legFont;
   $("#legCols").value=opts.legCols; $("#legScale").value=opts.legScale;
   $("#legLabelBold").checked=opts.legLabelBold; $("#legLabelItalic").checked=opts.legLabelItalic;
