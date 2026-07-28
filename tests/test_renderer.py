@@ -7,6 +7,8 @@ canvas or map data required.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import numpy as np
 import pytest
 
@@ -500,3 +502,89 @@ def test_empty_layer_does_not_crash_plotting():
     r = _renderer(9.0, 6.5)
     empty = gpd.GeoDataFrame(geometry=[])
     assert r._plot_gdf_copies(empty, zorder=1, facecolor="none") == []
+
+
+# ---------------------------------------------------------- nested legend
+
+
+def _beetle_sections(**kwargs):
+    import pandas as pd
+
+    from pymappr.styles import (attribute_style_maps, legend_counts,
+                                legend_sections)
+    path = (Path(__file__).resolve().parent.parent / "sample_data"
+            / "south_america_beetles.csv")
+    frame = pd.read_csv(path).rename(columns={"Genus": "name1",
+                                              "Species": "name2"})
+    cmap, smap = attribute_style_maps(frame, "name1", "name2")
+    counts = (legend_counts(frame, "name1", "name2")
+              if kwargs.pop("counts", False) else None)
+    return frame, legend_sections(frame, "name1", "name2", cmap, smap,
+                                  "Genus", "Species", counts=counts,
+                                  **kwargs)
+
+
+def _legend_rows(renderer):
+    legend = renderer.ax.get_legend()
+    return [(t.get_text(), t.get_fontweight()) for t in legend.get_texts()]
+
+
+def test_nested_legend_indents_species_under_their_genus():
+    _frame, sections = _beetle_sections()
+    r = _renderer(9.0, 6.5)
+    r.set_point_groups([("x", PointStyle(), [0.0], [0.0])])
+    r.set_structured_legend(sections)
+    r.set_legend(True, None, "upper right")
+    rows = _legend_rows(r)
+    texts = [text for text, _weight in rows]
+    assert "   Eleusis" in texts          # genus: one indent
+    assert "      chapadensis" in texts   # species: two
+
+
+def test_nested_legend_bolds_the_genus_rows_only():
+    # Every swatch sits in the same column, so indentation alone reads too
+    # weakly - the group rows take the header weight as well.
+    _frame, sections = _beetle_sections()
+    r = _renderer(9.0, 6.5)
+    r.set_point_groups([("x", PointStyle(), [0.0], [0.0])])
+    r.set_structured_legend(sections)
+    r.set_legend(True, None, "upper right", title_bold=True,
+                 label_bold=False)
+    weights = dict(_legend_rows(r))
+    assert weights["   Eleusis"] == "bold"
+    assert weights["      chapadensis"] == "normal"
+
+
+def test_crossed_legend_keeps_every_row_at_one_indent():
+    import pandas as pd
+
+    from pymappr.styles import attribute_style_maps, legend_sections
+    frame = pd.DataFrame({
+        "name1": ["forest", "forest", "scrub", "scrub"],
+        "name2": ["male", "female", "male", "female"],
+        "lon": [1.0, 2.0, 3.0, 4.0], "lat": [1.0, 2.0, 3.0, 4.0],
+    })
+    cmap, smap = attribute_style_maps(frame, "name1", "name2")
+    sections = legend_sections(frame, "name1", "name2", cmap, smap,
+                               "Habitat", "Sex")
+    r = _renderer(9.0, 6.5)
+    r.set_point_groups([("x", PointStyle(), [0.0], [0.0])])
+    r.set_structured_legend(sections)
+    r.set_legend(True, None, "upper right", title_bold=True, label_bold=False)
+    rows = _legend_rows(r)
+    entries = [(text, weight) for text, weight in rows if text.strip()
+               and text not in ("Habitat", "Sex")]
+    assert all(text.startswith("   ") and not text.startswith("      ")
+               for text, _w in entries)
+    # Only the two section titles are bold here, never the value rows.
+    assert all(weight == "normal" for _t, weight in entries)
+
+
+def test_legacy_two_tuple_entries_still_draw():
+    # Plain-mode sections are (label, style) pairs; they must keep working
+    # alongside the (label, style, depth) rows a nested key emits.
+    r = _renderer(9.0, 6.5)
+    r.set_point_groups([("x", PointStyle(), [0.0], [0.0])])
+    r.set_structured_legend([("Dataset", [("Site A", PointStyle())])])
+    r.set_legend(True, None, "upper right")
+    assert "   Site A" in [text for text, _w in _legend_rows(r)]

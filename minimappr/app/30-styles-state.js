@@ -26,12 +26,49 @@ function defaultStyles(labels, colorKeys, varySymbols, base){
   });
   return styles;
 }
+// True when every value of symbolKey sits under exactly one value of colorKey -
+// a hierarchy (genus/species) rather than a cross-product. Nesting is what makes
+// it safe to reuse shapes across colour groups and to draw one nested key.
+function nestsWithin(rows, colorKey, symbolKey){
+  if(!colorKey || !symbolKey || !rows.length) return false;
+  const owner={};
+  for(const r of rows){
+    const c=r._attr[colorKey]??"", s=r._attr[symbolKey]??"";
+    if(owner[s]!==undefined && owner[s]!==c) return false;
+    owner[s]=c;
+  }
+  return true;
+}
+// How many shapes the reader has to tell apart: under nesting the largest group,
+// otherwise every symbol value needs its own.
+function markerLoad(rows, colorKey, symbolKey){
+  if(!symbolKey || !rows.length) return 0;
+  if(!nestsWithin(rows, colorKey, symbolKey))
+    return uniqueInOrder(rows.map(r=>r._attr[symbolKey]??"")).length;
+  const per={};
+  for(const r of rows){
+    const c=r._attr[colorKey]??"", s=r._attr[symbolKey]??"";
+    (per[c]=per[c]||new Set()).add(s);
+  }
+  return Math.max(0,...Object.values(per).map(s=>s.size));
+}
 function attributeStyleMaps(rows, colorKey, symbolKey){
   const colorMap={}, symbolMap={};
   if(colorKey){ uniqueInOrder(rows.map(r=>r._attr[colorKey]??"")).forEach(v=>{
     colorMap[v]=DEFAULT_PALETTE[Object.keys(colorMap).length%DEFAULT_PALETTE.length]; }); }
-  if(symbolKey){ uniqueInOrder(rows.map(r=>r._attr[symbolKey]??"")).forEach(v=>{
-    symbolMap[v]=MARKER_CYCLE[Object.keys(symbolMap).length%MARKER_CYCLE.length]; }); }
+  if(symbolKey){
+    // Shapes may only repeat when a colour tells the repeats apart, so the
+    // cycle restarts per colour group when the columns nest: three genera of
+    // three species each then need three shapes rather than nine.
+    const nested=nestsWithin(rows, colorKey, symbolKey);
+    const owner={};
+    if(nested) for(const r of rows) owner[r._attr[symbolKey]??""]=r._attr[colorKey]??"";
+    const seen={};
+    uniqueInOrder(rows.map(r=>r._attr[symbolKey]??"")).forEach(v=>{
+      const g=nested?(owner[v]??""):"";
+      const i=seen[g]||0; seen[g]=i+1;
+      symbolMap[v]=MARKER_CYCLE[i%MARKER_CYCLE.length]; });
+  }
   return {colorMap, symbolMap};
 }
 
@@ -62,7 +99,7 @@ const opts = {
   orientation:"landscape", showLand:true, landColor:"#ffffff", showBorders:true,
   showCoast:true, ocean:"blue", graticule:0, title:"", compass:false, labels:false,
   matColor:"#ffffff", lineWidth:1,
-  legShow:true, legFrame:true, legPos:"tr", legTitle:"", legFont:12, legCols:1, legScale:1,
+  legShow:true, legFrame:true, legCounts:false, legPos:"tr", legTitle:"", legFont:12, legCols:1, legScale:1,
   legLabelBold:false, legLabelItalic:false, legLabelUnderline:false,
   legTitleBold:true, legTitleItalic:false, legTitleUnderline:false,
 };

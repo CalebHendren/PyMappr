@@ -3,6 +3,7 @@ import shutil
 import subprocess
 import sys
 import types
+from pathlib import Path
 
 import pandas as pd
 import pytest
@@ -499,10 +500,12 @@ def test_attribute_mode_emits_sectioned_legend():
     assert sections is not None
     titles = [title for title, _entries in sections]
     assert titles == ["Label"]
-    labels = [label for label, _style in sections[0][1]]
+    labels = [label for label, _style, _depth in sections[0][1]]
     assert labels == ["Site A", "Site B"]
-    # Symbol-key entries use the neutral marker color, like the app.
+    # No color column to nest under, so this is a plain symbol key: neutral
+    # swatches at depth 0, like the app.
     assert sections[0][1][0][1]["color"] == "#555555"
+    assert all(depth == 0 for _label, _style, depth in sections[0][1])
     # Plain mode has no sections.
     plain = codegen.generate_code(make_state(), [manual_entry()], "Python")
     assert "LEGEND_SECTIONS = None" in plain
@@ -792,3 +795,61 @@ cat("R functions OK\\n")
                             text=True)
     assert result.returncode == 0, result.stderr
     assert "R functions OK" in result.stdout
+
+
+def beetle_entry():
+    """The shipped taxonomy sample: genus/species, perfectly nested."""
+    frame = pd.read_csv(Path(__file__).resolve().parent.parent
+                        / "sample_data" / "south_america_beetles.csv")
+    return entry_from_dict({
+        "name": "beetles",
+        "columns": ["name1", "name2", "lon", "lat"],
+        "name_labels": ["Genus", "Species"],
+        "rows": [[r.Genus, r.Species, r.Longitude, r.Latitude]
+                 for r in frame.itertuples()],
+        "color_by": "Genus",
+        "symbol_by": "Species",
+    })
+
+
+def test_nested_taxonomy_exports_a_nested_legend():
+    code = codegen.generate_code(make_state(), [beetle_entry()], "Python")
+    ns = exec_python(code)
+    sections = ns["LEGEND_SECTIONS"]
+    # One nested key, not a colour key plus a symbol key.
+    assert [title for title, _rows in sections] == ["Genus / Species"]
+    rows = sections[0][1]
+    genera = [label for label, _style, depth in rows if depth == 0]
+    species = [label for label, _style, depth in rows if depth == 1]
+    assert genera == ["Eleusis", "Xanthopygus", "Plociopterus"]
+    assert len(species) == 9
+    # Species swatches carry their genus's colour, never the neutral grey.
+    assert all(style["color"] != "#555555" for _label, style, _d in rows)
+    # And the map spends three shapes, not nine.
+    assert len({style["marker"] for _label, style, depth in rows
+                if depth == 1}) == 3
+
+
+def test_exported_nested_legend_draws():
+    # The generated add_legend must handle the depth field end to end.
+    matplotlib = pytest.importorskip("matplotlib")
+    matplotlib.use("Agg")
+    code = codegen.generate_code(make_state(), [beetle_entry()], "Python")
+    ns = exec_python(code)
+    fig = matplotlib.figure.Figure()
+    ax = fig.add_subplot(111)
+    ns["add_legend"](ax)  # builds its own handles from LEGEND_SECTIONS
+    legend = ax.get_legend()
+    assert legend is not None
+    texts = [t.get_text() for t in legend.get_texts()]
+    # Genus rows sit one indent in, species rows two.
+    assert "   Eleusis" in texts
+    assert "      chapadensis" in texts
+
+
+def test_counts_option_reaches_the_exported_legend():
+    state = make_state()
+    state["legend"] = {**state["legend"], "counts": True}
+    ns = exec_python(codegen.generate_code(state, [beetle_entry()], "Python"))
+    labels = [label for label, _s, _d in ns["LEGEND_SECTIONS"][0][1]]
+    assert "Eleusis (18)" in labels and "chapadensis (6)" in labels

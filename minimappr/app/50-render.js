@@ -144,16 +144,57 @@ function legendItems(entries, attrLegends){
     sections.push({title, rows:entries.map(e=>({label:e.label, style:e.style}))});
   }
   for(const {ds,res} of attrLegends){
+    const counts=opts.legCounts?legendCounts(ds.rows,res.colorKey,res.symbolKey):null;
+    const lab=(v,key)=>{ const n=counts&&counts[key];
+      return (v||"(blank)")+(n===undefined||n===null?"":" ("+n+")"); };
+    if(nestsWithin(ds.rows, res.colorKey, res.symbolKey)){
+      // The two columns form a hierarchy, so list each symbol value under the
+      // colour group it belongs to, drawn in the marker and colour it has on
+      // the map. Two independent keys would imply colours x symbols
+      // combinations when only `symbols` of them exist, and leave the reader
+      // to work out which colour each symbol goes with by hunting the map.
+      const owner={};
+      for(const r of ds.rows) owner[r._attr[res.symbolKey]??""]=r._attr[res.colorKey]??"";
+      const rows=[];
+      for(const [cv,color] of Object.entries(res.colorMap)){
+        const kids=Object.keys(res.symbolMap).filter(sv=>(owner[sv]??"")===cv);
+        if(!kids.length) continue;
+        rows.push({label:lab(cv,"c "+cv), depth:0,
+          style:{color, marker:"Circle", size:ds.base.size}});
+        for(const sv of kids) rows.push({label:lab(sv,"p "+cv+" "+sv), depth:1,
+          style:{color, marker:res.symbolMap[sv], size:ds.base.size}});
+      }
+      if(rows.length) sections.push({
+        title:[res.colorKey,res.symbolKey].filter(Boolean).join(" / ")||"Key",
+        rows, nested:true});
+      continue;
+    }
+    // Genuinely crossed: a shape really does appear in every colour here, so
+    // the neutral symbol swatches are honest and the two keys stay separate.
     if(Object.keys(res.colorMap).length){
       sections.push({title:res.colorKey||"Colour", rows:Object.entries(res.colorMap).map(([v,c])=>
-        ({label:v||"(blank)", style:{color:c,marker:"Circle",size:ds.base.size}, colorOnly:true}))});
+        ({label:lab(v,"c "+v), style:{color:c,marker:"Circle",size:ds.base.size}, colorOnly:true}))});
     }
     if(Object.keys(res.symbolMap).length){
       sections.push({title:res.symbolKey||"Symbol", rows:Object.entries(res.symbolMap).map(([v,m])=>
-        ({label:v||"(blank)", style:{color:"#555",marker:m,size:ds.base.size}, symbolOnly:true}))});
+        ({label:lab(v,"s "+v), style:{color:"#555",marker:m,size:ds.base.size}, symbolOnly:true}))});
     }
   }
   return sections;
+}
+
+// Point counts for legend rows: by column value, and by "colour\0symbol" for
+// the leaf rows of a nested key.
+function legendCounts(rows, colorKey, symbolKey){
+  const counts={};
+  const bump=k=>{ counts[k]=(counts[k]||0)+1; };
+  for(const r of rows){
+    const c=r._attr[colorKey]??"", s=r._attr[symbolKey]??"";
+    if(colorKey) bump("c "+c);
+    if(symbolKey) bump("s "+s);
+    if(colorKey&&symbolKey) bump("p "+c+" "+s);
+  }
+  return counts;
 }
 
 function drawLegend(svg, W, H, entries, attrLegends){
@@ -169,14 +210,26 @@ function drawLegend(svg, W, H, entries, attrLegends){
 
   let maxLabel=0; let totalRows=0;
   const flat=[];
+  // A nested key's group rows head a block of children, so they take the
+  // title weight on top of their swatch - indenting alone reads too weakly
+  // when every swatch sits in the same column.
+  const indent=fs*0.9;
+  let maxIndent=0;
   for(const sec of sections){
     if(sec.title){ flat.push({type:"title",text:sec.title}); }
-    for(const r of sec.rows){ flat.push({type:"row",...r}); maxLabel=Math.max(maxLabel,textW(r.label)); totalRows++; }
+    sec.rows.forEach((r,i)=>{
+      const depth=r.depth||0;
+      if(sec.nested && depth===0 && i) flat.push({type:"gap"});
+      flat.push({type:"row",...r,depth,head:!!sec.nested&&depth===0});
+      maxLabel=Math.max(maxLabel,textW(r.label));
+      maxIndent=Math.max(maxIndent,depth*indent);
+      totalRows++;
+    });
     flat.push({type:"gap"});
   }
   // layout in columns
   const perCol=Math.ceil(flat.length/cols);
-  const colW=swW+8+maxLabel+16;
+  const colW=swW+8+maxLabel+maxIndent+16;
   let maxColRows=0;
   const colItems=[];
   for(let c=0;c<cols;c++){ colItems.push(flat.slice(c*perCol,(c+1)*perCol)); maxColRows=Math.max(maxColRows,colItems[c].length); }
@@ -212,7 +265,8 @@ function drawLegend(svg, W, H, entries, attrLegends){
         t.textContent=item.text; g.appendChild(t);
         yy+=rowH;
       } else if(item.type==="row"){
-        const mx=cx0+swW/2, my=yy;
+        const dx=(item.depth||0)*indent;
+        const mx=cx0+dx+swW/2, my=yy;
         const r_=Math.min(sizePx(item.style.size)*scale, fs*0.8*scale);
         const rr=Math.max(3.2, r_);
         const p=el("path",{d:markerPath(item.style.marker,rr),
@@ -221,10 +275,11 @@ function drawLegend(svg, W, H, entries, attrLegends){
           p.setAttribute("stroke",item.style.color); p.setAttribute("stroke-width",Math.max(1,rr*0.24)); }
         else { p.setAttribute("fill",item.style.color); p.setAttribute("stroke","none"); }
         g.appendChild(p);
-        const t=el("text",{x:cx0+swW+8, y:my+fs*0.34,"font-family":"sans-serif","font-size":fs,fill:"#22262c",
-          "font-weight":opts.legLabelBold?700:400});
-        if(opts.legLabelItalic) t.setAttribute("font-style","italic");
-        if(opts.legLabelUnderline) t.setAttribute("text-decoration","underline");
+        const bold=item.head?opts.legTitleBold:opts.legLabelBold;
+        const t=el("text",{x:cx0+dx+swW+8, y:my+fs*0.34,"font-family":"sans-serif","font-size":fs,fill:"#22262c",
+          "font-weight":bold?700:400});
+        if(item.head?opts.legTitleItalic:opts.legLabelItalic) t.setAttribute("font-style","italic");
+        if(item.head?opts.legTitleUnderline:opts.legLabelUnderline) t.setAttribute("text-decoration","underline");
         t.textContent=item.label; g.appendChild(t);
         yy+=rowH;
       } else { yy+=rowH*0.4; }

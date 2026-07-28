@@ -259,6 +259,7 @@ $("#lineWidth").addEventListener("input",e=>{ opts.lineWidth=+e.target.value; $(
 // legend controls
 $("#legShow").addEventListener("change",e=>{ opts.legShow=e.target.checked; render(); });
 $("#legFrame").addEventListener("change",e=>{ opts.legFrame=e.target.checked; render(); });
+$("#legCounts").addEventListener("change",e=>{ opts.legCounts=e.target.checked; render(); });
 $("#legPos").addEventListener("change",e=>{ opts.legPos=e.target.value; legendDrag=null; render(); });
 $("#legTitle").addEventListener("input",e=>{ opts.legTitle=e.target.value; render(); });
 $("#legFont").addEventListener("input",e=>{ opts.legFont=+e.target.value||12; render(); });
