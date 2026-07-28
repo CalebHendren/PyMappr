@@ -88,14 +88,14 @@ function syncMapControls(){
   $("#mapTitle").value=opts.title; $("#showCompass").checked=opts.compass; $("#showLabels").checked=opts.labels;
   $("#matColor").value=opts.matColor;
   $("#lineWidth").value=opts.lineWidth; $("#lwVal").textContent=Number(opts.lineWidth).toFixed(2);
-  $("#legShow").checked=opts.legShow; $("#legFrame").checked=opts.legFrame;
-  $("#legCounts").checked=opts.legCounts; $("#legPos").value=opts.legPos;
-  $("#legTitle").value=opts.legTitle; $("#legFont").value=opts.legFont;
-  $("#legCols").value=opts.legCols; $("#legScale").value=opts.legScale;
-  $("#legLabelBold").checked=opts.legLabelBold; $("#legLabelItalic").checked=opts.legLabelItalic;
-  $("#legLabelUnderline").checked=opts.legLabelUnderline;
-  $("#legTitleBold").checked=opts.legTitleBold; $("#legTitleItalic").checked=opts.legTitleItalic;
-  $("#legTitleUnderline").checked=opts.legTitleUnderline;
+  // Legend controls come back from the same table that defines them, so a
+  // new setting cannot end up rendering from a restored value while its
+  // control still shows the default.
+  for(const [id,kind] of LEGEND_CONTROLS){
+    const node=$("#"+id);
+    if(!node) continue;
+    if(kind==="bool") node.checked=opts[id]; else node.value=opts[id];
+  }
 }
 
 /* ---------------- theme ---------------- */

@@ -326,23 +326,138 @@
             <summary>Legend</summary>
             <div class="body">
               <label class="check"><input type="checkbox" id="legShow" checked> Show legend</label>
-              <label class="check"><input type="checkbox" id="legFrame" checked> Draw frame</label>
-              <label class="check"><input type="checkbox" id="legCounts"> Show point counts</label>
               <div class="row"><label class="lbl grow">Position</label>
                 <select id="legPos" class="grow">
                   <option value="tr">Top right</option>
+                  <option value="tc">Top centre</option>
                   <option value="tl">Top left</option>
+                  <option value="cr">Centre right</option>
+                  <option value="cc">Centre</option>
+                  <option value="cl">Centre left</option>
                   <option value="br">Bottom right</option>
+                  <option value="bc">Bottom centre</option>
                   <option value="bl">Bottom left</option>
                 </select></div>
               <label class="block">Title <span class="muted">(blank = grouping column)</span></label>
               <input type="text" id="legTitle" placeholder="(auto)">
-              <div class="row"><label class="lbl grow">Font size</label>
-                <input type="number" id="legFont" min="6" max="28" step="1" value="12" style="width:74px"></div>
+              <p class="hintline">Tip: drag the legend on the map to place it freely;
+                double-click it to snap back.</p>
+            </div>
+          </details>
+
+          <details class="sec" open>
+            <summary>Rows and order</summary>
+            <div class="body">
+              <div class="row"><label class="lbl grow">Hierarchy</label>
+                <select id="legHierarchy" class="grow">
+                  <option value="auto">Auto (detect)</option>
+                  <option value="always">Always nest</option>
+                  <option value="never">Never nest</option>
+                </select></div>
+              <p class="hintline">Nesting also lets shapes repeat across colour groups,
+                so a hierarchy needs fewer of them.</p>
+              <div class="row"><label class="lbl grow">Order</label>
+                <select id="legOrder" class="grow">
+                  <option value="data">As in data</option>
+                  <option value="az">A &ndash; Z</option>
+                  <option value="za">Z &ndash; A</option>
+                  <option value="count_desc">Count, high to low</option>
+                  <option value="count_asc">Count, low to high</option>
+                </select></div>
+              <label class="check"><input type="checkbox" id="legCounts"> Show point counts</label>
+              <div class="row"><label class="lbl grow">Counts look like</label>
+                <select id="legCountFormat" class="grow">
+                  <option value="(n)">(12)</option>
+                  <option value="n">12</option>
+                  <option value="(n, %)">(12, 34%)</option>
+                  <option value="%">34%</option>
+                </select></div>
+              <div class="row"><label class="lbl grow">Blank values</label>
+                <input type="text" id="legBlankLabel" value="(blank)" style="width:110px"></div>
+              <label class="check"><input type="checkbox" id="legSectionTitles" checked> Show section titles</label>
+              <div class="row"><label class="lbl grow">Title separator</label>
+                <input type="text" id="legTitleSeparator" value=" / " style="width:74px"></div>
+              <label class="check"><input type="checkbox" id="legDatasetPrefix" checked> Prefix sections with the dataset name</label>
+            </div>
+          </details>
+
+          <details class="sec">
+            <summary>Nested keys</summary>
+            <div class="body">
+              <div class="row"><label class="lbl grow">Indent</label>
+                <input type="number" id="legIndent" min="0" max="12" step="1" value="3" style="width:74px"></div>
+              <label class="check"><input type="checkbox" id="legBoldGroups" checked> Bold the group rows</label>
+              <label class="check"><input type="checkbox" id="legGroupSpacer" checked> Blank row between groups</label>
+              <div class="row"><label class="lbl grow">Group swatch</label>
+                <select id="legGroupSwatch" class="grow">
+                  <option value="circle">Circle</option>
+                  <option value="child">Match first child</option>
+                  <option value="none">No swatch</option>
+                </select></div>
+              <div class="row"><label class="lbl grow">Crossed symbol colour</label>
+                <input type="color" id="legSymbolColor" value="#555555"></div>
+              <p class="hintline">The symbol colour is used only when the columns cross,
+                where a shape appears in every colour.</p>
+            </div>
+          </details>
+
+          <details class="sec">
+            <summary>Layout</summary>
+            <div class="body">
               <div class="row"><label class="lbl grow">Columns</label>
                 <input type="number" id="legCols" min="1" max="5" step="1" value="1" style="width:74px"></div>
               <div class="row"><label class="lbl grow">Marker scale</label>
                 <input type="number" id="legScale" min="0.5" max="3" step="0.25" value="1" style="width:74px"></div>
+              <div class="row"><label class="lbl grow">Row spacing</label>
+                <input type="number" id="legRowSpacing" min="0" max="3" step="0.1" value="0.5" style="width:74px"></div>
+              <div class="row"><label class="lbl grow">Swatch gap</label>
+                <input type="number" id="legSwatchGap" min="0" max="40" step="1" value="8" style="width:74px"></div>
+              <div class="row"><label class="lbl grow">Inner padding</label>
+                <input type="number" id="legPad" min="0" max="40" step="1" value="9" style="width:74px"></div>
+            </div>
+          </details>
+
+          <details class="sec">
+            <summary>Frame</summary>
+            <div class="body">
+              <label class="check"><input type="checkbox" id="legFrame" checked> Draw frame</label>
+              <div class="row"><label class="lbl grow">Fill</label>
+                <input type="color" id="legFrameColor" value="#ffffff"></div>
+              <div class="row"><label class="lbl grow">Fill opacity</label>
+                <input type="number" id="legFrameAlpha" min="0" max="1" step="0.05" value="0.92" style="width:74px"></div>
+              <div class="row"><label class="lbl grow">Border</label>
+                <input type="color" id="legFrameEdge" value="#c7ccd2"></div>
+              <div class="row"><label class="lbl grow">Border width</label>
+                <input type="number" id="legFrameWidth" min="0" max="6" step="0.5" value="1" style="width:74px"></div>
+              <div class="row"><label class="lbl grow">Corner radius</label>
+                <input type="number" id="legRadius" min="0" max="24" step="1" value="6" style="width:74px"></div>
+              <label class="check"><input type="checkbox" id="legShadow"> Drop shadow</label>
+            </div>
+          </details>
+
+          <details class="sec">
+            <summary>Text</summary>
+            <div class="body">
+              <div class="row"><label class="lbl grow">Font size</label>
+                <input type="number" id="legFont" min="6" max="28" step="1" value="12" style="width:74px"></div>
+              <div class="row"><label class="lbl grow">Title font size</label>
+                <input type="number" id="legTitleFont" min="6" max="40" step="1" value="13" style="width:74px"></div>
+              <div class="row"><label class="lbl grow">Font</label>
+                <select id="legFontFamily" class="grow">
+                  <option value="sans-serif">Sans-serif</option>
+                  <option value="serif">Serif</option>
+                  <option value="monospace">Monospace</option>
+                </select></div>
+              <div class="row"><label class="lbl grow">Title align</label>
+                <select id="legTitleAlign" class="grow">
+                  <option value="left">Left</option>
+                  <option value="center">Centre</option>
+                  <option value="right">Right</option>
+                </select></div>
+              <div class="row"><label class="lbl grow">Label colour</label>
+                <input type="color" id="legLabelColor" value="#22262c"></div>
+              <div class="row"><label class="lbl grow">Title colour</label>
+                <input type="color" id="legTitleColor" value="#1d2127"></div>
               <label class="block">Label text</label>
               <div class="btnrow">
                 <label class="check"><input type="checkbox" id="legLabelBold"> Bold</label>
@@ -355,8 +470,6 @@
                 <label class="check"><input type="checkbox" id="legTitleItalic"> Italic</label>
                 <label class="check"><input type="checkbox" id="legTitleUnderline"> Underline</label>
               </div>
-              <p class="hintline">Tip: drag the legend on the map to place it freely;
-                double-click it to snap back.</p>
             </div>
           </details>
         </section>
@@ -708,6 +821,57 @@ function nestsWithin(rows, colorKey, symbolKey){
   }
   return true;
 }
+
+// Whether to treat the two columns as a hierarchy, honouring the user's
+// choice: "auto" detects it, "always" forces it, "never" refuses. Every
+// caller goes through here so the map's shapes and the legend's layout can
+// never disagree about it. Mirrors styles.resolve_nesting.
+function resolveNesting(rows, colorKey, symbolKey, mode){
+  if(!colorKey || !symbolKey || !rows.length) return false;
+  if(mode==="never") return false;
+  if(mode==="always") return true;
+  return nestsWithin(rows, colorKey, symbolKey);
+}
+// Symbol value -> the colour group it belongs to, first occurrence wins.
+// Under real nesting each symbol has one colour so the rule never bites; it
+// only matters when nesting is forced onto crossed columns.
+function ownerMap(rows, symbolKey, colorKey){
+  const owner={};
+  for(const r of rows){
+    const s=r._attr[symbolKey]??"";
+    if(!(s in owner)) owner[s]=r._attr[colorKey]??"";
+  }
+  return owner;
+}
+// Sort legend rows only - never the colour or symbol maps, which are keyed
+// by first appearance; reshuffling those would repaint the map.
+function orderLabels(values, order, countOf){
+  const out=[...values];
+  const key=v=>(v||"").toLowerCase();
+  if(order==="az") return out.sort((a,b)=>key(a)<key(b)?-1:key(a)>key(b)?1:0);
+  if(order==="za") return out.sort((a,b)=>key(a)<key(b)?1:key(a)>key(b)?-1:0);
+  if(order==="count_desc"||order==="count_asc"){
+    const sign=order==="count_desc"?-1:1, of=countOf||(()=>0);
+    return out.sort((a,b)=>{
+      const d=sign*(of(a)-of(b));
+      return d!==0?d:(key(a)<key(b)?-1:key(a)>key(b)?1:0);
+    });
+  }
+  return out;
+}
+function ordersByCount(){ return opts.legOrder==="count_desc"||opts.legOrder==="count_asc"; }
+// A row's text: the value (or a stand-in when blank) with its count in the
+// chosen format. Mirrors legend._legend_label.
+function legendLabel(value, n, total){
+  const label = value || opts.legBlankLabel;
+  if(!opts.legCounts || n===undefined || n===null) return label;
+  const pct = total ? Math.round(100*n/total) : 0;
+  if(opts.legCountFormat==="n") return `${label} ${n}`;
+  if(opts.legCountFormat==="(n, %)") return `${label} (${n}, ${pct}%)`;
+  if(opts.legCountFormat==="%") return `${label} ${pct}%`;
+  return `${label} (${n})`;
+}
+
 function attributeStyleMaps(rows, colorKey, symbolKey){
   const colorMap={}, symbolMap={};
   if(colorKey){ uniqueInOrder(rows.map(r=>r._attr[colorKey]??"")).forEach(v=>{
@@ -715,10 +879,10 @@ function attributeStyleMaps(rows, colorKey, symbolKey){
   if(symbolKey){
     // Shapes may only repeat when a colour tells the repeats apart, so the
     // cycle restarts per colour group when the columns nest: three genera of
-    // three species each then need three shapes rather than nine.
-    const nested=nestsWithin(rows, colorKey, symbolKey);
-    const owner={};
-    if(nested) for(const r of rows) owner[r._attr[symbolKey]??""]=r._attr[colorKey]??"";
+    // three species each then need three shapes rather than nine. Turning
+    // nesting off therefore also gives every symbol its own shape again.
+    const nested=resolveNesting(rows, colorKey, symbolKey, opts.legHierarchy);
+    const owner=nested?ownerMap(rows, symbolKey, colorKey):{};
     const seen={};
     uniqueInOrder(rows.map(r=>r._attr[symbolKey]??"")).forEach(v=>{
       const g=nested?(owner[v]??""):"";
@@ -750,15 +914,74 @@ const PROJ_DEFS = {
   "Lambert: Africa":{make:()=>d3.geoAzimuthalEqualArea(), maxLat:90, origin:[20,5], lambert:true, azimuthal:true, region:"Africa"},
 };
 const OCEAN_COLORS = {none:null, grey:"#dcdcdc", blue:"#d4e6f4"};
+// Every legend control, as [element id, kind, default]. One table drives the
+// defaults below, the listeners in 70-events.js and the restore in
+// 80-view-persist-theme-boot.js, so adding a setting is one row rather than
+// four near-identical lines in three files.
+//   bool -> checkbox, num -> number input, str -> text/select/colour
+const LEGEND_CONTROLS = [
+  // what is shown at all
+  ["legShow", "bool", true],
+  ["legPos", "str", "tr"],
+  ["legTitle", "str", ""],
+  // rows and order (these change the row text, not just its look)
+  ["legHierarchy", "str", "auto"],
+  ["legOrder", "str", "data"],
+  ["legCounts", "bool", false],
+  ["legCountFormat", "str", "(n)"],
+  ["legBlankLabel", "str", "(blank)"],
+  ["legSectionTitles", "bool", true],
+  ["legTitleSeparator", "str", " / "],
+  ["legDatasetPrefix", "bool", true],
+  // No "keep empty groups" here: PyMappr needs it because its filter bar can
+  // hide every row inside a group, and MiniMappr has no filter.
+  // nested keys
+  ["legIndent", "num", 3],
+  ["legBoldGroups", "bool", true],
+  ["legGroupSpacer", "bool", true],
+  ["legGroupSwatch", "str", "circle"],
+  ["legSymbolColor", "str", "#555555"],
+  // layout
+  ["legCols", "num", 1],
+  ["legScale", "num", 1],
+  ["legRowSpacing", "num", 0.5],
+  ["legSwatchGap", "num", 8],
+  ["legPad", "num", 9],
+  // frame
+  ["legFrame", "bool", true],
+  ["legFrameColor", "str", "#ffffff"],
+  ["legFrameAlpha", "num", 0.92],
+  ["legFrameEdge", "str", "#c7ccd2"],
+  ["legFrameWidth", "num", 1],
+  ["legRadius", "num", 6],
+  ["legShadow", "bool", false],
+  // text
+  ["legFont", "num", 12],
+  ["legTitleFont", "num", 13],
+  ["legFontFamily", "str", "sans-serif"],
+  ["legLabelColor", "str", "#22262c"],
+  ["legTitleColor", "str", "#1d2127"],
+  ["legTitleAlign", "str", "left"],
+  ["legLabelBold", "bool", false],
+  ["legLabelItalic", "bool", false],
+  ["legLabelUnderline", "bool", false],
+  ["legTitleBold", "bool", true],
+  ["legTitleItalic", "bool", false],
+  ["legTitleUnderline", "bool", false],
+];
+// Changing one of these re-derives the rows; the rest only restyle. Kept for
+// readability - MiniMappr rebuilds the whole SVG either way.
+const LEGEND_CONTENT_KEYS = new Set(["legHierarchy", "legOrder", "legCounts",
+  "legCountFormat", "legBlankLabel", "legSectionTitles", "legTitleSeparator",
+  "legDatasetPrefix", "legEmptyGroups", "legGroupSwatch"]);
+
 const opts = {
   extent:"World", projection:"Equirectangular", centerLon:0, centerLat:0,
   orientation:"landscape", showLand:true, landColor:"#ffffff", showBorders:true,
   showCoast:true, ocean:"blue", graticule:0, title:"", compass:false, labels:false,
   matColor:"#ffffff", lineWidth:1,
-  legShow:true, legFrame:true, legCounts:false, legPos:"tr", legTitle:"", legFont:12, legCols:1, legScale:1,
-  legLabelBold:false, legLabelItalic:false, legLabelUnderline:false,
-  legTitleBold:true, legTitleItalic:false, legTitleUnderline:false,
 };
+for(const [id,,value] of LEGEND_CONTROLS) opts[id]=value;
 let currentProjection=null;     // the d3 projection from the last render()
 let placeMode=false;            // click-to-place points onto the map
 let placeDsId=null;             // manual dataset placed points go into
@@ -964,7 +1187,22 @@ function render(){
     if(res.mode==="attr"){
       attrLegends.push({ds,res});
     } else {
-      for(const grp of res.groups) legendEntries.push({label:grp.label, style:grp.style});
+      // Counts belong on the row text here too - reading opts.legCounts only
+      // in the attribute branch is what used to make "Show point counts" do
+      // nothing at all in plain Group-by mode.
+      const total=res.groups.reduce((a,g)=>a+g.rows.length,0);
+      const sizes={};
+      let rows=res.groups.map(grp=>{
+        const label=legendLabel(grp.label, grp.rows.length, total);
+        sizes[label]=grp.rows.length;
+        return {label, style:grp.style};
+      });
+      const order=orderLabels(rows.map(r=>r.label), opts.legOrder, l=>sizes[l]||0);
+      const rank={}; order.forEach((l,i)=>{ rank[l]=i; });
+      rows=rows.sort((a,b)=>(rank[a.label]??0)-(rank[b.label]??0));
+      const prefix=(datasets.filter(d=>d.visible).length>1 && opts.legDatasetPrefix)
+        ? ds.name+": " : "";
+      legendEntries.push({title:prefix+(ds.groupBy||ds.name||""), rows});
     }
   }
 
@@ -1006,55 +1244,87 @@ function drawCompass(svg, rect){
 function legendItems(entries, attrLegends){
   // returns array of sections: {title, rows:[{label, style, symbolOnly, colorOnly}]}
   const sections=[];
-  if(entries.length){
-    let title=opts.legTitle;
-    if(!title){ const ds=selectedDataset(); title = (ds&&ds.groupBy)||""; }
-    sections.push({title, rows:entries.map(e=>({label:e.label, style:e.style}))});
+  for(const group of entries){
+    // Group-mode datasets each get their own section, so several datasets on
+    // one map stay tellable apart instead of merging into a single list.
+    const title = opts.legSectionTitles ? (opts.legTitle || group.title || "") : "";
+    const rows = group.rows.map(e=>({label:e.label, style:e.style}));
+    if(rows.length) sections.push({title, rows});
   }
+  const manyDatasets=datasets.filter(d=>d.visible).length>1;
   for(const {ds,res} of attrLegends){
-    const counts=opts.legCounts?legendCounts(ds.rows,res.colorKey,res.symbolKey):null;
-    const lab=(v,key)=>{ const n=counts&&counts[key];
-      return (v||"(blank)")+(n===undefined||n===null?"":" ("+n+")"); };
-    if(nestsWithin(ds.rows, res.colorKey, res.symbolKey)){
+    const prefix=(manyDatasets && opts.legDatasetPrefix) ? ds.name+": " : "";
+    // Ordering by count needs the numbers even when they are not shown.
+    const counts=(opts.legCounts||ordersByCount())
+      ? legendCounts(ds.rows,res.colorKey,res.symbolKey) : null;
+    const total=counts?counts["_total"]:0;
+    const countOf=key=>(counts&&counts[key])||0;
+    const lab=(v,key)=>legendLabel(v, counts?counts[key]:null, total);
+    if(resolveNesting(ds.rows, res.colorKey, res.symbolKey, opts.legHierarchy)){
       // The two columns form a hierarchy, so list each symbol value under the
       // colour group it belongs to, drawn in the marker and colour it has on
       // the map. Two independent keys would imply colours x symbols
       // combinations when only `symbols` of them exist, and leave the reader
       // to work out which colour each symbol goes with by hunting the map.
-      const owner={};
-      for(const r of ds.rows) owner[r._attr[res.symbolKey]??""]=r._attr[res.colorKey]??"";
+      const owner=ownerMap(ds.rows, res.symbolKey, res.colorKey);
       const rows=[];
-      for(const [cv,color] of Object.entries(res.colorMap)){
-        const kids=Object.keys(res.symbolMap).filter(sv=>(owner[sv]??"")===cv);
-        if(!kids.length) continue;
+      // Every colour group is listed. MiniMappr has no filter, so the only
+      // way a group ends up childless is forced nesting, where each symbol
+      // is claimed by the first group it appears under - and dropping those
+      // would take colours off the legend that are still drawn on the map.
+      const parents=orderLabels(Object.keys(res.colorMap), opts.legOrder,
+        v=>countOf("c "+v));
+      for(const cv of parents){
+        const color=res.colorMap[cv];
+        const kids=orderLabels(
+          Object.keys(res.symbolMap).filter(sv=>(owner[sv]??"")===cv),
+          opts.legOrder, k=>countOf("p "+cv+" "+k));
         rows.push({label:lab(cv,"c "+cv), depth:0,
-          style:{color, marker:"Circle", size:ds.base.size}});
+          style:groupSwatch(color, kids, res.symbolMap, ds.base.size)});
         for(const sv of kids) rows.push({label:lab(sv,"p "+cv+" "+sv), depth:1,
           style:{color, marker:res.symbolMap[sv], size:ds.base.size}});
       }
-      if(rows.length) sections.push({
-        title:[res.colorKey,res.symbolKey].filter(Boolean).join(" / ")||"Key",
+      if(rows.length) sections.push({title:sectionTitle(prefix,res.colorKey,res.symbolKey),
         rows, nested:true});
       continue;
     }
     // Genuinely crossed: a shape really does appear in every colour here, so
     // the neutral symbol swatches are honest and the two keys stay separate.
     if(Object.keys(res.colorMap).length){
-      sections.push({title:res.colorKey||"Colour", rows:Object.entries(res.colorMap).map(([v,c])=>
-        ({label:lab(v,"c "+v), style:{color:c,marker:"Circle",size:ds.base.size}, colorOnly:true}))});
+      const values=orderLabels(Object.keys(res.colorMap), opts.legOrder, v=>countOf("c "+v));
+      sections.push({title:sectionTitle(prefix,res.colorKey||"Colour"), rows:values.map(v=>
+        ({label:lab(v,"c "+v), style:{color:res.colorMap[v],marker:"Circle",size:ds.base.size}, colorOnly:true}))});
     }
     if(Object.keys(res.symbolMap).length){
-      sections.push({title:res.symbolKey||"Symbol", rows:Object.entries(res.symbolMap).map(([v,m])=>
-        ({label:lab(v,"s "+v), style:{color:"#555",marker:m,size:ds.base.size}, symbolOnly:true}))});
+      const values=orderLabels(Object.keys(res.symbolMap), opts.legOrder, v=>countOf("s "+v));
+      sections.push({title:sectionTitle(prefix,res.symbolKey||"Symbol"), rows:values.map(v=>
+        ({label:lab(v,"s "+v), style:{color:opts.legSymbolColor,marker:res.symbolMap[v],size:ds.base.size}, symbolOnly:true}))});
     }
   }
   return sections;
 }
 
-// Point counts for legend rows: by column value, and by "colour\0symbol" for
-// the leaf rows of a nested key.
+// A nested key's group row swatch: a plain circle, the shape of its first
+// child, or nothing at all.
+function groupSwatch(color, kids, symbolMap, size){
+  if(opts.legGroupSwatch==="none") return null;
+  let marker="Circle";
+  if(opts.legGroupSwatch==="child" && kids.length) marker=symbolMap[kids[0]]||"Circle";
+  return {color, marker, size};
+}
+
+// A section's heading, or "" when headings are switched off. The dataset
+// prefix rides on the heading, so with headings off it has nothing to attach
+// to and goes too - a section titled "beetles: " would be nonsense.
+function sectionTitle(prefix, ...parts){
+  if(!opts.legSectionTitles) return "";
+  return prefix + (parts.filter(Boolean).join(opts.legTitleSeparator)||"Key");
+}
+
+// Point counts for legend rows: by column value, and by "colour symbol" for
+// the leaf rows of a nested key. "_total" is what percentages divide by.
 function legendCounts(rows, colorKey, symbolKey){
-  const counts={};
+  const counts={_total:rows.length};
   const bump=k=>{ counts[k]=(counts[k]||0)+1; };
   for(const r of rows){
     const c=r._attr[colorKey]??"", s=r._attr[symbolKey]??"";
@@ -1069,35 +1339,38 @@ function drawLegend(svg, W, H, entries, attrLegends){
   const sections=legendItems(entries, attrLegends);
   if(!sections.length) return;
   const fs=opts.legFont, scale=opts.legScale, cols=Math.max(1,opts.legCols);
-  const pad=9, rowH=fs*1.55, mr=Math.min(fs*0.7*scale, 13), swW=fs*1.7*scale;
+  const font=opts.legFontFamily||"sans-serif";
+  const titleFs=opts.legTitleFont||fs;
+  const pad=opts.legPad, gap=opts.legSwatchGap;
+  const rowH=fs*(1.05+opts.legRowSpacing), swW=fs*1.7*scale;
   const g=el("g"); g.style.cursor="move";
   // measure
-  const measure=el("text",{"font-family":"sans-serif","font-size":fs,visibility:"hidden"});
+  const measure=el("text",{"font-family":font,"font-size":fs,visibility:"hidden"});
   svg.appendChild(measure);
   const textW=s=>{ measure.textContent=s; return measure.getComputedTextLength(); };
 
-  let maxLabel=0; let totalRows=0;
+  let maxLabel=0;
   const flat=[];
   // A nested key's group rows head a block of children, so they take the
   // title weight on top of their swatch - indenting alone reads too weakly
   // when every swatch sits in the same column.
-  const indent=fs*0.9;
+  const indent=fs*0.3*opts.legIndent;
   let maxIndent=0;
   for(const sec of sections){
     if(sec.title){ flat.push({type:"title",text:sec.title}); }
     sec.rows.forEach((r,i)=>{
       const depth=r.depth||0;
-      if(sec.nested && depth===0 && i) flat.push({type:"gap"});
-      flat.push({type:"row",...r,depth,head:!!sec.nested&&depth===0});
+      if(sec.nested && depth===0 && i && opts.legGroupSpacer) flat.push({type:"gap"});
+      flat.push({type:"row",...r,depth,
+                 head:!!sec.nested&&depth===0&&opts.legBoldGroups});
       maxLabel=Math.max(maxLabel,textW(r.label));
       maxIndent=Math.max(maxIndent,depth*indent);
-      totalRows++;
     });
     flat.push({type:"gap"});
   }
   // layout in columns
   const perCol=Math.ceil(flat.length/cols);
-  const colW=swW+8+maxLabel+maxIndent+16;
+  const colW=swW+gap+maxLabel+maxIndent+16;
   let maxColRows=0;
   const colItems=[];
   for(let c=0;c<cols;c++){ colItems.push(flat.slice(c*perCol,(c+1)*perCol)); maxColRows=Math.max(maxColRows,colItems[c].length); }
@@ -1108,25 +1381,37 @@ function drawLegend(svg, W, H, entries, attrLegends){
   let bx,by;
   if(legendDrag){ bx=legendDrag.x*W; by=legendDrag.y*H; }
   else {
-    const m=14;
-    bx = opts.legPos.endsWith("r") ? W-boxW-m : m;
-    by = opts.legPos.startsWith("t") ? m+ (opts.title?30:0) : H-boxH-m;
+    const m=14, p=opts.legPos;
+    // Second character picks the horizontal edge, first the vertical one;
+    // "c" centres on that axis.
+    const hx=p[1], vy=p[0];
+    bx = hx==="r" ? W-boxW-m : hx==="l" ? m : (W-boxW)/2;
+    by = vy==="t" ? m+(opts.title?30:0) : vy==="b" ? H-boxH-m : (H-boxH)/2;
   }
   bx=Math.max(2,Math.min(bx,W-boxW-2)); by=Math.max(2,Math.min(by,H-boxH-2));
 
-  if(opts.legFrame){
-    g.appendChild(el("rect",{x:bx,y:by,width:boxW,height:boxH,rx:6,
-      fill:"rgba(255,255,255,0.92)",stroke:"#c7ccd2","stroke-width":1}));
-  } else {
-    g.appendChild(el("rect",{x:bx,y:by,width:boxW,height:boxH,rx:6,fill:"rgba(255,255,255,0.0)"}));
+  if(opts.legShadow){
+    g.appendChild(el("rect",{x:bx+3,y:by+3,width:boxW,height:boxH,rx:opts.legRadius,
+      fill:"rgba(0,0,0,0.18)"}));
   }
+  g.appendChild(el("rect",{x:bx,y:by,width:boxW,height:boxH,rx:opts.legRadius,
+    fill:opts.legFrameColor,
+    "fill-opacity":opts.legFrame?opts.legFrameAlpha:0,
+    stroke:opts.legFrame?opts.legFrameEdge:"none",
+    "stroke-width":opts.legFrameWidth}));
   for(let c=0;c<cols;c++){
     let yy=by+pad+rowH*0.5;
     const cx0=bx+pad+c*colW;
     for(const item of colItems[c]){
       if(item.type==="title"){
-        const t=el("text",{x:cx0, y:yy+fs*0.34,"font-family":"sans-serif","font-size":fs*1.02,
-          "font-weight":opts.legTitleBold?700:400,fill:"#1d2127"});
+        // Alignment is over the column the title heads, which is as much as
+        // a hand-laid-out SVG legend can honestly offer.
+        const inner=colW-16;
+        const tx = opts.legTitleAlign==="right" ? cx0+inner
+                 : opts.legTitleAlign==="center" ? cx0+inner/2 : cx0;
+        const t=el("text",{x:tx, y:yy+fs*0.34,"font-family":font,"font-size":titleFs,
+          "text-anchor":opts.legTitleAlign==="right"?"end":opts.legTitleAlign==="center"?"middle":"start",
+          "font-weight":opts.legTitleBold?700:400,fill:opts.legTitleColor});
         if(opts.legTitleItalic) t.setAttribute("font-style","italic");
         if(opts.legTitleUnderline) t.setAttribute("text-decoration","underline");
         t.textContent=item.text; g.appendChild(t);
@@ -1134,16 +1419,20 @@ function drawLegend(svg, W, H, entries, attrLegends){
       } else if(item.type==="row"){
         const dx=(item.depth||0)*indent;
         const mx=cx0+dx+swW/2, my=yy;
-        const r_=Math.min(sizePx(item.style.size)*scale, fs*0.8*scale);
-        const rr=Math.max(3.2, r_);
-        const p=el("path",{d:markerPath(item.style.marker,rr),
-          transform:`translate(${mx.toFixed(2)},${my.toFixed(2)})`});
-        if(isOpen(item.style.marker)){ p.setAttribute("fill","none");
-          p.setAttribute("stroke",item.style.color); p.setAttribute("stroke-width",Math.max(1,rr*0.24)); }
-        else { p.setAttribute("fill",item.style.color); p.setAttribute("stroke","none"); }
-        g.appendChild(p);
+        // A null style is a row that takes no swatch.
+        if(item.style){
+          const r_=Math.min(sizePx(item.style.size)*scale, fs*0.8*scale);
+          const rr=Math.max(3.2, r_);
+          const p=el("path",{d:markerPath(item.style.marker,rr),
+            transform:`translate(${mx.toFixed(2)},${my.toFixed(2)})`});
+          if(isOpen(item.style.marker)){ p.setAttribute("fill","none");
+            p.setAttribute("stroke",item.style.color); p.setAttribute("stroke-width",Math.max(1,rr*0.24)); }
+          else { p.setAttribute("fill",item.style.color); p.setAttribute("stroke","none"); }
+          g.appendChild(p);
+        }
         const bold=item.head?opts.legTitleBold:opts.legLabelBold;
-        const t=el("text",{x:cx0+dx+swW+8, y:my+fs*0.34,"font-family":"sans-serif","font-size":fs,fill:"#22262c",
+        const t=el("text",{x:cx0+dx+swW+gap, y:my+fs*0.34,"font-family":font,"font-size":fs,
+          fill:item.head?opts.legTitleColor:opts.legLabelColor,
           "font-weight":bold?700:400});
         if(item.head?opts.legTitleItalic:opts.legLabelItalic) t.setAttribute("font-style","italic");
         if(item.head?opts.legTitleUnderline:opts.legLabelUnderline) t.setAttribute("text-decoration","underline");
@@ -1154,7 +1443,6 @@ function drawLegend(svg, W, H, entries, attrLegends){
   }
   svg.removeChild(measure);
   // drag
-  g.style.cursor="move";
   g.addEventListener("mousedown",ev=>{
     ev.preventDefault(); ev.stopPropagation(); // don't also start a map pan
     const startX=ev.clientX, startY=ev.clientY, ox=bx, oy=by;
@@ -1600,21 +1888,23 @@ $("#showLabels").addEventListener("change",e=>{ opts.labels=e.target.checked; re
 $("#matColor").addEventListener("input",e=>{ opts.matColor=e.target.value; render(); });
 $("#lineWidth").addEventListener("input",e=>{ opts.lineWidth=+e.target.value; $("#lwVal").textContent=(+e.target.value).toFixed(2); render(); });
 
-// legend controls
-$("#legShow").addEventListener("change",e=>{ opts.legShow=e.target.checked; render(); });
-$("#legFrame").addEventListener("change",e=>{ opts.legFrame=e.target.checked; render(); });
-$("#legCounts").addEventListener("change",e=>{ opts.legCounts=e.target.checked; render(); });
-$("#legPos").addEventListener("change",e=>{ opts.legPos=e.target.value; legendDrag=null; render(); });
-$("#legTitle").addEventListener("input",e=>{ opts.legTitle=e.target.value; render(); });
-$("#legFont").addEventListener("input",e=>{ opts.legFont=+e.target.value||12; render(); });
-$("#legCols").addEventListener("input",e=>{ opts.legCols=+e.target.value||1; render(); });
-$("#legScale").addEventListener("input",e=>{ opts.legScale=+e.target.value||1; render(); });
-$("#legLabelBold").addEventListener("change",e=>{ opts.legLabelBold=e.target.checked; render(); });
-$("#legLabelItalic").addEventListener("change",e=>{ opts.legLabelItalic=e.target.checked; render(); });
-$("#legLabelUnderline").addEventListener("change",e=>{ opts.legLabelUnderline=e.target.checked; render(); });
-$("#legTitleBold").addEventListener("change",e=>{ opts.legTitleBold=e.target.checked; render(); });
-$("#legTitleItalic").addEventListener("change",e=>{ opts.legTitleItalic=e.target.checked; render(); });
-$("#legTitleUnderline").addEventListener("change",e=>{ opts.legTitleUnderline=e.target.checked; render(); });
+// Legend controls, wired from the LEGEND_CONTROLS table so a new setting is
+// one row there rather than another near-identical line here.
+for(const [id,kind,fallback] of LEGEND_CONTROLS){
+  const node=$("#"+id);
+  if(!node) continue;                       // control not on the page (yet)
+  const event = kind==="bool"||node.tagName==="SELECT" ? "change" : "input";
+  node.addEventListener(event, e=>{
+    if(kind==="bool") opts[id]=e.target.checked;
+    else if(kind==="num"){
+      const n=parseFloat(e.target.value);
+      opts[id]=Number.isFinite(n)?n:fallback;   // mid-edit "" and "-" are normal
+    } else opts[id]=e.target.value;
+    // Choosing a preset position discards any manual (dragged) placement.
+    if(id==="legPos") legendDrag=null;
+    render();
+  });
+}
 
 // export
 $("#btnSvg").addEventListener("click",()=>{
@@ -1731,14 +2021,14 @@ function syncMapControls(){
   $("#mapTitle").value=opts.title; $("#showCompass").checked=opts.compass; $("#showLabels").checked=opts.labels;
   $("#matColor").value=opts.matColor;
   $("#lineWidth").value=opts.lineWidth; $("#lwVal").textContent=Number(opts.lineWidth).toFixed(2);
-  $("#legShow").checked=opts.legShow; $("#legFrame").checked=opts.legFrame;
-  $("#legCounts").checked=opts.legCounts; $("#legPos").value=opts.legPos;
-  $("#legTitle").value=opts.legTitle; $("#legFont").value=opts.legFont;
-  $("#legCols").value=opts.legCols; $("#legScale").value=opts.legScale;
-  $("#legLabelBold").checked=opts.legLabelBold; $("#legLabelItalic").checked=opts.legLabelItalic;
-  $("#legLabelUnderline").checked=opts.legLabelUnderline;
-  $("#legTitleBold").checked=opts.legTitleBold; $("#legTitleItalic").checked=opts.legTitleItalic;
-  $("#legTitleUnderline").checked=opts.legTitleUnderline;
+  // Legend controls come back from the same table that defines them, so a
+  // new setting cannot end up rendering from a restored value while its
+  // control still shows the default.
+  for(const [id,kind] of LEGEND_CONTROLS){
+    const node=$("#"+id);
+    if(!node) continue;
+    if(kind==="bool") node.checked=opts[id]; else node.value=opts[id];
+  }
 }
 
 /* ---------------- theme ---------------- */

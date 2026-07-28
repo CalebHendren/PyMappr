@@ -26,6 +26,16 @@ def load_sample(app: PyMapprApp, name: str, group_by: str | None = None) -> None
         group_by=group_by or (labels[0] if labels else "")))
 
 
+def select_tab(panel, title: str) -> None:
+    """Show a control-panel tab by name, so adding a tab cannot silently
+    shift these screenshots onto the wrong one."""
+    for index in range(panel.notebook.index("end")):
+        if panel.notebook.tab(index, "text") == title:
+            panel.notebook.select(index)
+            return
+    raise SystemExit(f"no {title!r} tab in the control panel")
+
+
 def grab_window(root: tk.Tk, path: Path) -> None:
     """Screenshot the app window (crops a full-screen X grab)."""
     from PIL import ImageGrab
@@ -79,7 +89,7 @@ def shot_main_and_layers(store: LayerStore) -> None:
     # 3. The Layers tab with the physical layers on a world view.
     app.panel.orientation_var.set("Landscape")
     app.on_orientation()
-    app.panel.notebook.select(2)  # Layers tab
+    select_tab(app.panel, "Layers")
     app.panel.continent_var.set("World")
     app.on_continent()
     app.panel.basemap_var.set("simple")

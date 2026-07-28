@@ -256,21 +256,23 @@ $("#showLabels").addEventListener("change",e=>{ opts.labels=e.target.checked; re
 $("#matColor").addEventListener("input",e=>{ opts.matColor=e.target.value; render(); });
 $("#lineWidth").addEventListener("input",e=>{ opts.lineWidth=+e.target.value; $("#lwVal").textContent=(+e.target.value).toFixed(2); render(); });
 
-// legend controls
-$("#legShow").addEventListener("change",e=>{ opts.legShow=e.target.checked; render(); });
-$("#legFrame").addEventListener("change",e=>{ opts.legFrame=e.target.checked; render(); });
-$("#legCounts").addEventListener("change",e=>{ opts.legCounts=e.target.checked; render(); });
-$("#legPos").addEventListener("change",e=>{ opts.legPos=e.target.value; legendDrag=null; render(); });
-$("#legTitle").addEventListener("input",e=>{ opts.legTitle=e.target.value; render(); });
-$("#legFont").addEventListener("input",e=>{ opts.legFont=+e.target.value||12; render(); });
-$("#legCols").addEventListener("input",e=>{ opts.legCols=+e.target.value||1; render(); });
-$("#legScale").addEventListener("input",e=>{ opts.legScale=+e.target.value||1; render(); });
-$("#legLabelBold").addEventListener("change",e=>{ opts.legLabelBold=e.target.checked; render(); });
-$("#legLabelItalic").addEventListener("change",e=>{ opts.legLabelItalic=e.target.checked; render(); });
-$("#legLabelUnderline").addEventListener("change",e=>{ opts.legLabelUnderline=e.target.checked; render(); });
-$("#legTitleBold").addEventListener("change",e=>{ opts.legTitleBold=e.target.checked; render(); });
-$("#legTitleItalic").addEventListener("change",e=>{ opts.legTitleItalic=e.target.checked; render(); });
-$("#legTitleUnderline").addEventListener("change",e=>{ opts.legTitleUnderline=e.target.checked; render(); });
+// Legend controls, wired from the LEGEND_CONTROLS table so a new setting is
+// one row there rather than another near-identical line here.
+for(const [id,kind,fallback] of LEGEND_CONTROLS){
+  const node=$("#"+id);
+  if(!node) continue;                       // control not on the page (yet)
+  const event = kind==="bool"||node.tagName==="SELECT" ? "change" : "input";
+  node.addEventListener(event, e=>{
+    if(kind==="bool") opts[id]=e.target.checked;
+    else if(kind==="num"){
+      const n=parseFloat(e.target.value);
+      opts[id]=Number.isFinite(n)?n:fallback;   // mid-edit "" and "-" are normal
+    } else opts[id]=e.target.value;
+    // Choosing a preset position discards any manual (dragged) placement.
+    if(id==="legPos") legendDrag=null;
+    render();
+  });
+}
 
 // export
 $("#btnSvg").addEventListener("click",()=>{

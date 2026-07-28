@@ -96,7 +96,22 @@ function render(){
     if(res.mode==="attr"){
       attrLegends.push({ds,res});
     } else {
-      for(const grp of res.groups) legendEntries.push({label:grp.label, style:grp.style});
+      // Counts belong on the row text here too - reading opts.legCounts only
+      // in the attribute branch is what used to make "Show point counts" do
+      // nothing at all in plain Group-by mode.
+      const total=res.groups.reduce((a,g)=>a+g.rows.length,0);
+      const sizes={};
+      let rows=res.groups.map(grp=>{
+        const label=legendLabel(grp.label, grp.rows.length, total);
+        sizes[label]=grp.rows.length;
+        return {label, style:grp.style};
+      });
+      const order=orderLabels(rows.map(r=>r.label), opts.legOrder, l=>sizes[l]||0);
+      const rank={}; order.forEach((l,i)=>{ rank[l]=i; });
+      rows=rows.sort((a,b)=>(rank[a.label]??0)-(rank[b.label]??0));
+      const prefix=(datasets.filter(d=>d.visible).length>1 && opts.legDatasetPrefix)
+        ? ds.name+": " : "";
+      legendEntries.push({title:prefix+(ds.groupBy||ds.name||""), rows});
     }
   }
 
@@ -138,55 +153,87 @@ function drawCompass(svg, rect){
 function legendItems(entries, attrLegends){
   // returns array of sections: {title, rows:[{label, style, symbolOnly, colorOnly}]}
   const sections=[];
-  if(entries.length){
-    let title=opts.legTitle;
-    if(!title){ const ds=selectedDataset(); title = (ds&&ds.groupBy)||""; }
-    sections.push({title, rows:entries.map(e=>({label:e.label, style:e.style}))});
+  for(const group of entries){
+    // Group-mode datasets each get their own section, so several datasets on
+    // one map stay tellable apart instead of merging into a single list.
+    const title = opts.legSectionTitles ? (opts.legTitle || group.title || "") : "";
+    const rows = group.rows.map(e=>({label:e.label, style:e.style}));
+    if(rows.length) sections.push({title, rows});
   }
+  const manyDatasets=datasets.filter(d=>d.visible).length>1;
   for(const {ds,res} of attrLegends){
-    const counts=opts.legCounts?legendCounts(ds.rows,res.colorKey,res.symbolKey):null;
-    const lab=(v,key)=>{ const n=counts&&counts[key];
-      return (v||"(blank)")+(n===undefined||n===null?"":" ("+n+")"); };
-    if(nestsWithin(ds.rows, res.colorKey, res.symbolKey)){
+    const prefix=(manyDatasets && opts.legDatasetPrefix) ? ds.name+": " : "";
+    // Ordering by count needs the numbers even when they are not shown.
+    const counts=(opts.legCounts||ordersByCount())
+      ? legendCounts(ds.rows,res.colorKey,res.symbolKey) : null;
+    const total=counts?counts["_total"]:0;
+    const countOf=key=>(counts&&counts[key])||0;
+    const lab=(v,key)=>legendLabel(v, counts?counts[key]:null, total);
+    if(resolveNesting(ds.rows, res.colorKey, res.symbolKey, opts.legHierarchy)){
       // The two columns form a hierarchy, so list each symbol value under the
       // colour group it belongs to, drawn in the marker and colour it has on
       // the map. Two independent keys would imply colours x symbols
       // combinations when only `symbols` of them exist, and leave the reader
       // to work out which colour each symbol goes with by hunting the map.
-      const owner={};
-      for(const r of ds.rows) owner[r._attr[res.symbolKey]??""]=r._attr[res.colorKey]??"";
+      const owner=ownerMap(ds.rows, res.symbolKey, res.colorKey);
       const rows=[];
-      for(const [cv,color] of Object.entries(res.colorMap)){
-        const kids=Object.keys(res.symbolMap).filter(sv=>(owner[sv]??"")===cv);
-        if(!kids.length) continue;
+      // Every colour group is listed. MiniMappr has no filter, so the only
+      // way a group ends up childless is forced nesting, where each symbol
+      // is claimed by the first group it appears under - and dropping those
+      // would take colours off the legend that are still drawn on the map.
+      const parents=orderLabels(Object.keys(res.colorMap), opts.legOrder,
+        v=>countOf("c "+v));
+      for(const cv of parents){
+        const color=res.colorMap[cv];
+        const kids=orderLabels(
+          Object.keys(res.symbolMap).filter(sv=>(owner[sv]??"")===cv),
+          opts.legOrder, k=>countOf("p "+cv+" "+k));
         rows.push({label:lab(cv,"c "+cv), depth:0,
-          style:{color, marker:"Circle", size:ds.base.size}});
+          style:groupSwatch(color, kids, res.symbolMap, ds.base.size)});
         for(const sv of kids) rows.push({label:lab(sv,"p "+cv+" "+sv), depth:1,
           style:{color, marker:res.symbolMap[sv], size:ds.base.size}});
       }
-      if(rows.length) sections.push({
-        title:[res.colorKey,res.symbolKey].filter(Boolean).join(" / ")||"Key",
+      if(rows.length) sections.push({title:sectionTitle(prefix,res.colorKey,res.symbolKey),
         rows, nested:true});
       continue;
     }
     // Genuinely crossed: a shape really does appear in every colour here, so
     // the neutral symbol swatches are honest and the two keys stay separate.
     if(Object.keys(res.colorMap).length){
-      sections.push({title:res.colorKey||"Colour", rows:Object.entries(res.colorMap).map(([v,c])=>
-        ({label:lab(v,"c "+v), style:{color:c,marker:"Circle",size:ds.base.size}, colorOnly:true}))});
+      const values=orderLabels(Object.keys(res.colorMap), opts.legOrder, v=>countOf("c "+v));
+      sections.push({title:sectionTitle(prefix,res.colorKey||"Colour"), rows:values.map(v=>
+        ({label:lab(v,"c "+v), style:{color:res.colorMap[v],marker:"Circle",size:ds.base.size}, colorOnly:true}))});
     }
     if(Object.keys(res.symbolMap).length){
-      sections.push({title:res.symbolKey||"Symbol", rows:Object.entries(res.symbolMap).map(([v,m])=>
-        ({label:lab(v,"s "+v), style:{color:"#555",marker:m,size:ds.base.size}, symbolOnly:true}))});
+      const values=orderLabels(Object.keys(res.symbolMap), opts.legOrder, v=>countOf("s "+v));
+      sections.push({title:sectionTitle(prefix,res.symbolKey||"Symbol"), rows:values.map(v=>
+        ({label:lab(v,"s "+v), style:{color:opts.legSymbolColor,marker:res.symbolMap[v],size:ds.base.size}, symbolOnly:true}))});
     }
   }
   return sections;
 }
 
-// Point counts for legend rows: by column value, and by "colour\0symbol" for
-// the leaf rows of a nested key.
+// A nested key's group row swatch: a plain circle, the shape of its first
+// child, or nothing at all.
+function groupSwatch(color, kids, symbolMap, size){
+  if(opts.legGroupSwatch==="none") return null;
+  let marker="Circle";
+  if(opts.legGroupSwatch==="child" && kids.length) marker=symbolMap[kids[0]]||"Circle";
+  return {color, marker, size};
+}
+
+// A section's heading, or "" when headings are switched off. The dataset
+// prefix rides on the heading, so with headings off it has nothing to attach
+// to and goes too - a section titled "beetles: " would be nonsense.
+function sectionTitle(prefix, ...parts){
+  if(!opts.legSectionTitles) return "";
+  return prefix + (parts.filter(Boolean).join(opts.legTitleSeparator)||"Key");
+}
+
+// Point counts for legend rows: by column value, and by "colour symbol" for
+// the leaf rows of a nested key. "_total" is what percentages divide by.
 function legendCounts(rows, colorKey, symbolKey){
-  const counts={};
+  const counts={_total:rows.length};
   const bump=k=>{ counts[k]=(counts[k]||0)+1; };
   for(const r of rows){
     const c=r._attr[colorKey]??"", s=r._attr[symbolKey]??"";
@@ -201,35 +248,38 @@ function drawLegend(svg, W, H, entries, attrLegends){
   const sections=legendItems(entries, attrLegends);
   if(!sections.length) return;
   const fs=opts.legFont, scale=opts.legScale, cols=Math.max(1,opts.legCols);
-  const pad=9, rowH=fs*1.55, mr=Math.min(fs*0.7*scale, 13), swW=fs*1.7*scale;
+  const font=opts.legFontFamily||"sans-serif";
+  const titleFs=opts.legTitleFont||fs;
+  const pad=opts.legPad, gap=opts.legSwatchGap;
+  const rowH=fs*(1.05+opts.legRowSpacing), swW=fs*1.7*scale;
   const g=el("g"); g.style.cursor="move";
   // measure
-  const measure=el("text",{"font-family":"sans-serif","font-size":fs,visibility:"hidden"});
+  const measure=el("text",{"font-family":font,"font-size":fs,visibility:"hidden"});
   svg.appendChild(measure);
   const textW=s=>{ measure.textContent=s; return measure.getComputedTextLength(); };
 
-  let maxLabel=0; let totalRows=0;
+  let maxLabel=0;
   const flat=[];
   // A nested key's group rows head a block of children, so they take the
   // title weight on top of their swatch - indenting alone reads too weakly
   // when every swatch sits in the same column.
-  const indent=fs*0.9;
+  const indent=fs*0.3*opts.legIndent;
   let maxIndent=0;
   for(const sec of sections){
     if(sec.title){ flat.push({type:"title",text:sec.title}); }
     sec.rows.forEach((r,i)=>{
       const depth=r.depth||0;
-      if(sec.nested && depth===0 && i) flat.push({type:"gap"});
-      flat.push({type:"row",...r,depth,head:!!sec.nested&&depth===0});
+      if(sec.nested && depth===0 && i && opts.legGroupSpacer) flat.push({type:"gap"});
+      flat.push({type:"row",...r,depth,
+                 head:!!sec.nested&&depth===0&&opts.legBoldGroups});
       maxLabel=Math.max(maxLabel,textW(r.label));
       maxIndent=Math.max(maxIndent,depth*indent);
-      totalRows++;
     });
     flat.push({type:"gap"});
   }
   // layout in columns
   const perCol=Math.ceil(flat.length/cols);
-  const colW=swW+8+maxLabel+maxIndent+16;
+  const colW=swW+gap+maxLabel+maxIndent+16;
   let maxColRows=0;
   const colItems=[];
   for(let c=0;c<cols;c++){ colItems.push(flat.slice(c*perCol,(c+1)*perCol)); maxColRows=Math.max(maxColRows,colItems[c].length); }
@@ -240,25 +290,37 @@ function drawLegend(svg, W, H, entries, attrLegends){
   let bx,by;
   if(legendDrag){ bx=legendDrag.x*W; by=legendDrag.y*H; }
   else {
-    const m=14;
-    bx = opts.legPos.endsWith("r") ? W-boxW-m : m;
-    by = opts.legPos.startsWith("t") ? m+ (opts.title?30:0) : H-boxH-m;
+    const m=14, p=opts.legPos;
+    // Second character picks the horizontal edge, first the vertical one;
+    // "c" centres on that axis.
+    const hx=p[1], vy=p[0];
+    bx = hx==="r" ? W-boxW-m : hx==="l" ? m : (W-boxW)/2;
+    by = vy==="t" ? m+(opts.title?30:0) : vy==="b" ? H-boxH-m : (H-boxH)/2;
   }
   bx=Math.max(2,Math.min(bx,W-boxW-2)); by=Math.max(2,Math.min(by,H-boxH-2));
 
-  if(opts.legFrame){
-    g.appendChild(el("rect",{x:bx,y:by,width:boxW,height:boxH,rx:6,
-      fill:"rgba(255,255,255,0.92)",stroke:"#c7ccd2","stroke-width":1}));
-  } else {
-    g.appendChild(el("rect",{x:bx,y:by,width:boxW,height:boxH,rx:6,fill:"rgba(255,255,255,0.0)"}));
+  if(opts.legShadow){
+    g.appendChild(el("rect",{x:bx+3,y:by+3,width:boxW,height:boxH,rx:opts.legRadius,
+      fill:"rgba(0,0,0,0.18)"}));
   }
+  g.appendChild(el("rect",{x:bx,y:by,width:boxW,height:boxH,rx:opts.legRadius,
+    fill:opts.legFrameColor,
+    "fill-opacity":opts.legFrame?opts.legFrameAlpha:0,
+    stroke:opts.legFrame?opts.legFrameEdge:"none",
+    "stroke-width":opts.legFrameWidth}));
   for(let c=0;c<cols;c++){
     let yy=by+pad+rowH*0.5;
     const cx0=bx+pad+c*colW;
     for(const item of colItems[c]){
       if(item.type==="title"){
-        const t=el("text",{x:cx0, y:yy+fs*0.34,"font-family":"sans-serif","font-size":fs*1.02,
-          "font-weight":opts.legTitleBold?700:400,fill:"#1d2127"});
+        // Alignment is over the column the title heads, which is as much as
+        // a hand-laid-out SVG legend can honestly offer.
+        const inner=colW-16;
+        const tx = opts.legTitleAlign==="right" ? cx0+inner
+                 : opts.legTitleAlign==="center" ? cx0+inner/2 : cx0;
+        const t=el("text",{x:tx, y:yy+fs*0.34,"font-family":font,"font-size":titleFs,
+          "text-anchor":opts.legTitleAlign==="right"?"end":opts.legTitleAlign==="center"?"middle":"start",
+          "font-weight":opts.legTitleBold?700:400,fill:opts.legTitleColor});
         if(opts.legTitleItalic) t.setAttribute("font-style","italic");
         if(opts.legTitleUnderline) t.setAttribute("text-decoration","underline");
         t.textContent=item.text; g.appendChild(t);
@@ -266,16 +328,20 @@ function drawLegend(svg, W, H, entries, attrLegends){
       } else if(item.type==="row"){
         const dx=(item.depth||0)*indent;
         const mx=cx0+dx+swW/2, my=yy;
-        const r_=Math.min(sizePx(item.style.size)*scale, fs*0.8*scale);
-        const rr=Math.max(3.2, r_);
-        const p=el("path",{d:markerPath(item.style.marker,rr),
-          transform:`translate(${mx.toFixed(2)},${my.toFixed(2)})`});
-        if(isOpen(item.style.marker)){ p.setAttribute("fill","none");
-          p.setAttribute("stroke",item.style.color); p.setAttribute("stroke-width",Math.max(1,rr*0.24)); }
-        else { p.setAttribute("fill",item.style.color); p.setAttribute("stroke","none"); }
-        g.appendChild(p);
+        // A null style is a row that takes no swatch.
+        if(item.style){
+          const r_=Math.min(sizePx(item.style.size)*scale, fs*0.8*scale);
+          const rr=Math.max(3.2, r_);
+          const p=el("path",{d:markerPath(item.style.marker,rr),
+            transform:`translate(${mx.toFixed(2)},${my.toFixed(2)})`});
+          if(isOpen(item.style.marker)){ p.setAttribute("fill","none");
+            p.setAttribute("stroke",item.style.color); p.setAttribute("stroke-width",Math.max(1,rr*0.24)); }
+          else { p.setAttribute("fill",item.style.color); p.setAttribute("stroke","none"); }
+          g.appendChild(p);
+        }
         const bold=item.head?opts.legTitleBold:opts.legLabelBold;
-        const t=el("text",{x:cx0+dx+swW+8, y:my+fs*0.34,"font-family":"sans-serif","font-size":fs,fill:"#22262c",
+        const t=el("text",{x:cx0+dx+swW+gap, y:my+fs*0.34,"font-family":font,"font-size":fs,
+          fill:item.head?opts.legTitleColor:opts.legLabelColor,
           "font-weight":bold?700:400});
         if(item.head?opts.legTitleItalic:opts.legLabelItalic) t.setAttribute("font-style","italic");
         if(item.head?opts.legTitleUnderline:opts.legLabelUnderline) t.setAttribute("text-decoration","underline");
@@ -286,7 +352,6 @@ function drawLegend(svg, W, H, entries, attrLegends){
   }
   svg.removeChild(measure);
   // drag
-  g.style.cursor="move";
   g.addEventListener("mousedown",ev=>{
     ev.preventDefault(); ev.stopPropagation(); // don't also start a map pan
     const startX=ev.clientX, startY=ev.clientY, ox=bx, oy=by;

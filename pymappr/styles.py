@@ -8,15 +8,8 @@ import pandas as pd
 
 __all__ = ["PointStyle", "MARKERS", "OPEN_SUFFIX", "DEFAULT_PALETTE",
            "group_points", "default_styles", "attribute_style_maps",
-           "style_by_attributes", "NEUTRAL_MARKER_COLOR",
-           "LEGIBLE_MARKER_LIMIT", "nests_within", "marker_load",
-           "legend_counts", "legend_sections"]
-
-# Marker color used in the legend's "symbol" key, where shape (not color)
-# carries the meaning. Only meaningful for crossed data, where a shape really
-# does appear in every color; nested data draws its symbols in the color of
-# the group they belong to.
-NEUTRAL_MARKER_COLOR = "#555555"
+           "style_by_attributes", "LEGIBLE_MARKER_LIMIT", "nests_within",
+           "resolve_nesting", "owner_map", "marker_load"]
 
 # How many distinct shapes stay tellable apart at map point sizes. MARKER_CYCLE
 # runs much longer, but past roughly this many the tail (triangle down, thin
@@ -156,8 +149,44 @@ def nests_within(frame: pd.DataFrame, outer_key: str | None,
     return bool(outer.groupby(inner.values).nunique().max() <= 1)
 
 
+def resolve_nesting(frame: pd.DataFrame, color_key: str | None,
+                    symbol_key: str | None, mode: str = "auto") -> bool:
+    """Whether to treat the two columns as a hierarchy, honouring the user's
+    choice: ``"auto"`` detects it, ``"always"`` forces it, ``"never"`` refuses.
+
+    Every caller that cares about nesting goes through here, so the map's
+    shape assignment and the legend's layout can never disagree about it.
+    Forcing it on genuinely crossed data is allowed - the reader is warned
+    elsewhere - but it still needs two columns to nest.
+    """
+    if not color_key or not symbol_key or frame.empty:
+        return False
+    if color_key not in frame.columns or symbol_key not in frame.columns:
+        return False
+    if mode == "never":
+        return False
+    if mode == "always":
+        return True
+    return nests_within(frame, color_key, symbol_key)
+
+
+def owner_map(frame: pd.DataFrame, symbol_key: str, color_key: str) -> dict:
+    """Symbol value -> the color group it belongs to, first occurrence wins.
+
+    Under real nesting each symbol value has exactly one color, so the rule
+    never bites. It only matters when nesting is forced onto crossed data,
+    where taking the first occurrence makes the result depend on file order
+    rather than on which row happened to be read last.
+    """
+    owner: dict = {}
+    for symbol, color in zip(frame[symbol_key].fillna(""),
+                             frame[color_key].fillna("")):
+        owner.setdefault(symbol, color)
+    return owner
+
+
 def marker_load(frame: pd.DataFrame, color_key: str | None,
-                symbol_key: str | None) -> int:
+                symbol_key: str | None, hierarchy: str = "auto") -> int:
     """How many shapes the reader has to tell apart on the map.
 
     Under nesting that is the largest number of symbol values inside any one
@@ -167,14 +196,14 @@ def marker_load(frame: pd.DataFrame, color_key: str | None,
     if not symbol_key or symbol_key not in frame.columns or frame.empty:
         return 0
     symbols = frame[symbol_key].fillna("")
-    if not nests_within(frame, color_key, symbol_key):
+    if not resolve_nesting(frame, color_key, symbol_key, hierarchy):
         return int(symbols.nunique())
     colors = frame[color_key].fillna("")
     return int(symbols.groupby(colors.values).nunique().max())
 
 
 def attribute_style_maps(frame: pd.DataFrame, color_key: str | None,
-                         symbol_key: str | None):
+                         symbol_key: str | None, hierarchy: str = "auto"):
     """Value -> color and value -> marker maps for two-attribute styling.
 
     Colors are assigned to the *color_key* column's values (round-robin
@@ -197,10 +226,9 @@ def attribute_style_maps(frame: pd.DataFrame, color_key: str | None,
                                                % len(DEFAULT_PALETTE)]
     symbol_map: dict[str, str] = {}
     if symbol_key and symbol_key in frame.columns:
-        nested = nests_within(frame, color_key, symbol_key)
+        nested = resolve_nesting(frame, color_key, symbol_key, hierarchy)
         # Shapes may only repeat when a color tells the repeats apart.
-        owner = (dict(zip(frame[symbol_key].fillna(""),
-                          frame[color_key].fillna("")))
+        owner = (owner_map(frame, symbol_key, color_key)
                  if nested else {})
         seen_in_group: dict[str, int] = {}
         for value in dict.fromkeys(frame[symbol_key].fillna("")):
@@ -240,118 +268,3 @@ def style_by_attributes(frame: pd.DataFrame, color_key: str | None,
                            marker=symbol_map.get(sval, "Circle"))
         groups.append((label, style, sub))
     return groups
-
-
-def legend_counts(frame: pd.DataFrame, color_key: str | None,
-                  symbol_key: str | None) -> dict:
-    """Point counts for legend rows.
-
-    Keys are tagged by which channel they count - ``("color", value)``,
-    ``("symbol", value)``, and ``("pair", color, symbol)`` for the leaf rows
-    of a nested key - so a value that appears in both columns (two "unknown"s,
-    say) cannot have one count overwrite the other.
-
-    Pass the frame that is actually drawn (the filtered one, in the app) so
-    the numbers agree with the map.
-    """
-    counts: dict = {}
-    if frame.empty:
-        return counts
-    for tag, key in (("color", color_key), ("symbol", symbol_key)):
-        if key and key in frame.columns:
-            for value, n in frame[key].fillna("").value_counts().items():
-                counts[(tag, value)] = int(n)
-    if (color_key and symbol_key and color_key in frame.columns
-            and symbol_key in frame.columns):
-        pairs = frame[[color_key, symbol_key]].fillna("")
-        for (cval, sval), n in pairs.value_counts().items():
-            counts[("pair", cval, sval)] = int(n)
-    return counts
-
-
-def _legend_label(value: str, counts: dict, key) -> str:
-    """A legend row's text, with its point count appended when counting."""
-    label = value or "(blank)"
-    n = counts.get(key)
-    return label if n is None else f"{label} ({n})"
-
-
-def legend_sections(frame: pd.DataFrame, color_key: str | None,
-                    symbol_key: str | None, color_map: dict[str, str],
-                    symbol_map: dict[str, str], color_label: str,
-                    symbol_label: str, shown_colors: set | None = None,
-                    shown_symbols: set | None = None,
-                    counts: dict | None = None, prefix: str = "") -> list:
-    """Legend sections for a dataset styled by a color and a symbol column.
-
-    Returns ``[(title, [(label, PointStyle, depth), ...]), ...]``, where
-    *depth* indents a row beneath the one above it.
-
-    When the symbol column nests inside the color column (genus/species) the
-    result is a single nested key: each symbol value sits under the color
-    group it belongs to, drawn in the marker and color it has on the map.
-    Two independent keys would imply ``colors x symbols`` combinations when
-    only ``symbols`` of them exist, and would leave the reader to work out
-    which color each symbol goes with by hunting for a point on the map.
-
-    When the columns genuinely cross, the two keys stay independent and the
-    symbol swatches are neutral - there a shape really does appear in every
-    color, so no single color would be honest.
-
-    *shown_colors* / *shown_symbols* limit the rows to the values still
-    visible under a filter (None = no filtering).
-    """
-    counts = counts or {}
-    if nests_within(frame, color_key, symbol_key):
-        return _nested_sections(frame, color_key, symbol_key, color_map,
-                                symbol_map, shown_colors, shown_symbols,
-                                counts, prefix, color_label, symbol_label)
-    return _crossed_sections(color_map, symbol_map, shown_colors,
-                             shown_symbols, counts, prefix, color_label,
-                             symbol_label)
-
-
-def _nested_sections(frame, color_key, symbol_key, color_map, symbol_map,
-                     shown_colors, shown_symbols, counts, prefix,
-                     color_label, symbol_label) -> list:
-    owner = dict(zip(frame[symbol_key].fillna(""),
-                     frame[color_key].fillna("")))
-    children: dict[str, list[str]] = {value: [] for value in color_map}
-    for value in symbol_map:
-        if shown_symbols is None or value in shown_symbols:
-            children.setdefault(owner.get(value, ""), []).append(value)
-    entries: list = []
-    for value, color in color_map.items():
-        kids = children.get(value, [])
-        hidden = shown_colors is not None and value not in shown_colors
-        if not kids or hidden:
-            continue
-        entries.append((_legend_label(value, counts, ("color", value)),
-                        PointStyle(color=color, marker="Circle"), 0))
-        entries += [(_legend_label(kid, counts, ("pair", value, kid)),
-                     PointStyle(color=color, marker=symbol_map[kid]), 1)
-                    for kid in kids]
-    if not entries:
-        return []
-    title = " / ".join(p for p in (color_label, symbol_label) if p) or "Key"
-    return [(prefix + title, entries)]
-
-
-def _crossed_sections(color_map, symbol_map, shown_colors, shown_symbols,
-                      counts, prefix, color_label, symbol_label) -> list:
-    sections = []
-    if color_map:
-        entries = [(_legend_label(value, counts, ("color", value)),
-                    PointStyle(color=color, marker="Circle"), 0)
-                   for value, color in color_map.items()
-                   if shown_colors is None or value in shown_colors]
-        if entries:
-            sections.append((prefix + (color_label or "Color"), entries))
-    if symbol_map:
-        entries = [(_legend_label(value, counts, ("symbol", value)),
-                    PointStyle(color=NEUTRAL_MARKER_COLOR, marker=marker), 0)
-                   for value, marker in symbol_map.items()
-                   if shown_symbols is None or value in shown_symbols]
-        if entries:
-            sections.append((prefix + (symbol_label or "Symbol"), entries))
-    return sections

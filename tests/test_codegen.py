@@ -489,7 +489,10 @@ def test_marker_styling_matches_the_app():
     code = codegen.generate_code(make_state(), [manual_entry()], "Python")
     assert 'face, edge, lw = style["color"], "white", 0.5' in code
     assert 'face, edge, lw = "none", style["color"], 1.2' in code
-    assert "framealpha=0.85" in code
+    # Frame opacity is a setting now, so the call reads it from LEGEND
+    # rather than hard-coding it - but it still defaults to 0.85.
+    assert 'framealpha=LEGEND["frame_alpha"]' in code
+    assert "'frame_alpha': 0.85" in code
 
 
 def test_attribute_mode_emits_sectioned_legend():
