@@ -68,7 +68,7 @@ jobs:
             packaging\installer.iss
 
       - name: Upload installer artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: windows-installer
           path: dist/installer/PyMappr-Setup-*.exe
@@ -121,7 +121,7 @@ jobs:
             "dist/PyMappr-${{ steps.version.outputs.version }}-macOS.dmg"
 
       - name: Upload DMG artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: macos-dmg
           path: dist/PyMappr-*-macOS.dmg
@@ -165,7 +165,7 @@ jobs:
         run: bash packaging/build_linux.sh ubuntu --deb
 
       - name: Upload Ubuntu artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: linux-ubuntu
           path: |
@@ -221,7 +221,7 @@ jobs:
           cp packaging/arch/pymappr-*.pkg.tar.zst dist/
 
       - name: Upload Arch artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: linux-arch
           path: |
@@ -271,7 +271,7 @@ jobs:
         run: bash packaging/build_rpm.sh
 
       - name: Upload Fedora artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: linux-fedora
           path: |
@@ -307,7 +307,7 @@ jobs:
             -o "release-assets/PyMappr-$v-source.tar.gz" HEAD
 
       - name: Create or update release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || format('v{0}', steps.version.outputs.version) }}
           name: PyMappr ${{ steps.version.outputs.version }}
