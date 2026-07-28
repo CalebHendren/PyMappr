@@ -234,7 +234,6 @@ function drawLegend(svg, W, H, entries, attrLegends){
   const colItems=[];
   for(let c=0;c<cols;c++){ colItems.push(flat.slice(c*perCol,(c+1)*perCol)); maxColRows=Math.max(maxColRows,colItems[c].length); }
   const boxW=pad*2 + cols*colW;
-  const titleExtra = sections.filter(s=>s.title).length;
   const boxH=pad*2 + maxColRows*rowH;
 
   // position
