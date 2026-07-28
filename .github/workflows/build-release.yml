@@ -21,9 +21,9 @@ jobs:
     if: github.event_name != 'pull_request' || github.event.pull_request.merged == true
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
           cache: pip
@@ -32,7 +32,7 @@ jobs:
         run: python -m pip install -r requirements.txt pyinstaller pytest
 
       - name: Cache Natural Earth downloads
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: data/downloads
           key: naturalearth-${{ hashFiles('scripts/fetch_data.py') }}
@@ -78,9 +78,9 @@ jobs:
     if: github.event_name != 'pull_request' || github.event.pull_request.merged == true
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
           cache: pip
@@ -89,7 +89,7 @@ jobs:
         run: python -m pip install -r requirements.txt pyinstaller pytest
 
       - name: Cache Natural Earth downloads
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: data/downloads
           key: naturalearth-${{ hashFiles('scripts/fetch_data.py') }}
@@ -131,9 +131,9 @@ jobs:
     if: github.event_name != 'pull_request' || github.event.pull_request.merged == true
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
           cache: pip
@@ -142,7 +142,7 @@ jobs:
         run: python -m pip install -r requirements.txt pyinstaller pytest
 
       - name: Cache Natural Earth downloads
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: data/downloads
           key: naturalearth-${{ hashFiles('scripts/fetch_data.py') }}
@@ -181,7 +181,7 @@ jobs:
       - name: Install system packages
         run: pacman -Syu --noconfirm git python tk
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install dependencies
         run: |
@@ -189,7 +189,7 @@ jobs:
           .venv/bin/pip install -r requirements.txt pyinstaller pytest
 
       - name: Cache Natural Earth downloads
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: data/downloads
           key: naturalearth-${{ hashFiles('scripts/fetch_data.py') }}
@@ -237,7 +237,7 @@ jobs:
       - name: Install system packages
         run: dnf install -y git python3 python3-pip python3-tkinter rpm-build
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install dependencies
         run: |
@@ -245,7 +245,7 @@ jobs:
           .venv/bin/pip install -r requirements.txt pyinstaller pytest
 
       - name: Cache Natural Earth downloads
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: data/downloads
           key: naturalearth-${{ hashFiles('scripts/fetch_data.py') }}
@@ -284,7 +284,7 @@ jobs:
     if: github.event_name != 'pull_request' || github.event.pull_request.merged == true
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Read version
         id: version
@@ -293,7 +293,7 @@ jobs:
           echo "version=$v" >> "$GITHUB_OUTPUT"
 
       - name: Download all build artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: release-assets
           merge-multiple: true
