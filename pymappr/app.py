@@ -24,6 +24,8 @@ from pymappr.data_loader import (OPEN_FILETYPES, PointDataset,  # noqa: E402
                                  build_dataset, build_manual_dataset,
                                  guess_mapping, headers_look_like_data,
                                  list_sheets, read_table)
+from pymappr.decorations import (CompassOptions,  # noqa: E402
+                                 ScaleBarOptions)
 from pymappr.layers import LayerStore  # noqa: E402
 from pymappr.projects import PROJECT_EXTENSION, DatasetEntry  # noqa: E402
 from pymappr.renderer import MapRenderer  # noqa: E402
@@ -31,12 +33,17 @@ from pymappr.legend import (ENTRY_ORDERS, LegendOptions,  # noqa: E402
                             apply_override, is_hidden, legend_counts,
                             legend_sections, manual_order, order_labels,
                             override_label, row_key)
-from pymappr.styles import (LEGIBLE_MARKER_LIMIT, PointStyle,  # noqa: E402
+from pymappr.styles import (DEFAULT_PALETTE_NAME,  # noqa: E402
+                            LEGIBLE_MARKER_LIMIT, PointStyle,
                             attribute_style_maps, default_styles,
                             group_points, marker_load, owner_map,
                             resolve_nesting, style_by_attributes)
 from pymappr.ui.column_mapper import ColumnMapperDialog  # noqa: E402
-from pymappr.ui.control_panel import ControlPanel  # noqa: E402
+from pymappr.ui.control_panel import (COMPASS_STYLE_LABELS,  # noqa: E402
+                                      SCALE_LENGTH_LABELS,
+                                      SCALE_STYLE_LABELS,
+                                      SCALE_UNIT_LABELS,
+                                      ControlPanel)
 from pymappr.ui.filter_bar import FilterBar  # noqa: E402
 from pymappr.ui.legend_editor import LegendEditorDialog  # noqa: E402
 from pymappr.ui.manual_entry import ManualEntryDialog  # noqa: E402
@@ -48,12 +55,25 @@ PROJECT_FILETYPES = [("PyMappr project", "*" + PROJECT_EXTENSION),
                      ("All files", "*.*")]
 
 
+def _label_for(labels: dict, value: str, fallback: str) -> str:
+    """The display label a ``{label: value}`` mapping stores *value* under."""
+    for label, stored in labels.items():
+        if stored == value:
+            return label
+    return fallback
+
+
 class PyMapprApp:
     def __init__(self, root: tk.Tk, store: LayerStore,
                  restore_session: bool = True):
         self.root = root
         self.store = store
         self.entries: list[DatasetEntry] = []
+        # The corner the scale bar was last told to sit in, so a
+        # drag is only discarded when the user picks a new corner.
+        self._scale_bar_corner = "lower left"
+        # A dragged scale bar position restored from a project.
+        self._scale_bar_anchor: tuple[float, float] | None = None
         self.active: int | None = None
         self.project_path: Path | None = None
         self.project_name: str = UNTITLED
@@ -536,6 +556,10 @@ class PyMapprApp:
                 "continent": p.continent_var.get(),
                 "orientation": p.orientation_var.get(),
                 "compass": p.compass_var.get(),
+                "compass_options": p.compass_options().to_dict(),
+                "scale_bar": p.scale_bar_options(
+                    self.renderer.scale_bar_anchor()).to_dict(),
+                "palette": p.palette_var.get(),
                 "graticule": p.graticule_var.get(),
                 "hide_grid_labels": p.hide_grid_labels_var.get(),
                 "line_width": p.line_width_var.get(),
@@ -586,7 +610,31 @@ class PyMapprApp:
         p.basemap_var.set(basemap)
         p.continent_var.set(m["continent"])
         p.orientation_var.set(m.get("orientation", "Landscape"))
-        p.compass_var.set(m["compass"])
+        # "compass" is the original bare flag; the options dict arrived
+        # later, so an older project has only the flag and defaults the rest.
+        compass = CompassOptions.from_dict(m.get("compass_options"))
+        p.compass_var.set(m.get("compass", compass.show))
+        p.compass_position_var.set(compass.position)
+        p.compass_style_var.set(_label_for(COMPASS_STYLE_LABELS,
+                                           compass.style, "Arrow with N"))
+        p.compass_size_var.set(f"{compass.size:g}")
+
+        bar = ScaleBarOptions.from_dict(m.get("scale_bar"))
+        p.scale_bar_var.set(bar.show)
+        p.scale_units_var.set(_label_for(SCALE_UNIT_LABELS, bar.units,
+                                         "Kilometres"))
+        p.scale_position_var.set(bar.position)
+        p.scale_style_var.set(_label_for(SCALE_STYLE_LABELS, bar.style,
+                                         "Segmented"))
+        p.scale_length_mode_var.set(_label_for(SCALE_LENGTH_LABELS,
+                                               bar.length_mode, "Automatic"))
+        p.scale_fixed_length_var.set(
+            "" if bar.fixed_length is None else f"{bar.fixed_length:g}")
+        p.scale_draggable_var.set(bar.draggable)
+        p.update_scale_length_state()
+        self._scale_bar_corner = bar.position
+        self._scale_bar_anchor = bar.anchor
+        p.palette_var.set(m.get("palette", DEFAULT_PALETTE_NAME))
         p.graticule_var.set(m["graticule"])
         p.hide_grid_labels_var.set(m["hide_grid_labels"])
         p.line_width_var.set(m["line_width"])
@@ -632,7 +680,9 @@ class PyMapprApp:
             renderer.set_lake_fill(p.lake_fill_var.get())
             for key, var in p.label_vars.items():
                 renderer.set_labels(key, var.get())
-            renderer.set_compass(p.compass_var.get())
+            renderer.set_compass(p.compass_options())
+            renderer.set_scale_bar(p.scale_bar_options(
+                self._scale_bar_anchor))
             renderer.set_graticule(
                 p.graticule_interval(),
                 show_labels=not p.hide_grid_labels_var.get())
@@ -992,7 +1042,8 @@ class PyMapprApp:
                           for _label, sub in groups]
         fresh = default_styles(labels, color_keys=color_keys,
                                vary_symbols=entry.vary_symbols,
-                               palette_offset=palette_offset)
+                               palette_offset=palette_offset,
+                               palette=self._palette())
         # Keep customized styles for groups that still exist.
         entry.styles = {
             lb: apply_override(fresh[lb],
@@ -1068,13 +1119,15 @@ class PyMapprApp:
         symbol_key = self._entry_key(entry, entry.symbol_by)
         color_map, symbol_map = attribute_style_maps(frame, color_key,
                                                      symbol_key,
-                                                     options.hierarchy)
+                                                     options.hierarchy,
+                                                     palette=self._palette())
         shown_frame = self._filtered_frame(entry)
         nested = resolve_nesting(frame, color_key, symbol_key,
                                  options.hierarchy)
         groups = style_by_attributes(shown_frame, color_key, symbol_key,
                                      color_map, symbol_map,
-                                     entry.legend_overrides, nested)
+                                     entry.legend_overrides, nested,
+                                     palette=self._palette())
         # Group-by styles do not apply here; the rows are color values,
         # symbol values and pairs, and they live in legend_overrides.
         entry.styles = {}
@@ -1273,7 +1326,8 @@ class PyMapprApp:
 
         color_map, symbol_map = attribute_style_maps(frame, color_key,
                                                      symbol_key,
-                                                     options.hierarchy)
+                                                     options.hierarchy,
+                                                     palette=self._palette())
         rows: list = []
         if resolve_nesting(frame, color_key, symbol_key, options.hierarchy):
             owner = owner_map(frame, symbol_key, color_key)
@@ -1468,8 +1522,42 @@ class PyMapprApp:
         self.renderer.redraw()
 
     def on_compass(self) -> None:
-        self.renderer.set_compass(self.panel.compass_var.get())
+        self.renderer.set_compass(self.panel.compass_options())
         self.renderer.redraw()
+
+    def on_scale_bar(self) -> None:
+        """Any scale bar setting changed. A dragged position survives unless
+        the user picked a different corner, which is a request to move it."""
+        self.panel.update_scale_length_state()
+        anchor = self.renderer.scale_bar_anchor()
+        if self.panel.scale_position_var.get() != self._scale_bar_corner:
+            self._scale_bar_corner = self.panel.scale_position_var.get()
+            anchor = None
+        self.renderer.set_scale_bar(self.panel.scale_bar_options(anchor))
+        self.renderer.redraw()
+        note = self.renderer.scale_bar_note()
+        if note:
+            self.set_status(note)
+
+    def on_reset_scale_bar(self) -> None:
+        """Send a dragged scale bar back to its chosen corner."""
+        self.renderer.set_scale_bar(self.panel.scale_bar_options(None))
+        self.renderer.redraw()
+
+    def _palette(self) -> list[str]:
+        """The colour palette groups are styled from."""
+        return self.panel.palette()
+
+    def on_palette(self) -> None:
+        """The colour palette changed: restyle every dataset's groups.
+
+        Clearing ``styles`` re-derives them from the new palette; per-row
+        customizations live in ``legend_overrides`` and are untouched, so a
+        colour the user pinned stays pinned.
+        """
+        for entry in self.entries:
+            entry.styles = {}
+        self._push_points()
 
     def on_lake_fill(self) -> None:
         self._busy(True)

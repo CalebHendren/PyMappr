@@ -7,6 +7,7 @@ from dataclasses import dataclass
 import pandas as pd
 
 __all__ = ["PointStyle", "MARKERS", "OPEN_SUFFIX", "DEFAULT_PALETTE",
+           "OKABE_ITO", "PALETTES", "DEFAULT_PALETTE_NAME", "palette_for",
            "group_points", "default_styles", "attribute_style_maps",
            "style_by_attributes", "LEGIBLE_MARKER_LIMIT", "nests_within",
            "resolve_nesting", "owner_map", "marker_load", "apply_override"]
@@ -54,6 +55,28 @@ DEFAULT_PALETTE = [
     "#d62728", "#1f77b4", "#2ca02c", "#ff7f0e", "#9467bd",
     "#8c564b", "#e377c2", "#17becf", "#bcbd22", "#7f7f7f",
 ]
+
+# Okabe-Ito: eight hues chosen to stay distinguishable under the common forms
+# of colour-vision deficiency (about 1 in 12 men), which the default palette's
+# adjacent red and green do not. Ordered so the first few stay far apart, since
+# most maps use only a handful of groups.
+OKABE_ITO = [
+    "#0072b2", "#d55e00", "#009e73", "#cc79a7", "#e69f00",
+    "#56b4e9", "#f0e442", "#000000",
+]
+
+# Display name -> palette. The key is what projects and exported scripts
+# store, so renaming one would orphan saved maps.
+PALETTES = {
+    "Default": DEFAULT_PALETTE,
+    "Colourblind safe (Okabe-Ito)": OKABE_ITO,
+}
+DEFAULT_PALETTE_NAME = "Default"
+
+
+def palette_for(name: str | None) -> list[str]:
+    """The palette *name* refers to, falling back to the default."""
+    return PALETTES.get(name or "", DEFAULT_PALETTE)
 
 
 @dataclass
@@ -111,7 +134,8 @@ def group_points(frame: pd.DataFrame, group_by: str | None):
 def default_styles(labels: list[str],
                    color_keys: list[str] | None = None,
                    vary_symbols: bool = False,
-                   palette_offset: int = 0) -> dict[str, PointStyle]:
+                   palette_offset: int = 0,
+                   palette: list[str] | None = None) -> dict[str, PointStyle]:
     """Assign default styles to the given group labels.
 
     Without *color_keys*, palette colors are assigned round-robin and every
@@ -124,12 +148,13 @@ def default_styles(labels: list[str],
 
     *palette_offset* starts the color rotation further into the palette,
     so several datasets shown on one map get distinct default colors.
+    *palette* overrides the colors themselves (see :data:`PALETTES`).
     """
+    palette = palette or DEFAULT_PALETTE
     if color_keys is None:
         return {
             label: PointStyle(
-                color=DEFAULT_PALETTE[(i + palette_offset)
-                                      % len(DEFAULT_PALETTE)],
+                color=palette[(i + palette_offset) % len(palette)],
                 marker=(MARKER_CYCLE[i % len(MARKER_CYCLE)]
                         if vary_symbols else "Circle"))
             for i, label in enumerate(labels)
@@ -143,7 +168,7 @@ def default_styles(labels: list[str],
         seen_in_group[key] = shape_idx + 1
         color_idx = color_order.index(key) + palette_offset
         styles[label] = PointStyle(
-            color=DEFAULT_PALETTE[color_idx % len(DEFAULT_PALETTE)],
+            color=palette[color_idx % len(palette)],
             marker=MARKER_CYCLE[shape_idx % len(MARKER_CYCLE)])
     return styles
 
@@ -219,7 +244,8 @@ def marker_load(frame: pd.DataFrame, color_key: str | None,
 
 
 def attribute_style_maps(frame: pd.DataFrame, color_key: str | None,
-                         symbol_key: str | None, hierarchy: str = "auto"):
+                         symbol_key: str | None, hierarchy: str = "auto",
+                         palette: list[str] | None = None):
     """Value -> color and value -> marker maps for two-attribute styling.
 
     Colors are assigned to the *color_key* column's values (round-robin
@@ -235,11 +261,11 @@ def attribute_style_maps(frame: pd.DataFrame, color_key: str | None,
     describes that, because nesting means each symbol value has exactly one
     color - so the render path needs no notion of the hierarchy at all.
     """
+    palette = palette or DEFAULT_PALETTE
     color_map: dict[str, str] = {}
     if color_key and color_key in frame.columns:
         for value in dict.fromkeys(frame[color_key].fillna("")):
-            color_map[value] = DEFAULT_PALETTE[len(color_map)
-                                               % len(DEFAULT_PALETTE)]
+            color_map[value] = palette[len(color_map) % len(palette)]
     symbol_map: dict[str, str] = {}
     if symbol_key and symbol_key in frame.columns:
         nested = resolve_nesting(frame, color_key, symbol_key, hierarchy)
@@ -260,7 +286,8 @@ def style_by_attributes(frame: pd.DataFrame, color_key: str | None,
                         color_map: dict[str, str],
                         symbol_map: dict[str, str],
                         overrides: dict | None = None,
-                        nested: bool = False):
+                        nested: bool = False,
+                        palette: list[str] | None = None):
     """Split *frame* into render groups by (color value, symbol value).
 
     Returns ``(label, PointStyle, sub_frame)`` for each distinct
@@ -284,7 +311,7 @@ def style_by_attributes(frame: pd.DataFrame, color_key: str | None,
     cvals = frame[ckey].fillna("") if ckey else blank
     svals = frame[skey].fillna("") if skey else blank
     default_color = (next(iter(color_map.values()), None)
-                     or DEFAULT_PALETTE[0])
+                     or (palette or DEFAULT_PALETTE)[0])
     groups = []
     for cval, sval in dict.fromkeys(zip(cvals, svals)):
         sub = frame[(cvals == cval) & (svals == sval)]

@@ -15,6 +15,9 @@ from pymappr.renderer import (BATHYMETRY_COLORS, FILL_COLORS, FILL_LAYERS,
                               LABEL_STYLES, LINE_LAYERS, MARGINS_PLAIN,
                               MARGINS_WITH_TICKS, POINT_LAYERS, Z_BATHYMETRY,
                               Z_LAKE_FILL, Z_OCEAN, Z_POINT_LAYERS)
+from pymappr.decorations import (CompassOptions, ScaleBarOptions,
+                                 corner_anchor, format_length,
+                                 nice_length, unit_metres)
 from pymappr.styles import (PointStyle, apply_override, attribute_style_maps,
                             default_styles, group_points, resolve_nesting,
                             style_by_attributes)
@@ -606,6 +609,9 @@ def build_config(state: dict, entries, project_name: str = "map",
         "label_layers": label_layers,
         "graticule": {"interval": graticule, "labels": labels_on},
         "compass": bool(m.get("compass", False)),
+        "compass_options": CompassOptions.from_dict(
+            m.get("compass_options")).to_dict(),
+        "scale_bar": ScaleBarOptions.from_dict(m.get("scale_bar")).to_dict(),
         "datasets": datasets,
         "data_mode": data_mode,
         "data_files": data_files,
@@ -762,7 +768,10 @@ def _py_config(config: dict) -> str:
     grat = config["graticule"]
     lines.append(f"GRATICULE = {{'interval': {_py(grat['interval'])}, "
                  f"'labels': {_py(grat['labels'])}}}")
-    lines.append(f'COMPASS = {_py(config["compass"])}')
+    compass = dict(config["compass_options"])
+    compass["show"] = config["compass"]
+    lines.append(f'COMPASS = {_py(compass)}')
+    lines.append(f'SCALE_BAR = {_py(config["scale_bar"])}')
     lines.append(f'POINT_ALPHA = {_py(config["point_alpha"])}')
     lines.append(f'DPI = {_py(config["dpi"])}')
     lines.append('OUTPUT_FILE = "map.png"')
@@ -856,6 +865,7 @@ _PY_FUNCTIONS = '''
 
 import importlib
 import io
+import math
 import subprocess
 import sys
 import zipfile
@@ -899,6 +909,7 @@ import pandas as pd
 import geopandas as gpd
 from matplotlib.collections import LineCollection
 from matplotlib.lines import Line2D
+from matplotlib.patches import Polygon, Rectangle
 from matplotlib.ticker import FuncFormatter, MultipleLocator
 
 # Resolve the cache and any data/ files next to this script, so it runs
@@ -913,6 +924,7 @@ FALLBACK_STYLE = {"color": "#7f7f7f", "marker": "o", "size": 30.0,
 LABEL_HALO = [patheffects.withStroke(linewidth=2.2, foreground="white",
                                      alpha=0.85)]
 Z_GRID, Z_POINTS, Z_LABELS, Z_COMPASS = 1.8, 2.6, 3.0, 4.0
+Z_SCALE_BAR = 4.0
 BASEMAP_ARCHIVES = {
     "relief": (("50m", "raster", "NE1_50M_SR_W"), "ne1_world.jpg"),
     "relief_alt": (("50m", "raster", "NE2_50M_SR_W"), "ne2_world.jpg"),
@@ -1362,20 +1374,249 @@ def draw_labels(ax, fig):
                     path_effects=LABEL_HALO, **font)
 
 
-# ---------------------------------------------------------------- compass
+# ------------------------------------------------- compass and scale bar
+
+METRES_PER_MILE = 1609.344
+_NICE = (1.0, 2.0, 3.0, 5.0)
+
+
+def _geod():
+    from pyproj import Geod
+
+    return Geod(ellps="WGS84")
+
+
+def proj_inverse(xs, ys):
+    """Map coordinates back to lon/lat (non-finite where undefined)."""
+    xs = np.asarray(xs, dtype=float)
+    ys = np.asarray(ys, dtype=float)
+    if MAP_CRS is None:
+        return xs, ys
+    with np.errstate(all="ignore"):
+        return _transformer().transform(xs, ys, direction="INVERSE")
+
+
+def ground_distance(x0, y0, x1, y1):
+    """Metres on the WGS84 ellipsoid between two points in map coordinates.
+
+    Axis units are degrees on the plain lon/lat projection and metres on a
+    projected CRS, and a projected metre is not a ground metre anyway - so
+    this measures from lon/lat, which is right for every projection.
+    """
+    lons, lats = proj_inverse(np.array([x0, x1]), np.array([y0, y1]))
+    lons = np.asarray(lons, dtype=float)
+    lats = np.asarray(lats, dtype=float)
+    if not np.isfinite(lons).all() or not np.isfinite(lats).all():
+        return float("nan")
+    _, _, metres = _geod().inv(lons[0], lats[0], lons[1], lats[1])
+    return abs(float(metres))
+
+
+def unit_metres(units):
+    return METRES_PER_MILE if units == "mi" else 1000.0
+
+
+def nice_length(metres, units):
+    """A round bar length, in metres, at or just below *metres*."""
+    per_unit = unit_metres(units)
+    value = metres / per_unit
+    if not math.isfinite(value) or value <= 0:
+        return 0.0
+    decade = 10.0 ** math.floor(math.log10(value))
+    for candidate in reversed(_NICE):
+        if candidate * decade <= value:
+            return candidate * decade * per_unit
+    return _NICE[-1] * decade / 10.0 * per_unit
+
+
+def format_length(metres, units):
+    """A bar's label. A metric bar under a kilometre is labelled in metres."""
+    if units != "mi" and metres < 1000.0:
+        return "%g m" % metres
+    value = metres / unit_metres(units)
+    text = ("%g" % value) if value >= 1 else ("%.3g" % value)
+    return text + (" mi" if units == "mi" else " km")
+
+
+def corner_anchor(corner, pad=0.03):
+    vertical, horizontal = (corner or "lower left").split()
+    x = pad if horizontal == "left" else 1.0 - pad
+    y = pad if vertical == "lower" else 1.0 - pad
+    return x, y
+
+
+def axes_to_data(ax, fx, fy):
+    x0, x1 = ax.get_xlim()
+    y0, y1 = ax.get_ylim()
+    return x0 + (x1 - x0) * fx, y0 + (y1 - y0) * fy
+
+
+def span_metres(ax, fx0, fx1, fy):
+    ax0, ay = axes_to_data(ax, fx0, fy)
+    ax1, _ = axes_to_data(ax, fx1, fy)
+    return ground_distance(ax0, ay, ax1, ay)
+
+
+def scale_reference_row(ax, fy):
+    """An axes row where the scale can actually be measured: a corner of a
+    Robinson or orthographic map lies outside the map itself."""
+    for step in (0.0, 0.25, 0.5, 0.75, 1.0):
+        row = fy + (0.5 - fy) * step
+        if np.isfinite(span_metres(ax, 0.45, 0.55, row)):
+            return row
+    return 0.5
+
+
+def estimate_scale(ax, fx, fy):
+    """Ground metres per unit of axes x-fraction near *fx* - a first guess,
+    refined against the bar's real endpoints below."""
+    left = float(np.clip(fx - 0.05, 0.0, 0.9))
+    metres = span_metres(ax, left, left + 0.1, fy)
+    if not np.isfinite(metres) or metres <= 0:
+        metres = span_metres(ax, 0.45, 0.55, fy)
+    if not np.isfinite(metres) or metres <= 0:
+        return float("nan")
+    return metres / 0.1
+
 
 def draw_compass(ax):
-    if not COMPASS:
+    if not COMPASS["show"]:
+        return
+    x, y = corner_anchor(COMPASS["position"], pad=0.025)
+    size = max(float(COMPASS["size"]), 0.1)
+    color = COMPASS["color"]
+    reach = 0.07 * size
+    tail_y = y - reach if y > 0.5 else y + reach
+    if COMPASS["style"] == "triangle":
+        half = 0.016 * size
+        up = y > tail_y
+        base = tail_y + (0.02 * size if up else -0.02 * size)
+        ax.add_patch(Polygon(
+            [(x, y), (x - half, base), (x + half, base)], closed=True,
+            transform=ax.transAxes, facecolor=color, edgecolor="white",
+            linewidth=0.8 * size, zorder=Z_COMPASS, clip_on=False))
+        ax.text(x, tail_y, "N", transform=ax.transAxes, ha="center",
+                va="center", fontsize=10 * size, fontweight="bold",
+                color=color, path_effects=LABEL_HALO, zorder=Z_COMPASS,
+                clip_on=False)
         return
     ax.annotate(
-        "N", xy=(0.975, 0.975), xytext=(0.975, 0.905),
+        "N", xy=(x, y), xytext=(x, tail_y),
         xycoords="axes fraction", textcoords="axes fraction",
-        ha="center", va="center", fontsize=11, fontweight="bold",
-        color="#1a1a1a", path_effects=LABEL_HALO, zorder=Z_COMPASS,
+        ha="center", va="center", fontsize=11 * size, fontweight="bold",
+        color=color, path_effects=LABEL_HALO, zorder=Z_COMPASS,
         annotation_clip=False,
         arrowprops=dict(arrowstyle="-|>,head_width=0.28,head_length=0.55",
-                        color="#1a1a1a", linewidth=1.4,
-                        shrinkA=6, shrinkB=0))
+                        color=color, linewidth=1.4 * size,
+                        shrinkA=6 * size, shrinkB=0))
+
+
+BAR_HEIGHT = 0.011
+BAR_GAP = 0.005
+LABEL_GAP = 0.012
+LABEL_ROOM = 0.030
+
+
+def fit_bar_width(ax, metres, x, row, right_anchored):
+    """The axes-fraction width a bar of *metres* needs, or None when no
+    honest bar of that length fits.
+
+    The first guess is a short local sample, but a scale bar is long and the
+    map scale varies across it, so the width is refined against the bar's own
+    endpoints until the drawing really is the length its label claims.
+    """
+    per_fraction = estimate_scale(ax, x, row)
+    if not np.isfinite(per_fraction) or per_fraction <= 0:
+        return None
+    width = metres / per_fraction
+    for _ in range(6):
+        if not np.isfinite(width) or width <= 0 or width > 0.95:
+            return None
+        x0 = x - width if right_anchored else x
+        actual = span_metres(ax, x0, x0 + width, row)
+        if not np.isfinite(actual) or actual <= 0:
+            # The bar's own span is off the map - a corner of an orthographic
+            # globe, or outside a Robinson ellipse. Refine against the same
+            # width centred on the reference row instead.
+            actual = span_metres(ax, 0.5 - width / 2, 0.5 + width / 2, row)
+        if not np.isfinite(actual) or actual <= 0:
+            break
+        adjust = metres / actual
+        if abs(adjust - 1.0) < 0.001:
+            break
+        width *= adjust
+    if not np.isfinite(width) or width <= 0 or width > 0.95:
+        return None
+    return width
+
+
+def draw_scale_bar(ax):
+    """A geodesically measured scale bar, drawn in axes-fraction coordinates
+    so it keeps its place at any figure size."""
+    opts = SCALE_BAR
+    if not opts["show"]:
+        return
+    units = ["km", "mi"] if opts["units"] == "both" else [opts["units"]]
+    dragged = opts["anchor_x"] is not None and opts["anchor_y"] is not None
+    if dragged:
+        x, y = opts["anchor_x"], opts["anchor_y"]
+    else:
+        x, y = corner_anchor(opts["position"])
+    right_anchored = x > 0.5 and not dragged
+    top_anchored = y > 0.5 and not dragged
+
+    n = len(units)
+    stack = n * BAR_HEIGHT + (n - 1) * BAR_GAP
+    base_y = y - stack if top_anchored else y
+    # A second unit is labelled underneath, so lift the stack off the frame.
+    if n > 1 and not top_anchored and not dragged:
+        base_y += LABEL_ROOM
+
+    # Each unit gets its own round length, so "3000 km" is never paired with
+    # an unreadable "1864 mi" - two bars, each honest in its own unit, each
+    # measured on the row it is actually drawn on.
+    bars = []
+    for i, unit in enumerate(units):
+        y0 = base_y + (n - 1 - i) * (BAR_HEIGHT + BAR_GAP)
+        row = scale_reference_row(ax, y0 + BAR_HEIGHT / 2)
+        if i == 0 and opts["length_mode"] == "fixed" and opts["fixed_length"]:
+            metres = float(opts["fixed_length"]) * unit_metres(opts["units"])
+        else:
+            estimate = estimate_scale(ax, x, row)
+            if not np.isfinite(estimate) or estimate <= 0:
+                print("Scale bar: the map scale cannot be measured at "
+                      "this view.")
+                return
+            metres = nice_length(estimate * opts["width"], unit)
+        if metres <= 0:
+            return
+        width = fit_bar_width(ax, metres, x, row, right_anchored)
+        if width is None:
+            print("Scale bar: scale varies too much across this view to "
+                  "draw an accurate bar.")
+            return
+        bars.append((unit, metres, width, y0))
+
+    for i, (unit, metres, width, y0) in enumerate(bars):
+        x0 = x - width if right_anchored else x
+        if opts["style"] == "segmented":
+            segments = max(int(opts["segments"]), 1)
+        else:
+            segments = 1
+        for seg in range(segments):
+            ax.add_patch(Rectangle(
+                (x0 + width * seg / segments, y0), width / segments,
+                BAR_HEIGHT, transform=ax.transAxes,
+                facecolor=opts["color"] if seg % 2 == 0 else "white",
+                edgecolor=opts["color"], linewidth=0.8,
+                zorder=Z_SCALE_BAR, clip_on=False))
+        above = i == 0
+        ax.text(x0 + width / 2,
+                y0 + BAR_HEIGHT + LABEL_GAP if above else y0 - LABEL_GAP,
+                format_length(metres, unit), transform=ax.transAxes,
+                ha="center", va="bottom" if above else "top",
+                fontsize=opts["fontsize"], color=opts["color"],
+                path_effects=LABEL_HALO, zorder=Z_SCALE_BAR, clip_on=False)
 
 
 # ------------------------------------------------------------- point data
@@ -1640,6 +1881,7 @@ def main():
         plot_dataset(ax, spec)
     draw_labels(ax, fig)
     draw_compass(ax)
+    draw_scale_bar(ax)
     ax.set_xlim(VIEW[0], VIEW[1])
     ax.set_ylim(VIEW[2], VIEW[3])
     add_legend(ax)
@@ -1695,7 +1937,6 @@ def _r_legend_notes(legend: dict) -> list[str]:
 
 def _r_header(config: dict) -> str:
     notes = list(config["notes"])
-    notes.append("The compass (north arrow)")
     notes.append("Map labels (country/city/... name placement)")
     if (config["legend"].get("label_underline")
             or config["legend"].get("title_underline")):
@@ -1824,6 +2065,12 @@ def _r_config(config: dict) -> str:
                  "  # graticule spacing in degrees (NULL = off)")
     lines.append(f'GRID_LABELS <- {_r(grat["labels"])}')
     lines.append(f'POINT_ALPHA <- {_r(config["point_alpha"])}')
+    compass = dict(config["compass_options"])
+    compass["show"] = config["compass"]
+    lines.append("COMPASS <- list(" + _r_named(
+        [(k, _r(v)) for k, v in compass.items()], "  ") + ")")
+    lines.append("SCALE_BAR <- list(" + _r_named(
+        [(k, _r(v)) for k, v in config["scale_bar"].items()], "  ") + ")")
     lines.append(f'DPI <- {_r(config["dpi"])}')
     lines.append('OUTPUT_FILE <- "map.png"')
     lines.append("")
@@ -2219,6 +2466,7 @@ build_map <- function() {
   } else {
     element_blank()
   }
+  p <- p + scale_bar_layers() + compass_layers()
   p <- p + theme_void() + theme(
     panel.background = element_rect(fill = "white", color = NA),
     plot.background = element_rect(fill = "white", color = NA),
@@ -2240,6 +2488,240 @@ build_map <- function() {
                    color = "#999999") else element_blank())
   p
 }
+
+# --------------------------------------------- compass and scale bar
+
+METRES_PER_MILE <- 1609.344
+BAR_HEIGHT <- 0.011
+BAR_GAP <- 0.005
+LABEL_GAP <- 0.012
+LABEL_ROOM <- 0.030
+
+view_crs <- function() {
+  if (is.null(MAP_CRS)) sf::st_crs("EPSG:4326") else sf::st_crs(MAP_CRS)
+}
+
+axes_to_data <- function(fx, fy) {
+  # coord_sf() is given VIEW with expand = FALSE, so a fraction of VIEW is
+  # exactly a fraction of the drawn panel.
+  c(VIEW[1] + (VIEW[2] - VIEW[1]) * fx,
+    VIEW[3] + (VIEW[4] - VIEW[3]) * fy)
+}
+
+span_metres <- function(fx0, fx1, fy) {
+  # Ground metres between two panel-fraction x positions on row fy.
+  # Measured from lon/lat: a projected metre is not a ground metre, and the
+  # plain lon/lat projection is in degrees anyway. NA where the row is off
+  # the map, as a corner of a Robinson or orthographic view is.
+  a <- axes_to_data(fx0, fy)
+  b <- axes_to_data(fx1, fy)
+  pts <- try(sf::st_sfc(sf::st_point(a), sf::st_point(b), crs = view_crs()),
+             silent = TRUE)
+  if (inherits(pts, "try-error")) return(NA_real_)
+  geo <- try(sf::st_transform(pts, 4326), silent = TRUE)
+  if (inherits(geo, "try-error")) return(NA_real_)
+  coords <- sf::st_coordinates(geo)
+  if (any(!is.finite(coords))) return(NA_real_)
+  d <- try(as.numeric(sf::st_distance(geo)[1, 2]), silent = TRUE)
+  if (inherits(d, "try-error") || !is.finite(d)) return(NA_real_)
+  d
+}
+
+scale_reference_row <- function(fy) {
+  # A row where the scale can actually be measured; the bar's own row is
+  # preferred, because a bar should describe the scale where it stands.
+  for (step in c(0, 0.25, 0.5, 0.75, 1)) {
+    row <- fy + (0.5 - fy) * step
+    if (is.finite(span_metres(0.45, 0.55, row))) return(row)
+  }
+  0.5
+}
+
+estimate_scale <- function(fx, fy) {
+  # Ground metres per unit of panel x-fraction: a first guess, refined
+  # against the bar's real endpoints in fit_bar_width().
+  left <- max(0, min(0.9, fx - 0.05))
+  m <- span_metres(left, left + 0.1, fy)
+  if (!is.finite(m) || m <= 0) m <- span_metres(0.45, 0.55, fy)
+  if (!is.finite(m) || m <= 0) return(NA_real_)
+  m / 0.1
+}
+
+unit_metres <- function(units) {
+  if (identical(units, "mi")) METRES_PER_MILE else 1000
+}
+
+nice_length <- function(metres, units) {
+  # A round bar length at or just below `metres`, so a long label can never
+  # run off the map.
+  per <- unit_metres(units)
+  value <- metres / per
+  if (!is.finite(value) || value <= 0) return(0)
+  decade <- 10 ^ floor(log10(value))
+  for (cand in c(5, 3, 2, 1)) {
+    if (cand * decade <= value) return(cand * decade * per)
+  }
+  decade / 10 * per
+}
+
+format_length <- function(metres, units) {
+  if (!identical(units, "mi") && metres < 1000) {
+    return(paste0(format(metres, trim = TRUE, scientific = FALSE), " m"))
+  }
+  value <- metres / unit_metres(units)
+  suffix <- if (identical(units, "mi")) " mi" else " km"
+  paste0(format(value, trim = TRUE, scientific = FALSE), suffix)
+}
+
+corner_anchor <- function(corner, pad = 0.03) {
+  corner <- if (is.null(corner)) "lower left" else corner
+  parts <- strsplit(corner, " ")[[1]]
+  x <- if (identical(parts[2], "left")) pad else 1 - pad
+  y <- if (identical(parts[1], "lower")) pad else 1 - pad
+  c(x, y)
+}
+
+fit_bar_width <- function(metres, x, row, right_anchored) {
+  # The estimate is local, but a scale bar is long and the map scale varies
+  # across it, so refine the width against the bar's own endpoints until the
+  # drawing really is the length its label claims.
+  per <- estimate_scale(x, row)
+  if (!is.finite(per) || per <= 0) return(NA_real_)
+  width <- metres / per
+  for (i in 1:6) {
+    if (!is.finite(width) || width <= 0 || width > 0.95) return(NA_real_)
+    x0 <- if (right_anchored) x - width else x
+    actual <- span_metres(x0, x0 + width, row)
+    if (!is.finite(actual) || actual <= 0) {
+      # The bar's own span is off the map: refine against the same width
+      # centred on the reference row instead.
+      actual <- span_metres(0.5 - width / 2, 0.5 + width / 2, row)
+    }
+    if (!is.finite(actual) || actual <= 0) break
+    adjust <- metres / actual
+    if (abs(adjust - 1) < 0.001) break
+    width <- width * adjust
+  }
+  if (!is.finite(width) || width <= 0 || width > 0.95) return(NA_real_)
+  width
+}
+
+scale_bar_layers <- function() {
+  if (!isTRUE(SCALE_BAR$show)) return(list())
+  units_shown <- if (identical(SCALE_BAR$units, "both")) {
+    c("km", "mi")
+  } else {
+    SCALE_BAR$units
+  }
+  dragged <- !is.null(SCALE_BAR$anchor_x) && !is.null(SCALE_BAR$anchor_y)
+  anchor <- if (dragged) {
+    c(SCALE_BAR$anchor_x, SCALE_BAR$anchor_y)
+  } else {
+    corner_anchor(SCALE_BAR$position)
+  }
+  x <- anchor[1]
+  y <- anchor[2]
+  right_anchored <- x > 0.5 && !dragged
+  top_anchored <- y > 0.5 && !dragged
+  n <- length(units_shown)
+  stack <- n * BAR_HEIGHT + (n - 1) * BAR_GAP
+  base_y <- if (top_anchored) y - stack else y
+  # A second unit is labelled underneath, so lift the stack off the frame.
+  if (n > 1 && !top_anchored && !dragged) base_y <- base_y + LABEL_ROOM
+
+  layers <- list()
+  for (i in seq_along(units_shown)) {
+    unit <- units_shown[i]
+    y0 <- base_y + (n - i) * (BAR_HEIGHT + BAR_GAP)
+    row <- scale_reference_row(y0 + BAR_HEIGHT / 2)
+    fixed <- (i == 1 && identical(SCALE_BAR$length_mode, "fixed")
+              && !is.null(SCALE_BAR$fixed_length))
+    if (fixed) {
+      metres <- SCALE_BAR$fixed_length * unit_metres(SCALE_BAR$units)
+    } else {
+      est <- estimate_scale(x, row)
+      if (!is.finite(est) || est <= 0) {
+        message("Scale bar: the map scale cannot be measured at this view.")
+        return(list())
+      }
+      # Each unit gets its own round length, so "3000 km" is never paired
+      # with an unreadable "1864 mi".
+      metres <- nice_length(est * SCALE_BAR$width, unit)
+    }
+    if (metres <= 0) return(list())
+    width <- fit_bar_width(metres, x, row, right_anchored)
+    if (!is.finite(width)) {
+      message("Scale bar: scale varies too much across this view to draw ",
+              "an accurate bar.")
+      return(list())
+    }
+    x0 <- if (right_anchored) x - width else x
+    segments <- if (identical(SCALE_BAR$style, "segmented")) {
+      max(as.integer(SCALE_BAR$segments), 1L)
+    } else {
+      1L
+    }
+    for (seg in seq_len(segments)) {
+      lo <- axes_to_data(x0 + width * (seg - 1) / segments, y0)
+      hi <- axes_to_data(x0 + width * seg / segments, y0 + BAR_HEIGHT)
+      layers <- c(layers, list(annotate(
+        "rect", xmin = lo[1], xmax = hi[1], ymin = lo[2], ymax = hi[2],
+        fill = if (seg %% 2 == 1) SCALE_BAR$color else "white",
+        color = SCALE_BAR$color, linewidth = 0.28)))
+    }
+    above <- i == 1
+    lab <- axes_to_data(
+      x0 + width / 2,
+      if (above) y0 + BAR_HEIGHT + LABEL_GAP else y0 - LABEL_GAP)
+    layers <- c(layers, list(annotate(
+      "text", x = lab[1], y = lab[2], label = format_length(metres, unit),
+      size = SCALE_BAR$fontsize / 2.845, colour = SCALE_BAR$color,
+      hjust = 0.5, vjust = if (above) 0 else 1)))
+  }
+  layers
+}
+
+compass_layers <- function() {
+  if (!isTRUE(COMPASS$show)) return(list())
+  anchor <- corner_anchor(COMPASS$position, pad = 0.025)
+  x <- anchor[1]
+  y <- anchor[2]
+  size <- max(COMPASS$size, 0.1)
+  reach <- 0.07 * size
+  # The arrow runs downwards from the anchor at the top of the map and
+  # upwards at the bottom, so it never points off the panel.
+  tail_y <- if (y > 0.5) y - reach else y + reach
+  tip <- axes_to_data(x, y)
+  tail <- axes_to_data(x, tail_y)
+  if (identical(COMPASS$style, "triangle")) {
+    half <- 0.016 * size
+    up <- y > tail_y
+    base_y <- tail_y + (if (up) 0.02 * size else -0.02 * size)
+    b1 <- axes_to_data(x - half, base_y)
+    b2 <- axes_to_data(x + half, base_y)
+    return(list(
+      annotate("polygon", x = c(tip[1], b1[1], b2[1]),
+               y = c(tip[2], b1[2], b2[2]), fill = COMPASS$color,
+               colour = "white", linewidth = 0.28 * size),
+      annotate("text", x = tail[1], y = tail[2], label = "N",
+               fontface = "bold", size = 10 * size / 2.845,
+               colour = COMPASS$color)))
+  }
+  # Start the shaft clear of the "N", the way the app's shrinkA does.
+  shrink <- 0.014 * size
+  start_y <- tail_y + sign(y - tail_y) * shrink
+  start <- axes_to_data(x, start_y)
+  list(
+    annotate("segment", x = start[1], y = start[2],
+             xend = tip[1], yend = tip[2],
+             arrow = grid::arrow(length = grid::unit(0.16 * size, "cm"),
+                                 type = "closed"),
+             colour = COMPASS$color, linewidth = 0.5 * size),
+    annotate("text", x = tail[1], y = tail[2], label = "N",
+             fontface = "bold", size = 11 * size / 2.845,
+             colour = COMPASS$color))
+}
+
 
 legend_position <- function(location) {
   # PyMappr legend locations approximated by ggplot2 sides.

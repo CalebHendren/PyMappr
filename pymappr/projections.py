@@ -232,6 +232,28 @@ class Projection:
             return _transformer(self.crs).transform(
                 xs, ys, direction="INVERSE")
 
+    def ground_distance(self, x0: float, y0: float,
+                        x1: float, y1: float) -> float:
+        """Distance on the ground, in metres, between two points given in map
+        (axis) coordinates.
+
+        Axis units differ per projection - degrees for Equirectangular, metres
+        for every projected CRS - and on a projected CRS the axis metre is not
+        the ground metre anyway (a Mercator map stretches enormously towards
+        the poles). So this goes back to lon/lat and measures on the WGS84
+        ellipsoid, which is right for every projection the app offers.
+
+        Returns NaN when either endpoint has no lon/lat - off the globe's
+        visible disk, say - which callers must treat as "cannot measure here".
+        """
+        lons, lats = self.inverse(np.array([x0, x1]), np.array([y0, y1]))
+        lons = np.asarray(lons, dtype=float)
+        lats = np.asarray(lats, dtype=float)
+        if not np.isfinite(lons).all() or not np.isfinite(lats).all():
+            return float("nan")
+        _, _, metres = _geod().inv(lons[0], lats[0], lons[1], lats[1])
+        return abs(float(metres))
+
     def project_extent(self, extent) -> tuple[float, float, float, float]:
         """Project a (lon0, lon1, lat0, lat1) box to a projected bbox.
 
@@ -269,6 +291,15 @@ class Projection:
         if not len(px):  # extent outside the region: fall back to full bounds
             return self.bounds
         return float(px.min()), float(px.max()), float(py.min()), float(py.max())
+
+
+@lru_cache(maxsize=None)
+def _geod():
+    """The WGS84 ellipsoid used for ground distances. Cached, and imported
+    lazily for the same reason as :func:`_transformer`."""
+    from pyproj import Geod
+
+    return Geod(ellps="WGS84")
 
 
 @lru_cache(maxsize=None)
