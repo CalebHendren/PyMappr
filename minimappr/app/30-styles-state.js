@@ -13,7 +13,7 @@ function defaultStyles(labels, colorKeys, varySymbols, base){
     labels.forEach((lab,i)=>{
       styles[lab]= labels.length===1
         ? {color:base.color, marker:base.marker, size:base.size}
-        : {color:DEFAULT_PALETTE[i%DEFAULT_PALETTE.length],
+        : {color:palette()[i%palette().length],
            marker:varySymbols?MARKER_CYCLE[i%MARKER_CYCLE.length]:base.marker, size:base.size};
     });
     return styles;
@@ -21,7 +21,7 @@ function defaultStyles(labels, colorKeys, varySymbols, base){
   const order = uniqueInOrder(colorKeys), seen={};
   labels.forEach((lab,i)=>{
     const key=colorKeys[i]; const s=seen[key]||0; seen[key]=s+1;
-    styles[lab]={color:DEFAULT_PALETTE[order.indexOf(key)%DEFAULT_PALETTE.length],
+    styles[lab]={color:palette()[order.indexOf(key)%palette().length],
       marker:MARKER_CYCLE[s%MARKER_CYCLE.length], size:base.size};
   });
   return styles;
@@ -113,7 +113,7 @@ function legendLabel(value, n, total){
 function attributeStyleMaps(rows, colorKey, symbolKey){
   const colorMap={}, symbolMap={};
   if(colorKey){ uniqueInOrder(rows.map(r=>r._attr[colorKey]??"")).forEach(v=>{
-    colorMap[v]=DEFAULT_PALETTE[Object.keys(colorMap).length%DEFAULT_PALETTE.length]; }); }
+    colorMap[v]=palette()[Object.keys(colorMap).length%palette().length]; }); }
   if(symbolKey){
     // Shapes may only repeat when a colour tells the repeats apart, so the
     // cycle restarts per colour group when the columns nest: three genera of
@@ -249,7 +249,7 @@ function resolveGroups(ds){
       const [cv,sv]=JSON.parse(js);
       const sub = rows.filter(r=>(r._attr[ds.colorBy]??"")===cv && (r._attr[ds.symbolBy]??"")===sv);
       const label = [cv,sv].filter(Boolean).join(" / ") || "All points";
-      const defColor = Object.values(colorMap)[0]||DEFAULT_PALETTE[0];
+      const defColor = Object.values(colorMap)[0]||palette()[0];
       let style={color:colorMap[cv]||defColor, marker:symbolMap[sv]||"Circle", size:ds.base.size};
       // The row that governs a combination depends on the shape of the key:
       // a nested leaf owns the whole combination, while a crossed key takes

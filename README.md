@@ -23,6 +23,10 @@ Python as an offline desktop application.
   Lambert projections, all reprojected live. Drag the globe to spin it.
 - Landscape or portrait framing, draggable legend and labels, compass,
   graticule, and continent presets.
+- A geodesically measured scale bar (kilometres, miles or both) with a
+  choice of corner, segmented or plain styling, automatic or fixed length,
+  and drag-to-place; the north arrow takes the same placement controls.
+- A colourblind-safe (Okabe-Ito) point palette alongside the default.
 - Projects (`.pymappr` files) with autosave/restore, and export/import for
   sharing.
 - Export the current map as PNG, or as a self-contained Python

@@ -17,10 +17,11 @@ the app, the exported Python script and the tests share one implementation.
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, fields
+from dataclasses import asdict, dataclass
 
 import pandas as pd
 
+from pymappr.options import values_from_dict
 from pymappr.styles import (PointStyle, apply_override, owner_map,
                             resolve_nesting)
 
@@ -83,32 +84,6 @@ FONT_FAMILIES = {"Default": "", "Sans-serif": "sans-serif",
                  "Serif": "serif", "Monospace": "monospace"}
 
 TITLE_ALIGNMENTS = {"Left": "left", "Centre": "center", "Right": "right"}
-
-
-_UNSET = object()
-
-
-def _coerce(value, annotation):
-    """A stored value as the type its field declares, or ``_UNSET`` when it
-    cannot be read that way and the default should stand.
-
-    Annotations are strings here (``from __future__ import annotations``), so
-    this matches on the text rather than the type object.
-    """
-    text = str(annotation)
-    optional = "None" in text
-    if value is None:
-        return None if optional else _UNSET
-    try:
-        if text.startswith("bool"):
-            return bool(value)
-        if text.startswith("int"):
-            return int(float(value))
-        if text.startswith("float"):
-            return float(value)
-        return str(value)
-    except (TypeError, ValueError):
-        return _UNSET
 
 
 @dataclass
@@ -192,15 +167,7 @@ class LegendOptions:
         dataclass existed hold the raw Tk variable values, where a font size
         is the string ``"8"`` rather than a number.
         """
-        data = dict(data or {})
-        values = {}
-        for field in fields(cls):
-            if field.name not in data:
-                continue
-            coerced = _coerce(data[field.name], field.type)
-            if coerced is not _UNSET:
-                values[field.name] = coerced
-        return cls(**values)
+        return cls(**values_from_dict(cls, data))
 
     # -- derived helpers ---------------------------------------------------
 

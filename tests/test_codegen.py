@@ -325,7 +325,7 @@ def test_notes_list_only_external_overlays():
     # ... and the features themselves are configured for drawing.
     assert "BASEMAP = 'relief'" in code
     assert "bathymetry_all" in code
-    assert "COMPASS = True" in code
+    assert "'show': True" in code.split("COMPASS = ")[1].splitlines()[0]
 
 
 def test_capitals_only_swaps_the_cities_layer():
@@ -528,7 +528,9 @@ def test_raster_basemap_is_reproduced():
 
 def test_compass_is_reproduced():
     code = codegen.generate_code(make_state(), [], "Python")
-    assert "COMPASS = True" in code
+    compass = code.split("COMPASS = ")[1].splitlines()[0]
+    assert "'show': True" in compass
+    assert "'position': 'upper right'" in compass
     assert 'arrowstyle="-|>,head_width=0.28,head_length=0.55"' in code
 
 

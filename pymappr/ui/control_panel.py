@@ -16,8 +16,12 @@ from pymappr.layers import CONTINENT_EXTENTS
 from pymappr.legend import (COUNT_FORMATS, ENTRY_ORDERS, FONT_FAMILIES,
                             GROUP_SWATCHES, HIERARCHY_MODES, LEGEND_LOCATIONS,
                             TITLE_ALIGNMENTS, LegendOptions)
+from pymappr.decorations import (CORNERS, CompassOptions,
+                                 ScaleBarOptions)
 from pymappr.projections import (PROJECTIONS, default_origin,
                                  has_custom_origin)
+from pymappr.styles import (DEFAULT_PALETTE_NAME, PALETTES,
+                            palette_for)
 
 PANEL_WIDTH = 320
 
@@ -25,6 +29,11 @@ GRATICULE_CHOICES = {"Off": None, "1\N{DEGREE SIGN}": 1.0,
                      "5\N{DEGREE SIGN}": 5.0, "10\N{DEGREE SIGN}": 10.0}
 # Display label -> renderer orientation key.
 ORIENTATION_LABELS = {"Landscape": "landscape", "Portrait": "portrait"}
+# Display label -> ScaleBarOptions.units / .style / .length_mode value.
+SCALE_UNIT_LABELS = {"Kilometres": "km", "Miles": "mi", "Both": "both"}
+SCALE_STYLE_LABELS = {"Segmented": "segmented", "Plain bar": "plain"}
+SCALE_LENGTH_LABELS = {"Automatic": "auto", "Fixed": "fixed"}
+COMPASS_STYLE_LABELS = {"Arrow with N": "arrow", "Filled triangle": "triangle"}
 KOFI_URL = "https://ko-fi.com/calebhendren"
 
 # Layer toggles, grouped by panel section. Each row is (key, text, kind)
@@ -114,6 +123,7 @@ class ControlPanel(ttk.Frame):
         self._build_legend_section(legend_tab)
 
         self._build_view_section(map_tab)
+        self._build_decorations_section(map_tab)
         self._build_graticule_section(map_tab)
         self._build_export_section(map_tab)
 
@@ -342,6 +352,12 @@ class ControlPanel(ttk.Frame):
         self.vary_symbols_var = tk.BooleanVar(value=False)
         self._check(sec, "Vary symbols per group", self.vary_symbols_var,
                     self.app.on_style_scheme)
+
+        # The palette new groups are coloured from. Changing it re-styles
+        # every dataset, but leaves colours pinned per legend row alone.
+        self.palette_var = tk.StringVar(value=DEFAULT_PALETTE_NAME)
+        self._combo_row(sec, "Palette:", self.palette_var, list(PALETTES),
+                        self.app.on_palette, width=18)
 
         row = ttk.Frame(sec)
         row.pack(fill="x", pady=(6, 0))
@@ -671,10 +687,62 @@ class ControlPanel(ttk.Frame):
                             value=value,
                             command=self.app.on_basemap).pack(anchor="w")
 
+    def _build_decorations_section(self, tab) -> None:
+        """The compass and the scale bar: two small annotations pinned to a
+        corner of the map, sharing a vocabulary of corners."""
+        sec = self._section(tab, "Compass")
         self.compass_var = tk.BooleanVar(value=False)
-        ttk.Separator(sec, orient="horizontal").pack(fill="x", pady=4)
         self._check(sec, "Show compass (north arrow)", self.compass_var,
                     self.app.on_compass)
+        self.compass_position_var = tk.StringVar(value="upper right")
+        self._combo_row(sec, "Position:", self.compass_position_var,
+                        CORNERS, self.app.on_compass, width=12)
+        self.compass_style_var = tk.StringVar(value="Arrow with N")
+        self._named_combo(sec, "Style:", self.compass_style_var,
+                          COMPASS_STYLE_LABELS, self.app.on_compass, width=14)
+        self.compass_size_var = tk.StringVar(value="1.0")
+        self._spin_row(sec, "Size:", self.compass_size_var, 0.5, 3.0, 0.1,
+                       self.app.on_compass)
+
+        sec = self._section(tab, "Scale bar")
+        self.scale_bar_var = tk.BooleanVar(value=False)
+        self._check(sec, "Show scale bar", self.scale_bar_var,
+                    self.app.on_scale_bar)
+        self.scale_units_var = tk.StringVar(value="Kilometres")
+        self._named_combo(sec, "Units:", self.scale_units_var,
+                          SCALE_UNIT_LABELS, self.app.on_scale_bar, width=12)
+        self.scale_position_var = tk.StringVar(value="lower left")
+        self._combo_row(sec, "Position:", self.scale_position_var,
+                        CORNERS, self.app.on_scale_bar, width=12)
+        self.scale_style_var = tk.StringVar(value="Segmented")
+        self._named_combo(sec, "Style:", self.scale_style_var,
+                          SCALE_STYLE_LABELS, self.app.on_scale_bar, width=12)
+        self.scale_length_mode_var = tk.StringVar(value="Automatic")
+        self._named_combo(sec, "Length:", self.scale_length_mode_var,
+                          SCALE_LENGTH_LABELS, self.app.on_scale_bar,
+                          width=12)
+        self.scale_fixed_length_var = tk.StringVar(value="")
+        self.scale_fixed_spin = self._spin_row(
+            sec, "Fixed length:", self.scale_fixed_length_var, 0.1, 100000,
+            10, self.app.on_scale_bar, width=8)
+        self.scale_draggable_var = tk.BooleanVar(value=False)
+        self._check(sec, "Drag to reposition", self.scale_draggable_var,
+                    self.app.on_scale_bar)
+        ttk.Button(sec, text="Reset position",
+                   command=self.app.on_reset_scale_bar).pack(fill="x",
+                                                             pady=(2, 0))
+        ttk.Label(sec, text="On a world map the scale changes with latitude; "
+                            "the bar is accurate where it stands.",
+                  wraplength=PANEL_WIDTH - 60,
+                  foreground="#666666").pack(anchor="w", pady=(2, 0))
+        self.update_scale_length_state()
+
+    def update_scale_length_state(self) -> None:
+        """The fixed-length box only matters in Fixed mode."""
+        fixed = SCALE_LENGTH_LABELS.get(
+            self.scale_length_mode_var.get()) == "fixed"
+        self.scale_fixed_spin.configure(
+            state="normal" if fixed else "disabled")
 
     def _build_graticule_section(self, tab) -> None:
         sec = self._section(tab, "Graticule (grid)")
@@ -902,6 +970,37 @@ class ControlPanel(ttk.Frame):
     def orientation(self) -> str:
         """The renderer orientation key for the selected label."""
         return ORIENTATION_LABELS.get(self.orientation_var.get(), "landscape")
+
+    def palette(self) -> list[str]:
+        """The colour palette the user picked, for styling new groups."""
+        return palette_for(self.palette_var.get())
+
+    def compass_options(self) -> CompassOptions:
+        return CompassOptions(
+            show=self.compass_var.get(),
+            position=self.compass_position_var.get(),
+            style=COMPASS_STYLE_LABELS.get(self.compass_style_var.get(),
+                                           "arrow"),
+            size=self._number(self.compass_size_var, 0.5, 3.0, 1.0))
+
+    def scale_bar_options(self, anchor=None) -> ScaleBarOptions:
+        """The scale bar as configured. *anchor* keeps a dragged position,
+        which the panel itself has no widget for."""
+        mode = SCALE_LENGTH_LABELS.get(self.scale_length_mode_var.get(),
+                                       "auto")
+        fixed = self._optional_number(self.scale_fixed_length_var,
+                                      0.001, 1e6)
+        return ScaleBarOptions(
+            show=self.scale_bar_var.get(),
+            units=SCALE_UNIT_LABELS.get(self.scale_units_var.get(), "km"),
+            position=self.scale_position_var.get(),
+            style=SCALE_STYLE_LABELS.get(self.scale_style_var.get(),
+                                         "segmented"),
+            length_mode=mode,
+            fixed_length=fixed,
+            draggable=self.scale_draggable_var.get(),
+            anchor_x=None if anchor is None else anchor[0],
+            anchor_y=None if anchor is None else anchor[1])
 
     @staticmethod
     def _number(var: tk.StringVar, low: float, high: float,

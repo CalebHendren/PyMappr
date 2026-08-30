@@ -228,6 +228,11 @@
                 <p class="hintline">Setting <b>Symbol by</b> builds a compact colour + symbol legend
                   (e.g. colour by Family, symbol by Genus).</p>
                 <label class="check"><input type="checkbox" id="varySymbols"> Vary symbols per group</label>
+                <div class="row"><label class="lbl grow">Palette</label>
+                  <select id="paletteSel" class="grow">
+                    <option value="Default">Default</option>
+                    <option value="Colourblind safe (Okabe-Ito)">Colourblind safe (Okabe-Ito)</option>
+                  </select></div>
               </div>
             </details>
 
@@ -666,6 +671,16 @@ const SAMPLES = JSON.parse(document.getElementById("samples").textContent);
 /* ---------------- palette / markers (ported from styles.py) ---------------- */
 const DEFAULT_PALETTE = ["#d62728","#1f77b4","#2ca02c","#ff7f0e","#9467bd",
   "#8c564b","#e377c2","#17becf","#bcbd22","#7f7f7f"];
+// Okabe-Ito: eight hues that stay distinguishable under the common forms of
+// colour-vision deficiency, which the default palette's adjacent red and
+// green do not. Matches OKABE_ITO in styles.py.
+const OKABE_ITO = ["#0072b2","#d55e00","#009e73","#cc79a7","#e69f00",
+  "#56b4e9","#f0e442","#000000"];
+const PALETTES = {"Default": DEFAULT_PALETTE,
+  "Colourblind safe (Okabe-Ito)": OKABE_ITO};
+// The palette in use is a map-wide setting, not a per-dataset one.
+let PALETTE_NAME = "Default";
+function palette(){ return PALETTES[PALETTE_NAME] || DEFAULT_PALETTE; }
 const BASE_MARKERS = ["Circle","Square","Triangle","Triangle down","Triangle left",
   "Triangle right","Diamond","Thin diamond","Star","Plus","X","Pentagon","Hexagon","Octagon","Dot"];
 const OPEN_SUFFIX = " (open)";
@@ -798,7 +813,7 @@ function defaultStyles(labels, colorKeys, varySymbols, base){
     labels.forEach((lab,i)=>{
       styles[lab]= labels.length===1
         ? {color:base.color, marker:base.marker, size:base.size}
-        : {color:DEFAULT_PALETTE[i%DEFAULT_PALETTE.length],
+        : {color:palette()[i%palette().length],
            marker:varySymbols?MARKER_CYCLE[i%MARKER_CYCLE.length]:base.marker, size:base.size};
     });
     return styles;
@@ -806,7 +821,7 @@ function defaultStyles(labels, colorKeys, varySymbols, base){
   const order = uniqueInOrder(colorKeys), seen={};
   labels.forEach((lab,i)=>{
     const key=colorKeys[i]; const s=seen[key]||0; seen[key]=s+1;
-    styles[lab]={color:DEFAULT_PALETTE[order.indexOf(key)%DEFAULT_PALETTE.length],
+    styles[lab]={color:palette()[order.indexOf(key)%palette().length],
       marker:MARKER_CYCLE[s%MARKER_CYCLE.length], size:base.size};
   });
   return styles;
@@ -898,7 +913,7 @@ function legendLabel(value, n, total){
 function attributeStyleMaps(rows, colorKey, symbolKey){
   const colorMap={}, symbolMap={};
   if(colorKey){ uniqueInOrder(rows.map(r=>r._attr[colorKey]??"")).forEach(v=>{
-    colorMap[v]=DEFAULT_PALETTE[Object.keys(colorMap).length%DEFAULT_PALETTE.length]; }); }
+    colorMap[v]=palette()[Object.keys(colorMap).length%palette().length]; }); }
   if(symbolKey){
     // Shapes may only repeat when a colour tells the repeats apart, so the
     // cycle restarts per colour group when the columns nest: three genera of
@@ -1034,7 +1049,7 @@ function resolveGroups(ds){
       const [cv,sv]=JSON.parse(js);
       const sub = rows.filter(r=>(r._attr[ds.colorBy]??"")===cv && (r._attr[ds.symbolBy]??"")===sv);
       const label = [cv,sv].filter(Boolean).join(" / ") || "All points";
-      const defColor = Object.values(colorMap)[0]||DEFAULT_PALETTE[0];
+      const defColor = Object.values(colorMap)[0]||palette()[0];
       let style={color:colorMap[cv]||defColor, marker:symbolMap[sv]||"Circle", size:ds.base.size};
       // The row that governs a combination depends on the shape of the key:
       // a nested leaf owns the whole combination, while a crossed key takes
@@ -1986,6 +2001,10 @@ $("#symbolBy").addEventListener("change",e=>{ const ds=selectedDataset(); ds.sym
   ds.overrides={}; renderGroupOverrides(ds); render(); });
 $("#varySymbols").addEventListener("change",e=>{ const ds=selectedDataset(); ds.varySymbols=e.target.checked;
   ds.overrides={}; render(); });
+// The palette is map-wide: clearing every dataset's overrides would throw
+// away colours the user pinned, so only the auto-assigned styles change.
+$("#paletteSel").addEventListener("change",e=>{ PALETTE_NAME=e.target.value;
+  render(); renderDatasetList(); });
 $("#baseMarker").addEventListener("change",e=>{ const ds=selectedDataset(); ds.base.marker=e.target.value; render(); });
 $("#baseColor").addEventListener("input",e=>{ const ds=selectedDataset(); ds.base.color=e.target.value; render(); renderDatasetList(); });
 $("#sizeRange").addEventListener("input",e=>{ const ds=selectedDataset(); ds.base.size=+e.target.value;
