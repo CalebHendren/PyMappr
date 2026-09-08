@@ -1,4 +1,4 @@
-/* ---------------- palette / markers (ported from styles.py) ---------------- */
+/* palette / markers (ported from styles.py) */
 const DEFAULT_PALETTE = ["#d62728","#1f77b4","#2ca02c","#ff7f0e","#9467bd",
   "#8c564b","#e377c2","#17becf","#bcbd22","#7f7f7f"];
 // Okabe-Ito: eight hues that stay distinguishable under the common forms of
@@ -53,7 +53,7 @@ function markerPath(marker,r){
   }
 }
 
-/* ---------------- coordinate parsing (ported from coords.py) ---------------- */
+/* coordinate parsing (ported from coords.py) */
 const HEMI = {N:1,S:-1,E:1,W:-1};
 const DMS_RE = /^(\d+(?:[.,]\d+)?)\s*(?:[°ºd]|deg(?:rees)?)?(?:[\s:]*(\d+(?:[.,]\d+)?)\s*(?:[′ʹ']|m(?:in(?:utes)?)?)?)?(?:[\s:]*(\d+(?:[.,]\d+)?)\s*(?:[″ʺ"]|''|s(?:ec(?:onds)?)?)?)?\s*$/i;
 function toFloat(t){ return parseFloat(String(t).replace(",",".")); }
@@ -94,7 +94,7 @@ function parseCoordinate(value, kind){
   return deg;
 }
 
-/* ---------------- delimited-text parsing ---------------- */
+/* delimited-text parsing */
 function detectDelim(text){
   const line = text.split(/\r?\n/,1)[0] || "";
   const counts = {",":0,"\t":0,";":0};

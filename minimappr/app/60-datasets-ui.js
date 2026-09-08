@@ -1,4 +1,4 @@
-/* ---------------- dataset ingest ---------------- */
+/* dataset ingest */
 function makeDataset(name, columns, rows, base){
   // rows: array of {lon,lat,label,_attr}
   return {
@@ -64,25 +64,43 @@ function pointsFromMapping(parsed, mapping){
   return {points:out, attrCols, bad};
 }
 
-/* ---------------- UI: datasets panel ---------------- */
+/* UI: datasets panel */
 function selectedDataset(){ return datasets.find(d=>d.id===selId)||null; }
+// Selecting a dataset is what enables the Style tab and the Edit/Remove buttons,
+// so the rows have to be reachable without a mouse. Re-rendering replaces the
+// row that had focus, hence the opt-in restore.
+function selectDataset(id, restoreFocus){
+  selId=id; syncStylePanel(); renderDatasetList();
+  if(restoreFocus){ const r=$("#dslist .ds.sel"); if(r) r.focus(); }
+}
 function renderDatasetList(){
   const box=$("#dslist");
-  if(!datasets.length){ box.innerHTML='<div id="dsempty">No data yet. Add a CSV, paste a table, or load a sample.</div>'; }
+  if(!datasets.length){ box.innerHTML='<div id="dsempty">No data yet. Add a CSV, paste a table, or load a sample.</div>';
+    box.removeAttribute("role"); box.removeAttribute("aria-label"); }
   else{
     box.innerHTML="";
+    box.setAttribute("role","listbox"); box.setAttribute("aria-label","Datasets");
     for(const ds of datasets){
       const res=resolveGroups(ds);
       const sw = res.groups[0] ? res.groups[0].style.color : "#888";
       const row=document.createElement("div");
       row.className="ds"+(ds.id===selId?" sel":"");
-      row.innerHTML=`<input type="checkbox" class="vis" ${ds.visible?"checked":""}>
+      row.tabIndex=0;
+      row.setAttribute("role","option");
+      row.setAttribute("aria-selected", ds.id===selId ? "true" : "false");
+      row.innerHTML=`<input type="checkbox" class="vis" ${ds.visible?"checked":""}
+          aria-label="Show ${escapeHtml(ds.name)}">
         <span class="sw" style="background:${sw}"></span>
         <span class="nm">${escapeHtml(ds.name)}</span>
         <span class="ct">${ds.rows.length}</span>`;
       row.querySelector(".vis").addEventListener("click",e=>{ e.stopPropagation();
         ds.visible=e.target.checked; render(); });
-      row.addEventListener("click",()=>{ selId=ds.id; syncStylePanel(); renderDatasetList(); });
+      row.addEventListener("click",()=>selectDataset(ds.id, false));
+      row.addEventListener("keydown",e=>{
+        if(e.target!==row) return;            // the visibility checkbox keeps its own keys
+        if(e.key!=="Enter" && e.key!==" ") return;
+        e.preventDefault(); selectDataset(ds.id, true);
+      });
       box.appendChild(row);
     }
   }
@@ -120,7 +138,7 @@ function datasetToParsed(ds){
   return {columns, rows, mapping};
 }
 
-/* ---------------- UI: style panel ---------------- */
+/* UI: style panel */
 function fillSelect(sel, values, current){
   sel.innerHTML=""; for(const v of values){ const o=document.createElement("option");
     o.value=v.value!==undefined?v.value:v; o.textContent=v.label!==undefined?v.label:v; sel.appendChild(o); }

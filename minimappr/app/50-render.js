@@ -1,4 +1,4 @@
-/* ---------------- rendering ---------------- */
+/* rendering */
 const svg = $("#map");
 function el(tag, attrs){ const e=document.createElementNS(svgNS,tag);
   if(attrs) for(const k in attrs) e.setAttribute(k, attrs[k]); return e; }

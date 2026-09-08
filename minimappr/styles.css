@@ -3,16 +3,18 @@
     --bg:#eceef1; --panel:#ffffff; --panel2:#fcfdfe; --ink:#1d2127; --muted:#6a7178;
     --line:#d9dde2; --line2:#e8ebef; --accent:#2f6db5; --accent-ink:#ffffff;
     --field:#ffffff; --hover:#f2f5f9; --sel:#eef4fb; --stage:#dfe3e8; --kbd:#eef1f4;
-    --err:#b3261e;
+    --err:#b3261e; --focus:#1d5aa0;
+    --stage-ink:#3d444b; --stage-muted:#555c64; --stagebar-bg:rgba(255,255,255,.9);
     --shadow:0 1px 2px rgba(20,30,50,.06),0 2px 10px rgba(20,30,50,.05);
     --radius:8px;
   }
   :root[data-theme="dark"]{
     color-scheme:dark;
     --bg:#121417; --panel:#1b1f24; --panel2:#20252b; --ink:#e7eaee; --muted:#98a1ab;
-    --line:#343b43; --line2:#2a3037; --accent:#5a9be0; --accent-ink:#ffffff;
+    --line:#343b43; --line2:#2a3037; --accent:#5a9be0; --accent-ink:#0d1013;
     --field:#20252b; --hover:#262c33; --sel:#233445; --stage:#0d1013; --kbd:#2a3037;
-    --err:#ff8a80;
+    --err:#ff8a80; --focus:#8fc0ee;
+    --stage-ink:#c9d0d8; --stage-muted:#98a1ab; --stagebar-bg:rgba(27,31,36,.92);
     --shadow:0 1px 2px rgba(0,0,0,.35),0 2px 12px rgba(0,0,0,.4);
   }
   *{box-sizing:border-box}
@@ -22,7 +24,7 @@
   button{font:inherit;cursor:pointer}
   a{color:var(--accent)}
 
-  /* ---------- layout ---------- */
+  /* layout */
   #app{display:flex;flex-direction:column;height:100vh}
   header#top{display:flex;align-items:center;gap:14px;padding:9px 16px;background:var(--panel);
     border-bottom:1px solid var(--line);box-shadow:var(--shadow);z-index:5;flex:0 0 auto}
@@ -57,12 +59,13 @@
   svg#map{width:100%;height:100%;display:block;cursor:grab}
   svg#map.panning{cursor:grabbing}
   #stage .hint{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
-    color:#7b828a;text-align:center;max-width:340px;pointer-events:none}
+    color:var(--stage-muted);text-align:center;max-width:340px;pointer-events:none}
+  #stage .hint .lead{font-size:15px;font-weight:600;color:var(--stage-ink)}
   #stagebar{position:absolute;left:10px;bottom:10px;display:flex;gap:8px;align-items:center;
-    background:rgba(255,255,255,.9);border:1px solid var(--line);border-radius:7px;padding:4px 8px;
+    background:var(--stagebar-bg);border:1px solid var(--line);border-radius:7px;padding:4px 8px;
     font-size:12px;color:var(--muted);backdrop-filter:blur(3px)}
 
-  /* ---------- controls ---------- */
+  /* controls */
   .sec{border:1px solid var(--line2);border-radius:var(--radius);margin:10px 0;background:var(--panel2)}
   .sec>summary{list-style:none;cursor:pointer;padding:9px 11px;font-weight:700;font-size:12.5px;
     display:flex;align-items:center;gap:7px;user-select:none}
@@ -78,18 +81,22 @@
   select,input[type=text],input[type=number],textarea{
     width:100%;padding:7px 8px;border:1px solid var(--line);border-radius:6px;background:var(--field);
     color:var(--ink);font:inherit}
-  select:focus,input:focus,textarea:focus{outline:2px solid #cfe0f3;border-color:var(--accent)}
+  select:focus,input:focus,textarea:focus{outline:2px solid var(--focus);border-color:var(--accent)}
+  /* Buttons, links and the collapsible summaries carry no focus style of their own,
+     so keyboard users get the ring here. :focus-visible keeps it off mouse clicks. */
+  a:focus-visible,button:focus-visible,summary:focus-visible,
+  .ds:focus-visible,[tabindex]:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
   textarea{resize:vertical;min-height:96px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12.5px}
   input[type=range]{width:100%}
   input[type=color]{width:34px;height:28px;padding:0;border:1px solid var(--line);border-radius:6px;background:none;cursor:pointer}
   .btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:8px 11px;border:1px solid var(--line);
     border-radius:7px;background:var(--panel);color:var(--ink);font-weight:600;font-size:13px}
   .btn:hover{background:var(--hover)}
-  .btn.pri{background:var(--accent);color:#fff;border-color:var(--accent)}
+  .btn.pri{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
   .btn.pri:hover{filter:brightness(1.05)}
   .btn.sm{padding:6px 9px;font-size:12px}
   .btn.full{width:100%}
-  .btn.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+  .btn.on{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
   .btnrow{display:flex;gap:7px;flex-wrap:wrap}
   .btnrow>*{flex:1 1 auto}
   .check{display:flex;align-items:center;gap:8px;margin:7px 0;font-size:13px}
@@ -99,7 +106,7 @@
   .seg{display:inline-flex;border:1px solid var(--line);border-radius:7px;overflow:hidden}
   .seg button{background:var(--panel);border:none;padding:6px 10px;font-size:12.5px;color:var(--muted);border-left:1px solid var(--line)}
   .seg button:first-child{border-left:none}
-  .seg button.on{background:var(--accent);color:#fff}
+  .seg button.on{background:var(--accent);color:var(--accent-ink)}
   .valbadge{flex:0 0 auto;min-width:34px;text-align:right;font-variant-numeric:tabular-nums;color:var(--muted);font-size:12px}
 
   /* datasets list */
@@ -132,4 +139,23 @@
   @media (max-width:820px){
     #side{flex-basis:300px}
     header#top .tag{display:none}
+  }
+  /* Below ~640px a fixed-width side panel leaves the map too narrow to read,
+     so the two stack: controls above at a capped height, map taking the rest.
+     Controls also grow to a 44px tap target at this size. */
+  @media (max-width:640px){
+    header#top{flex-wrap:wrap;gap:9px;padding:8px 11px}
+    header#top .logo{font-size:18px}
+    header#top .spacer{flex-basis:100%;height:0}
+    main{flex-direction:column}
+    #side{flex:0 0 auto;max-height:46vh;border-right:none;border-bottom:1px solid var(--line)}
+    #stage{flex:1 1 auto;min-height:0}
+    #tabs button{padding:13px 4px}
+    .btn{padding:11px 12px}
+    .btn.sm{padding:10px 10px}
+    .pill{padding:10px 14px}
+    .seg button{padding:10px 12px}
+    .check input{width:18px;height:18px}
+    .modal-bg{padding:10px}
+    .modal{width:100%;max-height:92vh}
   }

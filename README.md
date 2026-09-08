@@ -113,7 +113,7 @@ Building the release packages is automated by
 [`build-release.yml`](.github/workflows/build-release.yml); see
 `packaging/` for local build scripts per platform.
 
-## MinMappr (browser version)
+## MiniMappr (browser version)
 
 [`index.html`](index.html) is **MiniMappr**, a browser-only edition
 of PyMappr hosted with GitHub Pages at
@@ -153,7 +153,7 @@ and Marine ecoregions ([WWF/TNC MEOW](https://hub.arcgis.com/datasets/903c3ae05b
 are CC-BY licensed and fetched by `scripts/fetch_data.py`; if a source is
 unavailable, that layer is skipped and the rest of PyMappr works as usual.
 
-MinMappr (the browser version) uses a simplified, Natural Earth-derived world
+MiniMappr (the browser version) uses a simplified, Natural Earth-derived world
 outline from [world-atlas](https://github.com/topojson/world-atlas) (public
 domain), rendered with [D3](https://d3js.org) and d3-geo-projection and decoded
 with topojson-client (all ISC licensed).

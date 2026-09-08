@@ -1,4 +1,4 @@
-/* ---------------- events ---------------- */
+/* events */
 function openModal(id){ $("#"+id).classList.add("on"); }
 function closeModal(id){ $("#"+id).classList.remove("on"); }
 $$("[data-close]").forEach(b=>b.addEventListener("click",()=>closeModal(b.dataset.close)));
@@ -10,6 +10,15 @@ $$(".modal-bg").forEach(bg=>bg.addEventListener("mousedown",e=>{ if(e.target===b
 $$('[data-close="pasteModal"],[data-close="mapModal"]').forEach(b=>
   b.addEventListener("click",()=>{ pasteEditingId=null; mapEditingId=null; }));
 $("#aboutBtn").addEventListener("click",e=>{ e.preventDefault(); openModal("aboutModal"); });
+// Modals were mouse-only: backdrop click or the Close button. Escape closes the
+// last-opened one, matching what the backdrop click already does.
+document.addEventListener("keydown",e=>{
+  if(e.key!=="Escape") return;
+  const open=$$(".modal-bg.on");
+  if(!open.length) return;
+  open[open.length-1].classList.remove("on");
+  pasteEditingId=null; mapEditingId=null;
+});
 
 // tabs
 $$("#tabs button").forEach(b=>b.addEventListener("click",()=>{

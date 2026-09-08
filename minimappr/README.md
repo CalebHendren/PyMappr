@@ -1,8 +1,8 @@
-# MiniMappr — source
+# MiniMappr source
 
 MiniMappr is the lightweight, in-browser edition of PyMappr. It ships as a single
 self-contained file, [`../index.html`](../index.html), which is what GitHub Pages
-serves. That file is **generated** — this folder holds the readable source it is
+serves. That file is **generated**; this folder holds the readable source it is
 built from.
 
 ## Build
@@ -21,7 +21,7 @@ library. Run it after changing anything in here, and commit the regenerated
 |------|------------|
 | `template.html` | Page shell with `@@TOKENS@@` for the injected blocks |
 | `styles.css` | The `<style>` block |
-| `body.html` | The `<body>` markup — header, side panels, modals |
+| `body.html` | The `<body>` markup: header, side panels, modals |
 | `vendor/` | D3 v7, d3-geo-projection v4, topojson-client v3 (verbatim, ISC-licensed) |
 | `data/land-110m.json`, `data/countries-110m.json` | world-atlas 110m TopoJSON basemap |
 | `data/samples.json` | The three built-in sample datasets |
@@ -39,7 +39,7 @@ library. Run it after changing anything in here, and commit the regenerated
 - `@@APP@@` ← every `app/*.js` concatenated, inside one `"use strict"` IIFE
 
 Because the whole app lives in a single IIFE, the `app/*.js` files are **fragments
-of one scope**, not standalone modules — they share top-level `const`s and
+of one scope**, not standalone modules. They share top-level `const`s and
 functions and must stay in filename order. The numeric prefixes fix that order.
 
 ### Sample data

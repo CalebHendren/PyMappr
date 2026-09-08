@@ -25,7 +25,7 @@
       </nav>
       <div id="panels">
 
-        <!-- ============ DATA ============ -->
+        <!-- data tab -->
         <section class="tabpage active" data-page="data">
           <details class="sec" open>
             <summary>Add points</summary>
@@ -66,7 +66,7 @@
           </details>
         </section>
 
-        <!-- ============ STYLE ============ -->
+        <!-- style tab -->
         <section class="tabpage" data-page="style">
           <p class="muted" id="styleFor" style="margin:8px 2px">Select a dataset to style it.</p>
           <div id="styleControls" style="display:none">
@@ -117,7 +117,7 @@
           </div>
         </section>
 
-        <!-- ============ MAP ============ -->
+        <!-- map tab -->
         <section class="tabpage" data-page="map">
           <details class="sec" open>
             <summary>View</summary>
@@ -179,7 +179,7 @@
           </details>
         </section>
 
-        <!-- ============ LEGEND ============ -->
+        <!-- legend tab -->
         <section class="tabpage" data-page="legend">
           <details class="sec" open>
             <summary>Legend</summary>
@@ -336,7 +336,7 @@
           </details>
         </section>
 
-        <!-- ============ EXPORT ============ -->
+        <!-- export tab -->
         <section class="tabpage" data-page="export">
           <details class="sec" open>
             <summary>Export image</summary>
@@ -368,7 +368,7 @@
     <div id="stage">
       <div id="mapwrap"><svg id="map" xmlns="http://www.w3.org/2000/svg"></svg></div>
       <div class="hint" id="emptyHint">
-        <div style="font-size:15px;font-weight:600;color:#5c636b">A blank world, ready for points</div>
+        <div class="lead">A blank world, ready for points</div>
         <div style="margin-top:6px">Add a CSV, paste a table, type coordinates, or load a sample dataset
           from the <b>Data</b> tab.</div>
       </div>
@@ -377,7 +377,7 @@
   </main>
 </div>
 
-<!-- ===== Manual entry modal ===== -->
+<!-- Manual entry modal -->
 <div class="modal-bg" id="manualModal">
   <div class="modal">
     <h3 id="manualModalTitle">Manual coordinate entry</h3>
@@ -406,7 +406,7 @@
   </div>
 </div>
 
-<!-- ===== Paste modal ===== -->
+<!-- Paste modal -->
 <div class="modal-bg" id="pasteModal">
   <div class="modal">
     <h3 id="pasteModalTitle">Paste a table</h3>
@@ -422,7 +422,7 @@
   </div>
 </div>
 
-<!-- ===== Column mapping modal ===== -->
+<!-- Column mapping modal -->
 <div class="modal-bg" id="mapModal">
   <div class="modal">
     <h3 id="mapModalTitle">Map columns</h3>
@@ -442,7 +442,7 @@
   </div>
 </div>
 
-<!-- ===== About modal ===== -->
+<!-- About modal -->
 <div class="modal-bg" id="aboutModal">
   <div class="modal">
     <h3>About MiniMappr</h3>
