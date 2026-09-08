@@ -2,7 +2,7 @@ const $ = s => document.querySelector(s);
 const $$ = s => Array.from(document.querySelectorAll(s));
 const svgNS = "http://www.w3.org/2000/svg";
 
-/* ---------------- embedded data ---------------- */
+/* embedded data */
 const LAND_TOPO = JSON.parse(document.getElementById("land-topo").textContent);
 const CTRY_TOPO = JSON.parse(document.getElementById("countries-topo").textContent);
 const LAND = topojson.feature(LAND_TOPO, LAND_TOPO.objects.land);

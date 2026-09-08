@@ -1,4 +1,4 @@
-/* ---------------- zoom + pan over the map ---------------- */
+/* zoom + pan over the map */
 const stageEl=$("#stage");
 stageEl.addEventListener("wheel",e=>{
   e.preventDefault();
@@ -53,7 +53,7 @@ svg.addEventListener("mousedown",e=>{
 });
 svg.addEventListener("dblclick",()=>{ view={k:1,x:0,y:0}; applyView(); scheduleSave(); }); // reset view
 
-/* ---------------- persistence (localStorage) ---------------- */
+/* persistence (localStorage) */
 const STORE_KEY="minimappr.state.v1";
 let saveTimer=null;
 function scheduleSave(){ clearTimeout(saveTimer); saveTimer=setTimeout(saveState,400); }
@@ -98,7 +98,7 @@ function syncMapControls(){
   }
 }
 
-/* ---------------- theme ---------------- */
+/* theme */
 const themeSel=$("#themeSelect");
 const darkMQ=window.matchMedia("(prefers-color-scheme: dark)");
 function applyTheme(){
@@ -109,7 +109,7 @@ function applyTheme(){
 themeSel.addEventListener("change",()=>{ applyTheme(); scheduleSave(); });
 darkMQ.addEventListener("change",()=>{ if(themeSel.value==="system") applyTheme(); });
 
-/* ---------------- boot ---------------- */
+/* boot */
 const restored=loadState();
 applyTheme();
 if(restored) syncMapControls();

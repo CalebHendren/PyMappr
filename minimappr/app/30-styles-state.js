@@ -1,4 +1,4 @@
-/* ---------------- styling logic (ported from styles.py) ---------------- */
+/* styling logic (ported from styles.py) */
 function uniqueInOrder(arr){ const seen=new Set(), out=[]; for(const v of arr){ if(!seen.has(v)){seen.add(v);out.push(v);} } return out; }
 
 function groupPoints(rows, groupBy){
@@ -130,7 +130,7 @@ function attributeStyleMaps(rows, colorKey, symbolKey){
   return {colorMap, symbolMap};
 }
 
-/* ---------------- state ---------------- */
+/* state */
 let datasets=[]; let selId=null; let nextId=1;
 const CONTINENT_EXTENTS = {
   "World":[-180,180,-90,90], "Africa":[-20,55,-38,40], "Antarctica":[-180,180,-90,-60],
@@ -237,7 +237,7 @@ function clampView(){
 }
 function applyView(){ const vp=svg.querySelector("#viewport"); if(vp) vp.setAttribute("transform",viewTransform()); }
 
-/* ---------------- dataset styling resolution ---------------- */
+/* dataset styling resolution */
 function resolveGroups(ds){
   // returns {mode, groups:[{label,style,rows}], legend:{...}}
   const rows = ds.rows;

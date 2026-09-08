@@ -1,4 +1,4 @@
-/* ---------------- projection + frame ---------------- */
+/* projection + frame */
 function sizePx(size){ return Math.sqrt(size)*1.4; }
 function currentProjDef(){ return PROJ_DEFS[opts.projection]; }
 // A MultiPoint sampling the box edges. Used only for fitExtent: bounds of a
