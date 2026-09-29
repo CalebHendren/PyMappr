@@ -348,6 +348,14 @@ def test_from_dict_ignores_unknown_keys_and_defaults_missing_ones():
     assert options.hierarchy == "auto"      # a key an old project never wrote
 
 
+def test_from_dict_reads_booleans_written_as_text():
+    # bool("false") is True, so text has to be read, not truth-tested.
+    options = LegendOptions.from_dict({"frame": "false", "counts": "True",
+                                       "shadow": "0"})
+    assert (options.frame, options.counts, options.shadow) == (False, True,
+                                                               False)
+
+
 def test_indent_and_pad_helpers():
     options = LegendOptions(indent=2)
     assert options.indent_for(0) == "  "

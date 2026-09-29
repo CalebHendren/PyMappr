@@ -134,13 +134,20 @@ def headers_look_like_data(frame: pd.DataFrame) -> bool:
 
 
 def _match(columns: list[str], hints: tuple[str, ...]) -> str | None:
+    """The column a coordinate header most likely names: an exact hint
+    ("lng"), then one starting with a hint ("Long."), then one containing
+    the whole word ("decimalLongitude"). Short hints never match inside
+    other words - "x" and "y" sit in Taxon, Family and Locality, "lon" in
+    Colony."""
     lowered = {c.lower().strip(): c for c in columns}
-    for hint in hints:
-        if hint in lowered:
-            return lowered[hint]
-    for low, original in lowered.items():
-        if any(low.startswith(hint) or hint in low for hint in hints):
-            return original
+    rules = (lambda low, hint: low == hint,
+             lambda low, hint: len(hint) > 1 and low.startswith(hint),
+             lambda low, hint: len(hint) > 4 and hint in low)
+    for rule in rules:
+        for hint in hints:
+            for low, original in lowered.items():
+                if rule(low, hint):
+                    return original
     return None
 
 

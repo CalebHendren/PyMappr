@@ -46,6 +46,28 @@ def test_header_guessing_out_of_order(tmp_path):
     assert ds.frame.iloc[0]["lon"] == pytest.approx(-97.1)
 
 
+def test_short_hints_do_not_match_inside_other_words(tmp_path):
+    # "x" sits in Taxon and "y" in Locality; they must not win over the
+    # real Long./Lat. columns.
+    path = write(tmp_path, """\
+        Taxon,Locality,Long.,Lat.
+        Eleusis,Manaus,-60.0,-3.1
+    """)
+    mapping = guess_mapping(read_table(path))
+    assert (mapping.longitude, mapping.latitude) == ("Long.", "Lat.")
+    assert mapping.names == ["Taxon", "Locality"]
+
+
+def test_darwin_core_coordinate_headers(tmp_path):
+    path = write(tmp_path, """\
+        scientificName,decimalLatitude,decimalLongitude
+        Eleusis andina,-3.1,-60.0
+    """)
+    mapping = guess_mapping(read_table(path))
+    assert mapping.longitude == "decimalLongitude"
+    assert mapping.latitude == "decimalLatitude"
+
+
 def test_positional_fallback_without_hints(tmp_path):
     path = write(tmp_path, """\
         A,B,C,D

@@ -35,6 +35,9 @@ def coerce_value(value, annotation):
         return None if optional else UNSET
     try:
         if text.startswith("bool"):
+            if isinstance(value, str):
+                # bool("false") is True; a hand-edited project may say so.
+                return value.strip().lower() in ("1", "true", "yes", "on")
             return bool(value)
         if text.startswith("int"):
             return int(float(value))
