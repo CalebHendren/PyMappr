@@ -19,10 +19,11 @@ from matplotlib.backends.backend_agg import FigureCanvasAgg  # noqa: E402
 from matplotlib.figure import Figure  # noqa: E402
 
 from pymappr.layers import LayerStore  # noqa: E402
-from pymappr.renderer import (MARGINS_PLAIN, MARGINS_WITH_TICKS,  # noqa: E402
-                              ORIENTATION_ASPECT, MapRenderer,
-                              _export_geometry, _oriented_axes_rect,
-                              _refit_xlim)
+from pymappr.renderer import MapRenderer  # noqa: E402
+from pymappr.renderer.geometry import (export_geometry,  # noqa: E402
+                                       oriented_axes_rect, refit_xlim)
+from pymappr.renderer.tables import (MARGINS_PLAIN,  # noqa: E402
+                                     MARGINS_WITH_TICKS, ORIENTATION_ASPECT)
 from pymappr.legend import LegendOptions  # noqa: E402
 from pymappr.styles import PointStyle  # noqa: E402
 
@@ -79,7 +80,7 @@ class _MouseEvent:
 
 
 def test_landscape_keeps_the_full_margin_box():
-    rect = _oriented_axes_rect(MARGINS_PLAIN, 9.0, 6.5, None)
+    rect = oriented_axes_rect(MARGINS_PLAIN, 9.0, 6.5, None)
     left, bottom, right, top = MARGINS_PLAIN
     assert rect == (left, bottom, right - left, top - bottom)
 
@@ -87,7 +88,7 @@ def test_landscape_keeps_the_full_margin_box():
 def test_portrait_narrows_and_centres_a_wide_canvas():
     aspect = ORIENTATION_ASPECT["portrait"]
     fig_w, fig_h = 9.0, 6.5
-    rect = _oriented_axes_rect(MARGINS_PLAIN, fig_w, fig_h, aspect)
+    rect = oriented_axes_rect(MARGINS_PLAIN, fig_w, fig_h, aspect)
     left, _bottom, width, height = rect
     # The axes box now has the requested width:height ratio.
     assert _box_aspect(rect, fig_w, fig_h) == pytest.approx(aspect, rel=1e-6)
@@ -104,7 +105,7 @@ def test_portrait_shortens_a_tall_canvas():
     # width, so the box still ends at the requested ratio.
     aspect = ORIENTATION_ASPECT["portrait"]
     fig_w, fig_h = 6.0, 12.0
-    rect = _oriented_axes_rect(MARGINS_PLAIN, fig_w, fig_h, aspect)
+    rect = oriented_axes_rect(MARGINS_PLAIN, fig_w, fig_h, aspect)
     _left, bottom, width, height = rect
     assert _box_aspect(rect, fig_w, fig_h) == pytest.approx(aspect, rel=1e-6)
     assert width == pytest.approx(MARGINS_PLAIN[2] - MARGINS_PLAIN[0])
@@ -117,7 +118,7 @@ def test_portrait_refit_crops_the_sides_keeping_the_vertical_span():
     # narrows horizontally about its centre; the y-span is untouched.
     xlim, ylim = (-95.0, -30.0), (-58.0, 15.0)
     box_ratio = ORIENTATION_ASPECT["portrait"]
-    new_x0, new_x1 = _refit_xlim(box_ratio, xlim, ylim, 360.0, clamp=True)
+    new_x0, new_x1 = refit_xlim(box_ratio, xlim, ylim, 360.0, clamp=True)
     assert (new_x0 + new_x1) / 2 == pytest.approx((xlim[0] + xlim[1]) / 2)
     assert (new_x1 - new_x0) < (xlim[1] - xlim[0])          # cropped
     height = ylim[1] - ylim[0]
@@ -127,11 +128,11 @@ def test_portrait_refit_crops_the_sides_keeping_the_vertical_span():
 def test_landscape_refit_widens_and_is_reversible():
     xlim, ylim = (-88.9, -36.1), (-58.0, 15.0)   # a portrait view
     height = ylim[1] - ylim[0]
-    wide = _refit_xlim(1.4, xlim, ylim, 360.0, clamp=True)
+    wide = refit_xlim(1.4, xlim, ylim, 360.0, clamp=True)
     assert (wide[1] - wide[0]) > (xlim[1] - xlim[0])        # widened
     # Round-tripping back to the same ratio restores the same width.
-    back = _refit_xlim(ORIENTATION_ASPECT["portrait"], wide, ylim, 360.0,
-                       clamp=True)
+    back = refit_xlim(ORIENTATION_ASPECT["portrait"], wide, ylim, 360.0,
+                      clamp=True)
     assert (back[1] - back[0]) == pytest.approx(
         height * ORIENTATION_ASPECT["portrait"])
 
@@ -140,17 +141,17 @@ def test_refit_clamps_landscape_to_the_world_width():
     # A full-height view whose fitted width would exceed the world is
     # clamped (here 180 * 2.5 = 450 -> 360).
     xlim, ylim = (-30.0, 30.0), (-90.0, 90.0)
-    wide = _refit_xlim(2.5, xlim, ylim, 360.0, clamp=True)
+    wide = refit_xlim(2.5, xlim, ylim, 360.0, clamp=True)
     assert (wide[1] - wide[0]) == pytest.approx(360.0)
     # A hemisphere (globe) view isn't clamped.
-    unclamped = _refit_xlim(2.5, xlim, ylim, 360.0, clamp=False)
+    unclamped = refit_xlim(2.5, xlim, ylim, 360.0, clamp=False)
     assert (unclamped[1] - unclamped[0]) == pytest.approx(180.0 * 2.5)
 
 
 def test_export_leaves_a_full_canvas_unchanged():
     left, bottom, right, top = MARGINS_PLAIN
     pos = (left, bottom, right - left, top - bottom)
-    (size, rect) = _export_geometry(pos, 9.0, 6.5, MARGINS_PLAIN)
+    (size, rect) = export_geometry(pos, 9.0, 6.5, MARGINS_PLAIN)
     assert size == pytest.approx((9.0, 6.5))
     assert rect == pytest.approx(pos)
 
@@ -158,8 +159,8 @@ def test_export_leaves_a_full_canvas_unchanged():
 def test_export_crops_a_portrait_letterbox_without_distortion():
     aspect = ORIENTATION_ASPECT["portrait"]
     fig_w, fig_h = 9.0, 6.5
-    rect = _oriented_axes_rect(MARGINS_PLAIN, fig_w, fig_h, aspect)
-    (exp_w, exp_h), out = _export_geometry(rect, fig_w, fig_h, MARGINS_PLAIN)
+    rect = oriented_axes_rect(MARGINS_PLAIN, fig_w, fig_h, aspect)
+    (exp_w, exp_h), out = export_geometry(rect, fig_w, fig_h, MARGINS_PLAIN)
     # The cropped file is narrower but the same height, and its axes box has
     # identical inches to the on-screen box (so nothing stretches).
     assert exp_w < fig_w
@@ -174,9 +175,9 @@ def test_export_preserves_tick_label_gutter_in_inches():
     # inches must equal the on-screen margin gutter, not shrink with width.
     aspect = ORIENTATION_ASPECT["portrait"]
     fig_w, fig_h = 9.0, 6.5
-    rect = _oriented_axes_rect(MARGINS_WITH_TICKS, fig_w, fig_h, aspect)
-    (exp_w, exp_h), out = _export_geometry(rect, fig_w, fig_h,
-                                           MARGINS_WITH_TICKS)
+    rect = oriented_axes_rect(MARGINS_WITH_TICKS, fig_w, fig_h, aspect)
+    (exp_w, exp_h), out = export_geometry(rect, fig_w, fig_h,
+                                          MARGINS_WITH_TICKS)
     left, bottom, right, top = MARGINS_WITH_TICKS
     assert out[0] * exp_w == pytest.approx(left * fig_w)          # left gutter
     assert (1.0 - (out[0] + out[2])) * exp_w == pytest.approx(
@@ -408,7 +409,7 @@ def _disk_frame(renderer):
 
 def test_globe_sits_centred_with_a_margin_not_filling_the_canvas():
     from pymappr.projections import GLOBE
-    from pymappr.renderer import _GLOBE_FILL
+    from pymappr.renderer.view import _GLOBE_FILL
 
     r = _renderer(9.0, 6.5)
     r.set_projection(GLOBE, 0.0, 0.0)
@@ -468,7 +469,7 @@ def test_zooming_the_globe_keeps_it_centred():
 
 def test_globe_stays_centred_and_whole_in_portrait():
     from pymappr.projections import GLOBE
-    from pymappr.renderer import _GLOBE_FILL
+    from pymappr.renderer.view import _GLOBE_FILL
 
     r = _renderer(9.0, 6.5)
     r.set_projection(GLOBE, 0.0, 0.0)
@@ -485,7 +486,7 @@ def test_globe_stays_centred_and_whole_in_portrait():
 
 def test_globe_survives_a_window_resize():
     from pymappr.projections import GLOBE
-    from pymappr.renderer import _GLOBE_FILL
+    from pymappr.renderer.view import _GLOBE_FILL
 
     r = _renderer(9.0, 6.5)
     r.set_projection(GLOBE, 0.0, 0.0)
