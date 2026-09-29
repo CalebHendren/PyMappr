@@ -9,7 +9,7 @@ stageEl.addEventListener("wheel",e=>{
   if(newK===oldK) return;
   const lx=(sx-view.x)/oldK, ly=(sy-view.y)/oldK; // point under cursor, in scene coords
   view.k=newK; view.x=sx-newK*lx; view.y=sy-newK*ly;
-  clampView(); applyView(); scheduleSave();
+  clampView(); render();
 },{passive:false});
 svg.addEventListener("mousedown",e=>{
   if(e.button!==0) return;
@@ -28,7 +28,7 @@ svg.addEventListener("mousedown",e=>{
     e.preventDefault();
     const sx=e.clientX, sy=e.clientY, lon0=opts.centerLon, lat0=opts.centerLat;
     const r=svg.getBoundingClientRect();
-    const scale=180/Math.max(Math.min(r.width,r.height),1);  // deg per pixel across the disk
+    const scale=180/Math.max(Math.min(r.width,r.height),1)/view.k;  // deg per pixel across the disk
     svg.classList.add("panning");
     function mv(ev){
       let lon=lon0-(ev.clientX-sx)*scale, lat=clamp(lat0+(ev.clientY-sy)*scale,-90,90);
@@ -42,16 +42,16 @@ svg.addEventListener("mousedown",e=>{
     window.addEventListener("mousemove",mv); window.addEventListener("mouseup",up);
     return;
   }
-  if(view.k<=1.0001) return; // nothing to pan at fit-to-frame zoom
+  if(!isZoomed()) return; // nothing to pan at fit-to-frame zoom
   e.preventDefault();
   const sx=e.clientX, sy=e.clientY, ox=view.x, oy=view.y; let moved=false;
   svg.classList.add("panning");
-  function mv(ev){ view.x=ox+(ev.clientX-sx); view.y=oy+(ev.clientY-sy); clampView(); applyView(); moved=true; }
+  function mv(ev){ view.x=ox+(ev.clientX-sx); view.y=oy+(ev.clientY-sy); clampView(); render(); moved=true; }
   function up(){ window.removeEventListener("mousemove",mv); window.removeEventListener("mouseup",up);
     svg.classList.remove("panning"); if(moved) scheduleSave(); }
   window.addEventListener("mousemove",mv); window.addEventListener("mouseup",up);
 });
-svg.addEventListener("dblclick",()=>{ view={k:1,x:0,y:0}; applyView(); scheduleSave(); }); // reset view
+svg.addEventListener("dblclick",()=>{ view={k:1,x:0,y:0}; render(); }); // reset view
 
 /* persistence (localStorage) */
 const STORE_KEY="minimappr.state.v1";
@@ -117,5 +117,4 @@ let rt; new ResizeObserver(()=>{ clearTimeout(rt); rt=setTimeout(render,60); }).
 syncOrigin(!restored);   // keep any restored centre/extent when reloading
 syncStylePanel();
 renderDatasetList();
-renderNow();
-clampView(); applyView(); // keep a restored zoom/pan valid for the current window size
+renderNow();   // also clamps a restored zoom/pan to the current window size

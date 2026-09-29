@@ -1064,18 +1064,20 @@ let currentProjection=null;     // the d3 projection from the last render()
 let placeMode=false;            // click-to-place points onto the map
 let placeDsId=null;             // manual dataset placed points go into
 let legendDrag=null; // {x,y} fractional override
-let view={k:1,x:0,y:0};      // scroll-wheel zoom / drag pan over the map
+// Scroll-wheel zoom / drag pan over the map: screen = k * fitted + (x, y).
+// It is folded into the projection (buildProjection), not applied as a
+// transform, so zooming in keeps markers and line widths at their size.
+let view={k:1,x:0,y:0};
 let frameRect=[[0,0],[0,0]]; // current map rectangle, for clamping the pan
 function clamp(v,a,b){ return v<a?a:(v>b?b:v); }
-function viewTransform(){ return `translate(${view.x.toFixed(2)},${view.y.toFixed(2)}) scale(${view.k})`; }
+function isZoomed(){ return view.k>1.0001; }
 function clampView(){
   const [[rx0,ry0],[rx1,ry1]]=frameRect;
   view.k=clamp(view.k,1,12);
-  if(view.k<=1.0001){ view.x=0; view.y=0; return; }
+  if(!isZoomed()){ view.x=0; view.y=0; return; }
   view.x=clamp(view.x, rx1*(1-view.k), rx0*(1-view.k));
   view.y=clamp(view.y, ry1*(1-view.k), ry0*(1-view.k));
 }
-function applyView(){ const vp=svg.querySelector("#viewport"); if(vp) vp.setAttribute("transform",viewTransform()); }
 
 /* dataset styling resolution */
 function resolveGroups(ds){
@@ -1173,6 +1175,16 @@ function buildProjection(W,H){
   catch(e){ p.fitExtent(rect, {type:"Sphere"}); }
   // guard against degenerate scale
   if(!isFinite(p.scale()) || p.scale()<=0){ p.scale(Math.min(W,H)/6).translate([W/2,H/2]); }
+  // Zoom and pan: scaling the scale and the translate by k is exact for d3
+  // projections, centre included, since a projected point is
+  // translate + scale * (raw - raw centre).
+  if(isZoomed()){
+    const [tx,ty]=p.translate();
+    p.scale(p.scale()*view.k).translate([tx*view.k+view.x, ty*view.k+view.y]);
+  }
+  // Clip paths to the frame, so a zoomed map (and its export) carries only
+  // the visible geometry.
+  p.clipExtent(rect);
   return p;
 }
 
@@ -1204,13 +1216,11 @@ const layers=(()=>{
   const defs=el("defs"), cp=el("clipPath",{id:"frameClip"}), clipRect=el("rect");
   cp.appendChild(clipRect); defs.appendChild(cp);
   const content=el("g",{"clip-path":"url(#frameClip)"});
-  // map layers live inside a viewport group so scroll-zoom / drag-pan can transform them
-  const viewport=el("g",{id:"viewport"}); content.appendChild(viewport);
   const base=el("g"), points=el("g");
-  viewport.appendChild(base); viewport.appendChild(points);
+  content.appendChild(base); content.appendChild(points);
   const overlay=el("g"), legend=el("g");
   for(const n of [bg,defs,content,overlay,legend]) svg.appendChild(n);
-  return {bg, clipRect, viewport, base, points, overlay, legend};
+  return {bg, clipRect, base, points, overlay, legend};
 })();
 let baseKey=null, pointsKey=null;
 // Projected basemap outlines, kept until the projection or the frame changes,
@@ -1233,23 +1243,23 @@ function renderNow(){
   svg.setAttribute("viewBox",`0 0 ${W} ${H}`);
   svg.setAttribute("width",W); svg.setAttribute("height",H);
 
+  const rect = drawRect(W,H);
+  frameRect = rect;
+  clampView();   // a resize can leave the old pan outside the new frame
   const proj = buildProjection(W,H);
   currentProjection = proj;
   const path = d3.geoPath(proj);
-  const rect = drawRect(W,H);
-  frameRect = rect;
   const [[rx0,ry0],[rx1,ry1]] = rect;
   const rw=rx1-rx0, rh=ry1-ry0;
   const useRect = silhouetteIsRect();
   const pd = currentProjDef();
   const projKey = JSON.stringify([opts.projection, opts.extent, opts.centerLon, opts.centerLat,
-    opts.orientation, W, H]);
+    opts.orientation, W, H, view]);
   const sphereD = useRect ? "" : cachedPath(projKey, "sphere", ()=>path({type:"Sphere"}));
 
   // background (mat), and the clip for everything inside the map rectangle
   setAttrs(layers.bg, {width:W, height:H, fill:opts.matColor});
   setAttrs(layers.clipRect, {x:rx0, y:ry0, width:rw, height:rh});
-  layers.viewport.setAttribute("transform", viewTransform());
 
   // basemap: ocean / earth silhouette, graticule, land, borders, coastline
   const lw=opts.lineWidth;
@@ -1306,6 +1316,9 @@ function renderNow(){
           if(onGlobe && d3.geoDistance([r.lon,r.lat],centre)>Math.PI/2) continue;
           const xy=proj([r.lon, r.lat]);
           if(!xy || !isFinite(xy[0]) || !isFinite(xy[1])) continue;
+          // Zoomed in, most points fall outside the frame; skip them rather
+          // than draw them under the clip.
+          if(xy[0]<rx0-r_ || xy[0]>rx1+r_ || xy[1]<ry0-r_ || xy[1]>ry1+r_) continue;
           g.appendChild(el("path",{d, transform:`translate(${xy[0].toFixed(2)},${xy[1].toFixed(2)})`}));
           if(opts.labels && r.label){
             const t=el("text",{x:(xy[0]+r_+2).toFixed(2), y:(xy[1]+3).toFixed(2)});
@@ -1352,9 +1365,10 @@ function renderNow(){
     legendEntries.push({title:prefix+(ds.groupBy||ds.name||""), rows});
   }
 
-  // frame outline (unclipped, crisp), title and compass
+  // frame outline (unclipped, crisp), title and compass. Zoomed in, a round
+  // silhouette runs past the frame, so the frame itself is the outline.
   const overlay=layers.overlay; clearNode(overlay);
-  overlay.appendChild(useRect
+  overlay.appendChild(useRect || isZoomed()
     ? el("rect",{x:rx0,y:ry0,width:rw,height:rh,fill:"none",stroke:"#5a6068","stroke-width":1})
     : el("path",{d:sphereD, fill:"none", stroke:"#5a6068","stroke-width":1}));
   if(opts.title){
@@ -1686,7 +1700,9 @@ function placementDataset(){
 function placeAt(clientX, clientY){
   if(!currentProjection || !currentProjection.invert) return;
   const r=svg.getBoundingClientRect();
-  const px=(clientX-r.left-view.x)/view.k, py=(clientY-r.top-view.y)/view.k;
+  const px=clientX-r.left, py=clientY-r.top;
+  const [[x0,y0],[x1,y1]]=frameRect;
+  if(px<x0 || px>x1 || py<y0 || py>y1) return;   // outside the map frame
   const ll=currentProjection.invert([px,py]);
   if(!ll || !isFinite(ll[0]) || !isFinite(ll[1])) return;
   let [lon,lat]=ll;
@@ -2258,7 +2274,7 @@ stageEl.addEventListener("wheel",e=>{
   if(newK===oldK) return;
   const lx=(sx-view.x)/oldK, ly=(sy-view.y)/oldK; // point under cursor, in scene coords
   view.k=newK; view.x=sx-newK*lx; view.y=sy-newK*ly;
-  clampView(); applyView(); scheduleSave();
+  clampView(); render();
 },{passive:false});
 svg.addEventListener("mousedown",e=>{
   if(e.button!==0) return;
@@ -2277,7 +2293,7 @@ svg.addEventListener("mousedown",e=>{
     e.preventDefault();
     const sx=e.clientX, sy=e.clientY, lon0=opts.centerLon, lat0=opts.centerLat;
     const r=svg.getBoundingClientRect();
-    const scale=180/Math.max(Math.min(r.width,r.height),1);  // deg per pixel across the disk
+    const scale=180/Math.max(Math.min(r.width,r.height),1)/view.k;  // deg per pixel across the disk
     svg.classList.add("panning");
     function mv(ev){
       let lon=lon0-(ev.clientX-sx)*scale, lat=clamp(lat0+(ev.clientY-sy)*scale,-90,90);
@@ -2291,16 +2307,16 @@ svg.addEventListener("mousedown",e=>{
     window.addEventListener("mousemove",mv); window.addEventListener("mouseup",up);
     return;
   }
-  if(view.k<=1.0001) return; // nothing to pan at fit-to-frame zoom
+  if(!isZoomed()) return; // nothing to pan at fit-to-frame zoom
   e.preventDefault();
   const sx=e.clientX, sy=e.clientY, ox=view.x, oy=view.y; let moved=false;
   svg.classList.add("panning");
-  function mv(ev){ view.x=ox+(ev.clientX-sx); view.y=oy+(ev.clientY-sy); clampView(); applyView(); moved=true; }
+  function mv(ev){ view.x=ox+(ev.clientX-sx); view.y=oy+(ev.clientY-sy); clampView(); render(); moved=true; }
   function up(){ window.removeEventListener("mousemove",mv); window.removeEventListener("mouseup",up);
     svg.classList.remove("panning"); if(moved) scheduleSave(); }
   window.addEventListener("mousemove",mv); window.addEventListener("mouseup",up);
 });
-svg.addEventListener("dblclick",()=>{ view={k:1,x:0,y:0}; applyView(); scheduleSave(); }); // reset view
+svg.addEventListener("dblclick",()=>{ view={k:1,x:0,y:0}; render(); }); // reset view
 
 /* persistence (localStorage) */
 const STORE_KEY="minimappr.state.v1";
@@ -2366,8 +2382,7 @@ let rt; new ResizeObserver(()=>{ clearTimeout(rt); rt=setTimeout(render,60); }).
 syncOrigin(!restored);   // keep any restored centre/extent when reloading
 syncStylePanel();
 renderDatasetList();
-renderNow();
-clampView(); applyView(); // keep a restored zoom/pan valid for the current window size
+renderNow();   // also clamps a restored zoom/pan to the current window size
 })();
 </script>
 </body>

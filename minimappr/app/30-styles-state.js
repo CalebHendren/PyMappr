@@ -234,18 +234,20 @@ let currentProjection=null;     // the d3 projection from the last render()
 let placeMode=false;            // click-to-place points onto the map
 let placeDsId=null;             // manual dataset placed points go into
 let legendDrag=null; // {x,y} fractional override
-let view={k:1,x:0,y:0};      // scroll-wheel zoom / drag pan over the map
+// Scroll-wheel zoom / drag pan over the map: screen = k * fitted + (x, y).
+// It is folded into the projection (buildProjection), not applied as a
+// transform, so zooming in keeps markers and line widths at their size.
+let view={k:1,x:0,y:0};
 let frameRect=[[0,0],[0,0]]; // current map rectangle, for clamping the pan
 function clamp(v,a,b){ return v<a?a:(v>b?b:v); }
-function viewTransform(){ return `translate(${view.x.toFixed(2)},${view.y.toFixed(2)}) scale(${view.k})`; }
+function isZoomed(){ return view.k>1.0001; }
 function clampView(){
   const [[rx0,ry0],[rx1,ry1]]=frameRect;
   view.k=clamp(view.k,1,12);
-  if(view.k<=1.0001){ view.x=0; view.y=0; return; }
+  if(!isZoomed()){ view.x=0; view.y=0; return; }
   view.x=clamp(view.x, rx1*(1-view.k), rx0*(1-view.k));
   view.y=clamp(view.y, ry1*(1-view.k), ry0*(1-view.k));
 }
-function applyView(){ const vp=svg.querySelector("#viewport"); if(vp) vp.setAttribute("transform",viewTransform()); }
 
 /* dataset styling resolution */
 function resolveGroups(ds){

@@ -30,7 +30,9 @@ function placementDataset(){
 function placeAt(clientX, clientY){
   if(!currentProjection || !currentProjection.invert) return;
   const r=svg.getBoundingClientRect();
-  const px=(clientX-r.left-view.x)/view.k, py=(clientY-r.top-view.y)/view.k;
+  const px=clientX-r.left, py=clientY-r.top;
+  const [[x0,y0],[x1,y1]]=frameRect;
+  if(px<x0 || px>x1 || py<y0 || py>y1) return;   // outside the map frame
   const ll=currentProjection.invert([px,py]);
   if(!ll || !isFinite(ll[0]) || !isFinite(ll[1])) return;
   let [lon,lat]=ll;

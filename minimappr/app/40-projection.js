@@ -55,6 +55,16 @@ function buildProjection(W,H){
   catch(e){ p.fitExtent(rect, {type:"Sphere"}); }
   // guard against degenerate scale
   if(!isFinite(p.scale()) || p.scale()<=0){ p.scale(Math.min(W,H)/6).translate([W/2,H/2]); }
+  // Zoom and pan: scaling the scale and the translate by k is exact for d3
+  // projections, centre included, since a projected point is
+  // translate + scale * (raw - raw centre).
+  if(isZoomed()){
+    const [tx,ty]=p.translate();
+    p.scale(p.scale()*view.k).translate([tx*view.k+view.x, ty*view.k+view.y]);
+  }
+  // Clip paths to the frame, so a zoomed map (and its export) carries only
+  // the visible geometry.
+  p.clipExtent(rect);
   return p;
 }
 

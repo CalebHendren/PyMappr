@@ -26,13 +26,11 @@ const layers=(()=>{
   const defs=el("defs"), cp=el("clipPath",{id:"frameClip"}), clipRect=el("rect");
   cp.appendChild(clipRect); defs.appendChild(cp);
   const content=el("g",{"clip-path":"url(#frameClip)"});
-  // map layers live inside a viewport group so scroll-zoom / drag-pan can transform them
-  const viewport=el("g",{id:"viewport"}); content.appendChild(viewport);
   const base=el("g"), points=el("g");
-  viewport.appendChild(base); viewport.appendChild(points);
+  content.appendChild(base); content.appendChild(points);
   const overlay=el("g"), legend=el("g");
   for(const n of [bg,defs,content,overlay,legend]) svg.appendChild(n);
-  return {bg, clipRect, viewport, base, points, overlay, legend};
+  return {bg, clipRect, base, points, overlay, legend};
 })();
 let baseKey=null, pointsKey=null;
 // Projected basemap outlines, kept until the projection or the frame changes,
@@ -55,23 +53,23 @@ function renderNow(){
   svg.setAttribute("viewBox",`0 0 ${W} ${H}`);
   svg.setAttribute("width",W); svg.setAttribute("height",H);
 
+  const rect = drawRect(W,H);
+  frameRect = rect;
+  clampView();   // a resize can leave the old pan outside the new frame
   const proj = buildProjection(W,H);
   currentProjection = proj;
   const path = d3.geoPath(proj);
-  const rect = drawRect(W,H);
-  frameRect = rect;
   const [[rx0,ry0],[rx1,ry1]] = rect;
   const rw=rx1-rx0, rh=ry1-ry0;
   const useRect = silhouetteIsRect();
   const pd = currentProjDef();
   const projKey = JSON.stringify([opts.projection, opts.extent, opts.centerLon, opts.centerLat,
-    opts.orientation, W, H]);
+    opts.orientation, W, H, view]);
   const sphereD = useRect ? "" : cachedPath(projKey, "sphere", ()=>path({type:"Sphere"}));
 
   // background (mat), and the clip for everything inside the map rectangle
   setAttrs(layers.bg, {width:W, height:H, fill:opts.matColor});
   setAttrs(layers.clipRect, {x:rx0, y:ry0, width:rw, height:rh});
-  layers.viewport.setAttribute("transform", viewTransform());
 
   // basemap: ocean / earth silhouette, graticule, land, borders, coastline
   const lw=opts.lineWidth;
@@ -128,6 +126,9 @@ function renderNow(){
           if(onGlobe && d3.geoDistance([r.lon,r.lat],centre)>Math.PI/2) continue;
           const xy=proj([r.lon, r.lat]);
           if(!xy || !isFinite(xy[0]) || !isFinite(xy[1])) continue;
+          // Zoomed in, most points fall outside the frame; skip them rather
+          // than draw them under the clip.
+          if(xy[0]<rx0-r_ || xy[0]>rx1+r_ || xy[1]<ry0-r_ || xy[1]>ry1+r_) continue;
           g.appendChild(el("path",{d, transform:`translate(${xy[0].toFixed(2)},${xy[1].toFixed(2)})`}));
           if(opts.labels && r.label){
             const t=el("text",{x:(xy[0]+r_+2).toFixed(2), y:(xy[1]+3).toFixed(2)});
@@ -174,9 +175,10 @@ function renderNow(){
     legendEntries.push({title:prefix+(ds.groupBy||ds.name||""), rows});
   }
 
-  // frame outline (unclipped, crisp), title and compass
+  // frame outline (unclipped, crisp), title and compass. Zoomed in, a round
+  // silhouette runs past the frame, so the frame itself is the outline.
   const overlay=layers.overlay; clearNode(overlay);
-  overlay.appendChild(useRect
+  overlay.appendChild(useRect || isZoomed()
     ? el("rect",{x:rx0,y:ry0,width:rw,height:rh,fill:"none",stroke:"#5a6068","stroke-width":1})
     : el("path",{d:sphereD, fill:"none", stroke:"#5a6068","stroke-width":1}));
   if(opts.title){
