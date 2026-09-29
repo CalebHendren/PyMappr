@@ -9,8 +9,8 @@ into readable pieces:
       template.html   page shell with @@TOKENS@@ for the injected blocks
       styles.css      the <style> block
       body.html       the <body> markup (header, panels, modals)
-      vendor/         D3, d3-geo-projection, topojson-client (verbatim)
-      data/           land-110m.json, countries-110m.json, samples.json
+      vendor/         d3-array, d3-geo, d3-geo-projection, topojson-client (verbatim)
+      data/           countries-110m.json, samples.json
       app/            application JS, in load order (concatenated inside one IIFE)
 
 Run ``python minimappr/build.py`` after editing any of these to regenerate the
@@ -26,15 +26,18 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 OUT = os.path.join(ROOT, "index.html")
 
-# vendor libraries, in the order they must load
+# vendor libraries, in the order they must load. Only the geo half of D3 is
+# used, so the d3-array + d3-geo modules stand in for the full bundle; each
+# UMD build adds itself to the one global `d3` that d3-geo-projection reads.
 VENDOR = [
-    "vendor/d3.v7.9.0.min.js",
+    "vendor/d3-array.v3.2.4.min.js",
+    "vendor/d3-geo.v3.1.1.min.js",
     "vendor/d3-geo-projection.v4.0.0.min.js",
     "vendor/topojson-client.v3.1.0.min.js",
 ]
-# basemap + sample data, injected as <script type="application/json"> the app reads by id
+# basemap + sample data, injected as <script type="application/json"> the app reads by id.
+# countries-110m carries a merged `land` object too, so it is the whole basemap.
 DATA = [
-    ("land-topo", "data/land-110m.json"),
     ("countries-topo", "data/countries-110m.json"),
     ("samples", "data/samples.json"),
 ]

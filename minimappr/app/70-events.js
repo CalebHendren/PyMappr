@@ -217,25 +217,24 @@ $("#btnEdit").addEventListener("click",()=>{
 
 // style controls
 $("#groupBy").addEventListener("change",e=>{ const ds=selectedDataset(); ds.groupBy=e.target.value||null;
-  ds.overrides={}; renderGroupOverrides(ds); render(); renderDatasetList(); });
+  ds.overrides={}; renderGroupOverrides(ds); render(); });
 $("#colorBy").addEventListener("change",e=>{ const ds=selectedDataset(); ds.colorBy=e.target.value||null;
-  ds.overrides={}; render(); renderDatasetList(); });
+  ds.overrides={}; render(); });
 $("#symbolBy").addEventListener("change",e=>{ const ds=selectedDataset(); ds.symbolBy=e.target.value||null;
   ds.overrides={}; renderGroupOverrides(ds); render(); });
 $("#varySymbols").addEventListener("change",e=>{ const ds=selectedDataset(); ds.varySymbols=e.target.checked;
   ds.overrides={}; render(); });
 // The palette is map-wide: clearing every dataset's overrides would throw
 // away colours the user pinned, so only the auto-assigned styles change.
-$("#paletteSel").addEventListener("change",e=>{ PALETTE_NAME=e.target.value;
-  render(); renderDatasetList(); });
+$("#paletteSel").addEventListener("change",e=>{ opts.palette=e.target.value; render(); });
 $("#baseMarker").addEventListener("change",e=>{ const ds=selectedDataset(); ds.base.marker=e.target.value; render(); });
-$("#baseColor").addEventListener("input",e=>{ const ds=selectedDataset(); ds.base.color=e.target.value; render(); renderDatasetList(); });
+$("#baseColor").addEventListener("input",e=>{ const ds=selectedDataset(); ds.base.color=e.target.value; render(); });
 $("#sizeRange").addEventListener("input",e=>{ const ds=selectedDataset(); ds.base.size=+e.target.value;
   $("#sizeVal").textContent=e.target.value; render(); });
 $("#opacityRange").addEventListener("input",e=>{ const ds=selectedDataset(); ds.opacity=+e.target.value;
   $("#opacityVal").textContent=(+e.target.value).toFixed(2); render(); });
 $("#resetStyles").addEventListener("click",()=>{ const ds=selectedDataset(); if(!ds) return;
-  ds.overrides={}; renderGroupOverrides(ds); render(); renderDatasetList(); });
+  ds.overrides={}; renderGroupOverrides(ds); render(); });
 
 // map controls
 fillSelect($("#extent"), Object.keys(CONTINENT_EXTENTS), "World");
@@ -265,6 +264,10 @@ $("#showBorders").addEventListener("change",e=>{ opts.showBorders=e.target.check
 $("#showCoast").addEventListener("change",e=>{ opts.showCoast=e.target.checked; render(); });
 $("#mapTitle").addEventListener("input",e=>{ opts.title=e.target.value; render(); });
 $("#showCompass").addEventListener("change",e=>{ opts.compass=e.target.checked; render(); });
+$("#showScaleBar").addEventListener("change",e=>{ opts.scaleBar=e.target.checked; render(); });
+$("#pointEdgeColor").addEventListener("input",e=>{ opts.pointEdgeColor=e.target.value; render(); });
+$("#pointEdgeWidth").addEventListener("input",e=>{ const n=parseFloat(e.target.value);
+  opts.pointEdgeWidth=Number.isFinite(n) ? clamp(n,0,3) : 0; render(); });
 $("#showLabels").addEventListener("change",e=>{ opts.labels=e.target.checked; render(); });
 $("#matColor").addEventListener("input",e=>{ opts.matColor=e.target.value; render(); });
 $("#lineWidth").addEventListener("input",e=>{ opts.lineWidth=+e.target.value; $("#lwVal").textContent=(+e.target.value).toFixed(2); render(); });
@@ -289,11 +292,13 @@ for(const [id,kind,fallback] of LEGEND_CONTROLS){
 
 // export
 $("#btnSvg").addEventListener("click",()=>{
+  flushRender();
   const s=new XMLSerializer().serializeToString(svg);
   const blob=new Blob(['<?xml version="1.0" encoding="UTF-8"?>\n'+s],{type:"image/svg+xml"});
   downloadBlob(blob, "minimappr.svg");
 });
 $("#btnPng").addEventListener("click",()=>{
+  flushRender();
   const outW=Math.max(600,Math.min(8000,parseInt($("#pngWidth").value)||2000));
   const W=sceneSize.w, H=sceneSize.h, outH=Math.round(outW*H/W);
   const s=new XMLSerializer().serializeToString(svg);
