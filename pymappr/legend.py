@@ -27,7 +27,8 @@ from pymappr.styles import (PointStyle, apply_override, owner_map,
 
 __all__ = ["NEUTRAL_MARKER_COLOR", "LEGEND_LOCATIONS", "HIERARCHY_MODES",
            "ENTRY_ORDERS", "COUNT_FORMATS", "GROUP_SWATCHES", "FONT_FAMILIES",
-           "TITLE_ALIGNMENTS", "LegendOptions", "legend_counts",
+           "TITLE_ALIGNMENTS", "LegendOptions", "PUBLICATION_LEGEND",
+           "legend_counts",
            "legend_sections", "order_labels", "ROW_SEP", "row_key",
            "apply_override", "override_label", "is_hidden", "manual_order"]
 
@@ -184,6 +185,23 @@ class LegendOptions:
         if self.handle_text_pad is not None:
             return float(self.handle_text_pad)
         return 0.4 if sectioned else 0.8
+
+
+# The legend half of the "Publication style" preset: a plain white box with a
+# thin black border, and italic entries because taxon names are set in
+# italics. Only these fields change; everything else keeps the user's value.
+PUBLICATION_LEGEND = {
+    "frame": True,
+    "frame_color": "#ffffff",
+    "frame_alpha": 1.0,
+    "frame_edge_color": "#000000",
+    "frame_width": 0.5,
+    "rounded": False,
+    "shadow": False,
+    "label_italic": True,
+    "fontsize": 9.0,
+    "title_fontsize": 10.0,
+}
 
 
 # --------------------------------------------------------------- overrides

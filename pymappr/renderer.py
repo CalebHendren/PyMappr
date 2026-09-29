@@ -17,7 +17,7 @@ from pymappr.decorations import (CompassOptions, ScaleBarOptions,
                                  nice_length, unit_metres)
 from pymappr.legend import LegendOptions
 from pymappr.projections import GLOBE, get_projection
-from pymappr.styles import PointStyle
+from pymappr.styles import POINT_EDGE_COLOR, POINT_EDGE_WIDTH, PointStyle
 
 __all__ = ["MapRenderer"]
 
@@ -299,6 +299,8 @@ class MapRenderer:
         # data; None keeps the order the point groups were added in.
         self._legend_row_order: list[str] | None = None
         self._point_alpha = 1.0
+        # Outline (colour, width) around filled markers, map and legend alike.
+        self._point_edge = (POINT_EDGE_COLOR, POINT_EDGE_WIDTH)
 
         # Manual legend placement: dragging the legend (when enabled) anchors
         # its lower-left corner here, in axes fraction, with no limit; None
@@ -870,6 +872,10 @@ class MapRenderer:
             # aspect=None stops geopandas from forcing equal axes aspect,
             # which would letterbox the map inside the canvas.
             gdf.plot(ax=self.ax, zorder=zorder, aspect=None, **plot_kwargs)
+            # geopandas 1.2+ names the axes after the CRS ("Geodetic
+            # latitude [degree]"), which would crop into every export.
+            self.ax.set_xlabel("")
+            self.ax.set_ylabel("")
             if len(self.ax.collections) == before:
                 return artists
             base = self.ax.collections[before]
@@ -1802,6 +1808,19 @@ class MapRenderer:
         self._point_alpha = max(min(float(alpha), 1.0), 0.05)
         self._rebuild_points()
 
+    def set_point_edge(self, color: str, width: float) -> None:
+        """Outline filled markers in *color* at *width* points (0 = none)."""
+        self._point_edge = (color or POINT_EDGE_COLOR,
+                            max(float(width), 0.0))
+        self._rebuild_points()
+
+    def _marker_paint(self, style: PointStyle) -> tuple[str, str, float]:
+        """(face, edge, edge width) for a marker: open markers draw only an
+        outline in their own colour, filled ones take the point outline."""
+        if style.is_open:
+            return "none", style.color, 1.2
+        return (style.color, *self._point_edge)
+
     def _rebuild_points(self) -> None:
         for artist in self._point_artists:
             artist.remove()
@@ -1813,10 +1832,7 @@ class MapRenderer:
                     xs, ys = self.proj.forward(lons, lats)
                     xs = np.concatenate([xs + off for off in offsets])
                     ys = np.tile(ys, len(offsets))
-                    if style.is_open:  # outline-only marker
-                        face, edge, lw = "none", style.color, 1.2
-                    else:
-                        face, edge, lw = style.color, "white", 0.5
+                    face, edge, lw = self._marker_paint(style)
                     self._point_artists.append(self.ax.scatter(
                         xs, ys, s=style.size, c=face,
                         marker=style.mpl_marker, zorder=Z_POINTS,
@@ -1831,10 +1847,7 @@ class MapRenderer:
         if style is None:
             return Line2D([], [], linestyle="", marker="")
         area = style.size if size is None else size
-        if style.is_open:
-            face, edge, edge_w = "none", style.color, 1.2
-        else:
-            face, edge, edge_w = style.color, "white", 0.5
+        face, edge, edge_w = self._marker_paint(style)
         return Line2D([], [], linestyle="", marker=style.mpl_marker,
                       markersize=max(np.sqrt(area), 2),
                       markerfacecolor=face, color=style.color,

@@ -3,9 +3,9 @@ import textwrap
 import pytest
 
 from pymappr.data_loader import (ColumnMapping, build_dataset,
-                                build_manual_dataset, guess_mapping,
-                                headers_look_like_data, list_sheets,
-                                load_csv, read_csv, read_table)
+                                build_manual_dataset, combine_name_columns,
+                                guess_mapping, headers_look_like_data,
+                                list_sheets, load_csv, read_csv, read_table)
 
 
 def write(tmp_path, text, name="points.csv"):
@@ -235,3 +235,40 @@ def test_build_manual_dataset_dms_and_errors():
     assert "line 2" in ds.skipped[0]
     assert "line 3" in ds.skipped[1]
     assert ds.frame.iloc[0]["lat"] == pytest.approx(47 + 36 / 60 + 35 / 3600)
+
+
+def _taxa(tmp_path):
+    return load_csv(write(tmp_path, """\
+        Family,Genus,Species,Longitude,Latitude
+        Staphylinidae,Eleusis,chapadensis,-68.4,-12.3
+        Staphylinidae,Xanthopygus,,-41.2,-18.1
+        """))
+
+
+def test_combine_name_columns_adds_a_joined_name_column(tmp_path):
+    dataset = _taxa(tmp_path)
+    combined, label = combine_name_columns(dataset, ["Genus", "Species"])
+    assert label == "Genus Species"
+    assert combined.name_labels == ["Family", "Genus", "Species",
+                                    "Genus Species"]
+    # Name columns stay name1..nameN ahead of the coordinates.
+    assert list(combined.frame.columns) == ["name1", "name2", "name3",
+                                            "name4", "lon", "lat"]
+    # A blank part is skipped rather than leaving a trailing separator.
+    assert list(combined.frame["name4"]) == ["Eleusis chapadensis",
+                                             "Xanthopygus"]
+    # The dataset it was made from is left alone.
+    assert dataset.name_labels == ["Family", "Genus", "Species"]
+    assert "name4" not in dataset.frame.columns
+
+
+def test_combine_name_columns_separator_and_unique_labels(tmp_path):
+    dataset = _taxa(tmp_path)
+    dashed, label = combine_name_columns(dataset, ["Family", "Genus"], " - ")
+    assert label == "Family - Genus"
+    assert dashed.frame["name4"].iloc[0] == "Staphylinidae - Eleusis"
+    once, _first = combine_name_columns(dataset, ["Genus", "Species"])
+    _twice, second = combine_name_columns(once, ["Genus", "Species"])
+    assert second == "Genus Species (2)"
+    with pytest.raises(ValueError):
+        combine_name_columns(dataset, ["Genus", "Subspecies"])

@@ -7,10 +7,12 @@ from dataclasses import dataclass
 import pandas as pd
 
 __all__ = ["PointStyle", "MARKERS", "OPEN_SUFFIX", "DEFAULT_PALETTE",
-           "OKABE_ITO", "PALETTES", "DEFAULT_PALETTE_NAME", "palette_for",
-           "group_points", "default_styles", "attribute_style_maps",
-           "style_by_attributes", "LEGIBLE_MARKER_LIMIT", "nests_within",
-           "resolve_nesting", "owner_map", "marker_load", "apply_override"]
+           "OKABE_ITO", "BLACK_AND_WHITE", "BLACK_AND_WHITE_NAME", "PALETTES",
+           "DEFAULT_PALETTE_NAME", "palette_for", "POINT_EDGE_COLOR",
+           "POINT_EDGE_WIDTH", "group_points", "default_styles",
+           "attribute_style_maps", "style_by_attributes",
+           "LEGIBLE_MARKER_LIMIT", "nests_within", "resolve_nesting",
+           "owner_map", "marker_load", "apply_override"]
 
 # How many distinct shapes stay tellable apart at map point sizes. MARKER_CYCLE
 # runs much longer, but past roughly this many the tail (triangle down, thin
@@ -65,13 +67,24 @@ OKABE_ITO = [
     "#56b4e9", "#f0e442", "#000000",
 ]
 
+# Black, white and grey: the look of a printed journal figure. White points
+# only show with a dark outline, so pick this with a black Point outline.
+BLACK_AND_WHITE = ["#000000", "#ffffff", "#808080"]
+
 # Display name -> palette. The key is what projects and exported scripts
 # store, so renaming one would orphan saved maps.
+BLACK_AND_WHITE_NAME = "Black & white"
 PALETTES = {
     "Default": DEFAULT_PALETTE,
     "Colourblind safe (Okabe-Ito)": OKABE_ITO,
+    BLACK_AND_WHITE_NAME: BLACK_AND_WHITE,
 }
 DEFAULT_PALETTE_NAME = "Default"
+
+# The outline drawn around filled markers (open markers outline in their own
+# colour instead). White keeps overlapping points apart on a light map.
+POINT_EDGE_COLOR = "#ffffff"
+POINT_EDGE_WIDTH = 0.5
 
 
 def palette_for(name: str | None) -> list[str]:

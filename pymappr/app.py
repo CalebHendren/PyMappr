@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import dataclasses
 import json
 import shutil
 import threading
@@ -22,23 +23,26 @@ from matplotlib.figure import Figure  # noqa: E402
 from pymappr import __version__, projects, updates  # noqa: E402
 from pymappr.data_loader import (OPEN_FILETYPES, PointDataset,  # noqa: E402
                                  build_dataset, build_manual_dataset,
-                                 guess_mapping, headers_look_like_data,
-                                 list_sheets, read_table)
+                                 combine_name_columns, guess_mapping,
+                                 headers_look_like_data, list_sheets,
+                                 read_table)
 from pymappr.decorations import (CompassOptions,  # noqa: E402
                                  ScaleBarOptions)
 from pymappr.layers import LayerStore  # noqa: E402
 from pymappr.projects import PROJECT_EXTENSION, DatasetEntry  # noqa: E402
 from pymappr.renderer import MapRenderer  # noqa: E402
-from pymappr.legend import (ENTRY_ORDERS, LegendOptions,  # noqa: E402
-                            apply_override, is_hidden, legend_counts,
-                            legend_sections, manual_order, order_labels,
-                            override_label, row_key)
-from pymappr.styles import (DEFAULT_PALETTE_NAME,  # noqa: E402
-                            LEGIBLE_MARKER_LIMIT, PointStyle,
+from pymappr.legend import (ENTRY_ORDERS, PUBLICATION_LEGEND,  # noqa: E402
+                            LegendOptions, apply_override, is_hidden,
+                            legend_counts, legend_sections, manual_order,
+                            order_labels, override_label, row_key)
+from pymappr.styles import (BLACK_AND_WHITE_NAME,  # noqa: E402
+                            DEFAULT_PALETTE_NAME, LEGIBLE_MARKER_LIMIT,
+                            POINT_EDGE_COLOR, POINT_EDGE_WIDTH, PointStyle,
                             attribute_style_maps, default_styles,
                             group_points, marker_load, owner_map,
                             resolve_nesting, style_by_attributes)
 from pymappr.ui.column_mapper import ColumnMapperDialog  # noqa: E402
+from pymappr.ui.combine_columns import CombineColumnsDialog  # noqa: E402
 from pymappr.ui.control_panel import (COMPASS_STYLE_LABELS,  # noqa: E402
                                       SCALE_LENGTH_LABELS,
                                       SCALE_STYLE_LABELS,
@@ -51,6 +55,10 @@ from pymappr.ui.projects_dialog import ProjectsDialog  # noqa: E402
 
 MAX_SKIPPED_SHOWN = 12
 UNTITLED = "Untitled"
+# The point and export half of the "Publication style" preset (the legend
+# half is pymappr.legend.PUBLICATION_LEGEND).
+PUBLICATION_POINT_EDGE = ("#000000", 0.6)
+PUBLICATION_DPI = "600"
 PROJECT_FILETYPES = [("PyMappr project", "*" + PROJECT_EXTENSION),
                      ("All files", "*.*")]
 
@@ -582,6 +590,7 @@ class PyMapprApp:
                 "anchor": list(self.renderer.legend_anchor() or ()) or None,
             },
             "point_alpha": p.point_alpha_var.get(),
+            "point_edge": dict(zip(("color", "width"), p.point_edge())),
             "view": {"xlim": list(xlim), "ylim": list(ylim)},
         }
 
@@ -657,8 +666,15 @@ class PyMapprApp:
         self.renderer.set_legend_anchor(
             tuple(anchor) if isinstance(anchor, (list, tuple))
             and len(anchor) == 2 else None)
-        p.point_alpha_var.set(state.get("point_alpha",
-                                        defaults["point_alpha"]))
+        p.set_point_alpha(state.get("point_alpha", defaults["point_alpha"]))
+        # Projects saved before the outline was settable used white.
+        edge = dict(state.get("point_edge") or {})
+        try:
+            edge_width = float(edge.get("width", POINT_EDGE_WIDTH))
+        except (TypeError, ValueError):
+            edge_width = POINT_EDGE_WIDTH
+        p.set_point_edge(str(edge.get("color") or POINT_EDGE_COLOR),
+                         edge_width)
 
         self._busy(True)
         try:
@@ -688,6 +704,7 @@ class PyMapprApp:
                 show_labels=not p.hide_grid_labels_var.get())
             renderer.set_line_width_scale(p.line_width_var.get())
             renderer.set_point_alpha(p.point_alpha_var.get())
+            renderer.set_point_edge(*p.point_edge())
         finally:
             self._busy(False)
 
@@ -1242,6 +1259,72 @@ class PyMapprApp:
         self.renderer.set_point_alpha(self.panel.point_alpha_var.get())
         self.renderer.redraw()
 
+    def on_point_edge(self) -> None:
+        self.renderer.set_point_edge(*self.panel.point_edge())
+        self.renderer.redraw()
+
+    def on_combine_columns(self) -> None:
+        """Join name columns (Genus + Species) into a new column and group
+        by it, so each legend row carries the full name."""
+        entry = self._active_entry()
+        labels = entry.dataset.name_labels if entry else []
+        if len(labels) < 2:
+            messagebox.showinfo(
+                "Combine columns",
+                "Select a dataset with at least two name columns first.",
+                parent=self.root)
+            return
+
+        first_row = PointDataset(frame=entry.dataset.frame.head(1),
+                                 source_path="")
+
+        def preview(chosen, separator):
+            sample, _label = combine_name_columns(first_row, chosen,
+                                                  separator)
+            values = sample.frame[sample.name_keys[-1]]
+            return str(values.iloc[0]) if len(values) else ""
+
+        dialog = CombineColumnsDialog(self.root, labels, preview)
+        self.root.wait_window(dialog)
+        if dialog.result is None:
+            return
+        chosen, separator = dialog.result
+        entry.dataset, label = combine_name_columns(entry.dataset, chosen,
+                                                    separator)
+        # Group by the new column; Symbol by would switch the legend to the
+        # two-column key and hide the full names again.
+        entry.group_by = label
+        entry.symbol_by = ""
+        self._sync_dataset_ui()
+        self._push_points()
+        self.set_status(f"Added the column \N{LEFT DOUBLE QUOTATION MARK}"
+                        f"{label}\N{RIGHT DOUBLE QUOTATION MARK} and grouped "
+                        "by it.")
+
+    def on_publication_style(self) -> None:
+        """Apply several settings at once for a journal figure: black and
+        white points with black outlines and varied shapes, a plain boxed
+        legend with italic names, and 600 DPI export. Rows the user styled
+        by hand in the legend editor keep their styling."""
+        p = self.panel
+        p.palette_var.set(BLACK_AND_WHITE_NAME)
+        p.set_point_edge(*PUBLICATION_POINT_EDGE)
+        p.set_point_alpha(1.0)
+        p.set_legend_options(dataclasses.replace(p.legend_options(),
+                                                 **PUBLICATION_LEGEND))
+        p.dpi_var.set(PUBLICATION_DPI)
+        # Three shades alone cannot tell more than three groups apart.
+        for entry in self.entries:
+            entry.vary_symbols = True
+            entry.styles = {}
+        p.vary_symbols_var.set(True)
+        self.renderer.set_point_alpha(1.0)
+        self.renderer.set_point_edge(*p.point_edge())
+        self._push_points()
+        self.set_status("Applied the publication style. Export with "
+                        "File \N{RIGHTWARDS ARROW} Save map as "
+                        f"({PUBLICATION_DPI} DPI).")
+
     def on_legend_options(self) -> None:
         """A look-only change: restyle the legend that is already there."""
         self._apply_legend()
@@ -1557,6 +1640,15 @@ class PyMapprApp:
         """
         for entry in self.entries:
             entry.styles = {}
+        # White points vanish inside a white outline, so a palette with
+        # white in it brings a black outline along.
+        color, width = self.panel.point_edge()
+        if ("#ffffff" in self._palette()
+                and color.lower() in ("#ffffff", "white")):
+            self.panel.set_point_edge("#000000", width)
+            self.renderer.set_point_edge(*self.panel.point_edge())
+            self.set_status("Point outline set to black so white points "
+                            "stay visible.")
         self._push_points()
 
     def on_lake_fill(self) -> None:

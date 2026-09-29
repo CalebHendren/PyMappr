@@ -1,11 +1,13 @@
 """Tests for legend content: sections, nesting, counts, order, options."""
 
+import dataclasses
 from pathlib import Path
 
 import pandas as pd
 
-from pymappr.legend import (NEUTRAL_MARKER_COLOR, LegendOptions, legend_counts,
-                            legend_sections, order_labels, row_key)
+from pymappr.legend import (NEUTRAL_MARKER_COLOR, PUBLICATION_LEGEND,
+                            LegendOptions, legend_counts, legend_sections,
+                            order_labels, row_key)
 from pymappr.styles import apply_override, attribute_style_maps
 
 
@@ -483,3 +485,14 @@ def test_apply_override_leaves_a_missing_style_alone():
     # group_swatch="none" emits None; an override must not conjure one up.
     assert apply_override(None, {"color": "#fff"}) is None
     assert apply_override(None, None) is None
+
+
+def test_publication_preset_changes_only_real_legend_options():
+    # replace() raises on a key that is not a LegendOptions field, so a
+    # renamed option cannot silently drop out of the preset.
+    options = dataclasses.replace(LegendOptions(title="Species", columns=2),
+                                  **PUBLICATION_LEGEND)
+    assert options.label_italic and not options.rounded
+    assert options.frame_edge_color == "#000000"
+    # Settings the preset does not cover keep the user's values.
+    assert (options.title, options.columns) == ("Species", 2)

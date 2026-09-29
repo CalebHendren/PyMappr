@@ -11,7 +11,7 @@ import tkinter as tk
 import pytest
 
 from pymappr.legend import LegendOptions, row_key
-from pymappr.styles import PointStyle
+from pymappr.styles import POINT_EDGE_COLOR, POINT_EDGE_WIDTH, PointStyle
 from pymappr.ui.legend_editor import LegendEditorDialog
 from pymappr.ui.control_panel import ControlPanel
 
@@ -110,6 +110,19 @@ def test_colour_swatches_repaint_when_options_are_restored(panel):
     panel.set_legend_options(LegendOptions(frame_color="#abcdef"))
     button = panel._color_buttons[str(panel.legend_frame_color_var)]
     assert button.cget("bg") == "#abcdef"
+
+
+def test_point_outline_defaults_to_the_old_white_edge(panel):
+    assert panel.point_edge() == (POINT_EDGE_COLOR, POINT_EDGE_WIDTH)
+
+
+def test_point_outline_round_trips_and_repaints_its_swatch(panel):
+    panel.set_point_edge("#000000", 0.6)
+    assert panel.point_edge() == ("#000000", pytest.approx(0.6))
+    button = panel._color_buttons[str(panel.point_edge_color_var)]
+    assert button.cget("bg") == "#000000"
+    panel.point_edge_width_var.set("99")
+    assert panel.point_edge()[1] == 3.0
 
 
 # ----------------------------------------------------- legend row editor

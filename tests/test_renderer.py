@@ -507,6 +507,18 @@ def test_empty_layer_does_not_crash_plotting():
     assert r._plot_gdf_copies(empty, zorder=1, facecolor="none") == []
 
 
+def test_plotting_a_layer_leaves_the_axes_unlabelled():
+    # geopandas 1.2+ labels the axes after the CRS; on a map that label
+    # only crops into the edge of every exported image.
+    import geopandas as gpd
+    from shapely.geometry import box
+
+    r = _renderer(9.0, 6.5)
+    land = gpd.GeoDataFrame(geometry=[box(0, 0, 10, 10)], crs="EPSG:4326")
+    assert r._plot_gdf_copies(land, zorder=1, facecolor="none")
+    assert (r.ax.get_xlabel(), r.ax.get_ylabel()) == ("", "")
+
+
 # ---------------------------------------------------------- nested legend
 
 
@@ -733,3 +745,26 @@ def test_legend_anchor_round_trips_for_saving():
     assert r.legend_anchor() == (0.25, 0.75)
     r.set_legend_anchor(None)
     assert r.legend_anchor() is None
+
+
+def test_point_outline_reaches_the_map_and_the_legend():
+    from matplotlib.colors import to_hex
+
+    r = _renderer(9.0, 6.5)
+    white = PointStyle(color="#ffffff", marker="Square")
+    hollow = PointStyle(color="#123456", marker="Circle (open)")
+    r.set_point_groups([("white", white, [0.0], [0.0]),
+                        ("open", hollow, [10.0], [10.0])])
+    r.set_legend(LegendOptions(location="upper right"))
+    # Unchanged by default: filled markers keep their white edge.
+    assert to_hex(r._point_artists[0].get_edgecolors()[0]) == "#ffffff"
+
+    r.set_point_edge("#000000", 0.8)
+    filled, outlined = r._point_artists
+    assert to_hex(filled.get_edgecolors()[0]) == "#000000"
+    assert filled.get_linewidths()[0] == pytest.approx(0.8)
+    # Open markers still outline in their own colour.
+    assert to_hex(outlined.get_edgecolors()[0]) == "#123456"
+    handle = _legend_of(r).legend_handles[0]
+    assert handle.get_markeredgecolor() == "#000000"
+    assert handle.get_markeredgewidth() == pytest.approx(0.8)

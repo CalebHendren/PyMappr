@@ -21,7 +21,7 @@ from pymappr.decorations import (CORNERS, CompassOptions,
 from pymappr.projections import (PROJECTIONS, default_origin,
                                  has_custom_origin)
 from pymappr.styles import (DEFAULT_PALETTE_NAME, PALETTES,
-                            palette_for)
+                            POINT_EDGE_COLOR, POINT_EDGE_WIDTH, palette_for)
 
 PANEL_WIDTH = 320
 
@@ -348,6 +348,11 @@ class ControlPanel(ttk.Frame):
             self.app.on_style_scheme, width=18)
         ttk.Label(sec, text="(Symbol by = compact color/symbol legend)",
                   foreground="#666666").pack(anchor="w")
+        # Joins e.g. Genus + Species into one "Genus Species" column, so a
+        # legend row can carry the full name.
+        ttk.Button(sec, text="Combine columns\N{HORIZONTAL ELLIPSIS}",
+                   command=self.app.on_combine_columns).pack(fill="x",
+                                                             pady=(4, 0))
 
         self.vary_symbols_var = tk.BooleanVar(value=False)
         self._check(sec, "Vary symbols per group", self.vary_symbols_var,
@@ -358,6 +363,15 @@ class ControlPanel(ttk.Frame):
         self.palette_var = tk.StringVar(value=DEFAULT_PALETTE_NAME)
         self._combo_row(sec, "Palette:", self.palette_var, list(PALETTES),
                         self.app.on_palette, width=18)
+
+        # Outline around filled markers: white by default, black for the
+        # white-and-black-dot look of a printed figure.
+        self.point_edge_color_var = tk.StringVar(value=POINT_EDGE_COLOR)
+        self._color_row(sec, "Point outline:", self.point_edge_color_var,
+                        self.app.on_point_edge)
+        self.point_edge_width_var = tk.StringVar(value=f"{POINT_EDGE_WIDTH:g}")
+        self._spin_row(sec, "Outline width:", self.point_edge_width_var,
+                       0.0, 3.0, 0.1, self.app.on_point_edge)
 
         row = ttk.Frame(sec)
         row.pack(fill="x", pady=(6, 0))
@@ -764,6 +778,14 @@ class ControlPanel(ttk.Frame):
         ttk.Button(sec, text="Export as code (Python/R)"
                             "\N{HORIZONTAL ELLIPSIS}",
                    command=self.app.on_export_code).pack(fill="x", pady=2)
+        ttk.Button(sec, text="Apply publication style",
+                   command=self.app.on_publication_style).pack(fill="x",
+                                                               pady=(6, 2))
+        ttk.Label(sec, text="Black & white points with black outlines and "
+                            "varied shapes, a plain boxed legend with italic "
+                            "names, and 600 DPI export.",
+                  wraplength=PANEL_WIDTH - 60,
+                  foreground="#666666").pack(anchor="w")
 
     # ---------------------------------------------------------- layers tab
 
@@ -975,6 +997,28 @@ class ControlPanel(ttk.Frame):
         """The colour palette the user picked, for styling new groups."""
         return palette_for(self.palette_var.get())
 
+    def point_edge(self) -> tuple[str, float]:
+        """(colour, width) of the outline around filled markers."""
+        return (self.point_edge_color_var.get() or POINT_EDGE_COLOR,
+                self._number(self.point_edge_width_var, 0.0, 3.0,
+                             POINT_EDGE_WIDTH))
+
+    def set_point_edge(self, color: str, width: float) -> None:
+        self._set_color(self.point_edge_color_var, color)
+        self.point_edge_width_var.set(f"{float(width):g}")
+
+    def set_point_alpha(self, alpha: float) -> None:
+        """Set the opacity slider, keeping its number label in step."""
+        self.point_alpha_var.set(alpha)
+        self._alpha_label.config(text=f"{float(alpha):.2g}")
+
+    def _set_color(self, var: tk.StringVar, value: str) -> None:
+        """Set a colour variable and repaint its swatch button to match."""
+        var.set(value)
+        button = self._color_buttons.get(str(var))
+        if button is not None and value:
+            button.config(bg=value, activebackground=value)
+
     def compass_options(self) -> CompassOptions:
         return CompassOptions(
             show=self.compass_var.get(),
@@ -1153,10 +1197,7 @@ class ControlPanel(ttk.Frame):
                             options.frame_edge_color),
                            (self.legend_label_color_var, options.label_color),
                            (self.legend_title_color_var, options.title_color)):
-            var.set(value)
-            button = self._color_buttons.get(str(var))
-            if button is not None and value:
-                button.config(bg=value, activebackground=value)
+            self._set_color(var, value)
 
     def set_dataset_list(self, rows: list[tuple[str, bool]],
                          active: int | None) -> None:

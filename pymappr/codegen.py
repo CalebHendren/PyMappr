@@ -18,9 +18,10 @@ from pymappr.renderer import (BATHYMETRY_COLORS, FILL_COLORS, FILL_LAYERS,
 from pymappr.decorations import (CompassOptions, ScaleBarOptions,
                                  corner_anchor, format_length,
                                  nice_length, unit_metres)
-from pymappr.styles import (PointStyle, apply_override, attribute_style_maps,
-                            default_styles, group_points, resolve_nesting,
-                            style_by_attributes)
+from pymappr.styles import (POINT_EDGE_COLOR, POINT_EDGE_WIDTH, PointStyle,
+                            apply_override, attribute_style_maps,
+                            default_styles, group_points, palette_for,
+                            resolve_nesting, style_by_attributes)
 from pymappr.updates import GITHUB_REPO
 
 CODE_EXTENSIONS = {"Python": ".py", "R": ".R"}
@@ -89,7 +90,7 @@ BASEMAP_RASTERS = {
 BASEMAP_SIZE = (5400, 2700)
 
 # PyMappr marker name -> R pch code. Shapes with a filled+outlined R
-# variant (21-25) get it, so filled markers carry the app's white edge;
+# variant (21-25) get it, so filled markers carry the app's outline;
 # open variants use the hollow codes. Shapes base R lacks fall back.
 _R_PCH = {
     "Circle": 21, "Circle (open)": 1,
@@ -370,13 +371,15 @@ def _style_dict(style: PointStyle | None) -> dict | None:
 
 
 def _dataset_configs(entries, data_mode: str = "inline",
-                     options: LegendOptions | None = None
+                     options: LegendOptions | None = None,
+                     palette: list[str] | None = None
                      ) -> tuple[list[dict], dict[str, PointStyle],
                                 dict[str, str], list | None]:
     """Per-dataset script configs, the combined legend-label -> style map
     (in render order), the point data to write as ``data/<name>.csv`` in
     ``"files"`` mode, and the structured legend sections (None in plain
-    mode) - replicating the app's ``_push_points`` exactly.
+    mode) - replicating the app's ``_push_points`` exactly. *palette* is the
+    map's colour palette (the default when None).
     """
     options = options or LegendOptions()
     visible = [e for e in entries if e.visible and len(e.dataset)]
@@ -432,12 +435,14 @@ def _dataset_configs(entries, data_mode: str = "inline",
             config["symbol_col"] = entry.symbol_by or None
             color_map, symbol_map = attribute_style_maps(frame, color_key,
                                                          symbol_key,
-                                                         options.hierarchy)
+                                                         options.hierarchy,
+                                                         palette=palette)
             nested = resolve_nesting(frame, color_key, symbol_key,
                                      options.hierarchy)
             combos = style_by_attributes(frame, color_key, symbol_key,
                                          color_map, symbol_map,
-                                         entry.legend_overrides, nested)
+                                         entry.legend_overrides, nested,
+                                         palette=palette)
             raw = [label for label, _style, _sub in combos]
             display = _display_labels(raw, entry.name, multi, True, used)
             for label, style, _sub in combos:
@@ -462,7 +467,8 @@ def _dataset_configs(entries, data_mode: str = "inline",
                               for _label, sub in groups]
             fresh = default_styles(labels, color_keys=color_keys,
                                    vary_symbols=entry.vary_symbols,
-                                   palette_offset=palette_offset)
+                                   palette_offset=palette_offset,
+                                   palette=palette)
             palette_offset += len(labels)
             display = _display_labels(labels, entry.name, multi, False, used)
             # A row the user named themselves keeps that name; the rest get
@@ -577,7 +583,8 @@ def build_config(state: dict, entries, project_name: str = "map",
     label_layers = _label_layers(m, zoom)
     options = LegendOptions.from_dict(legend)
     datasets, styles, data_files, sections, row_order = _dataset_configs(
-        entries, data_mode, options)
+        entries, data_mode, options, palette_for(m.get("palette")))
+    edge = dict(state.get("point_edge") or {})
     title = str(legend.get("title") or "").strip()
     if not title and len(datasets) == 1 and datasets[0]["group_col"]:
         title = datasets[0]["group_col"]
@@ -625,6 +632,9 @@ def build_config(state: dict, entries, project_name: str = "map",
         "legend": {**options.to_dict(), "title": title,
                    "handle_text_pad": options.pad_for(sections is not None)},
         "point_alpha": _num(state.get("point_alpha", 1.0), 1.0),
+        "point_edge": {"color": str(edge.get("color") or POINT_EDGE_COLOR),
+                       "width": _num(edge.get("width", POINT_EDGE_WIDTH),
+                                     POINT_EDGE_WIDTH)},
         "dpi": int(_num(m.get("dpi", 200), 200.0)),
         "notes": notes,
     }
@@ -773,6 +783,8 @@ def _py_config(config: dict) -> str:
     lines.append(f'COMPASS = {_py(compass)}')
     lines.append(f'SCALE_BAR = {_py(config["scale_bar"])}')
     lines.append(f'POINT_ALPHA = {_py(config["point_alpha"])}')
+    lines.append(f'POINT_EDGE = {_py(config["point_edge"])}'
+                 "  # outline around filled markers")
     lines.append(f'DPI = {_py(config["dpi"])}')
     lines.append('OUTPUT_FILE = "map.png"')
     lines.append("")
@@ -1170,6 +1182,9 @@ def plot_wrapped(ax, gdf, zorder, **plot_kwargs):
         shifted = gdf if not off else gdf.set_geometry(
             gdf.geometry.translate(xoff=off))
         shifted.plot(ax=ax, zorder=zorder, aspect=None, **plot_kwargs)
+    # Newer geopandas names the axes after the CRS; the map has no labels.
+    ax.set_xlabel("")
+    ax.set_ylabel("")
 
 
 def add_base_layers(ax):
@@ -1693,7 +1708,8 @@ def point_labels(df, spec):
 
 def plot_dataset(ax, spec):
     """Scatter one dataset group by group with the app's marker styling:
-    filled markers get a white edge, open markers draw outline-only."""
+    filled markers get the POINT_EDGE outline, open markers draw
+    outline-only."""
     df = load_points(spec)
     labels = point_labels(df, spec)
     xs, ys = proj_forward(df["_lon"].to_numpy(), df["_lat"].to_numpy())
@@ -1709,7 +1725,8 @@ def plot_dataset(ax, spec):
         if style["open"]:
             face, edge, lw = "none", style["color"], 1.2
         else:
-            face, edge, lw = style["color"], "white", 0.5
+            face, edge, lw = (style["color"], POINT_EDGE["color"],
+                              POINT_EDGE["width"])
         ax.scatter(px, py, s=style["size"], c=face,
                    marker=style["marker"], zorder=Z_POINTS,
                    edgecolors=edge, linewidths=lw, alpha=POINT_ALPHA)
@@ -1725,7 +1742,8 @@ def legend_handle(style, size=None):
     if style["open"]:
         face, edge, edge_w = "none", style["color"], 1.2
     else:
-        face, edge, edge_w = style["color"], "white", 0.5
+        face, edge, edge_w = (style["color"], POINT_EDGE["color"],
+                              POINT_EDGE["width"])
     return Line2D([], [], linestyle="", marker=style["marker"],
                   markersize=max(np.sqrt(area), 2),
                   markerfacecolor=face, color=style["color"],
@@ -2065,6 +2083,8 @@ def _r_config(config: dict) -> str:
                  "  # graticule spacing in degrees (NULL = off)")
     lines.append(f'GRID_LABELS <- {_r(grat["labels"])}')
     lines.append(f'POINT_ALPHA <- {_r(config["point_alpha"])}')
+    lines.append(f'POINT_STROKE <- {_r(config["point_edge"]["width"])}'
+                 "  # outline width of filled markers")
     compass = dict(config["compass_options"])
     compass["show"] = config["compass"]
     lines.append("COMPASS <- list(" + _r_named(
@@ -2106,15 +2126,16 @@ def _r_config(config: dict) -> str:
     lines.append("")
     lines.append("# Legend label -> style, in render order. Fillable "
                  "shapes (21-25) carry the")
-    lines.append("# app's white marker edge; sizes approximate PyMappr's "
+    lines.append("# app's marker outline; sizes approximate PyMappr's "
                  "marker areas.")
     styles = config["styles"]
+    edge = config["point_edge"]["color"]
     shapes, colors, fills, sizes = [], [], [], []
     for label, style in styles.items():
         pch = _R_PCH.get(style.marker, 21)
         shapes.append((label, _r(pch)))
         if pch in _R_FILLABLE_PCH:
-            colors.append((label, _r("white")))
+            colors.append((label, _r(edge)))
             fills.append((label, _r(style.color)))
         else:
             colors.append((label, _r(style.color)))
@@ -2433,7 +2454,7 @@ build_map <- function() {
       geom_sf(data = points,
               aes(color = label, fill = label, shape = label,
                   size = label),
-              alpha = POINT_ALPHA, stroke = 0.5) +
+              alpha = POINT_ALPHA, stroke = POINT_STROKE) +
       scale_color_manual(values = STYLE_COLORS, name = title) +
       scale_fill_manual(values = STYLE_FILLS, name = title) +
       scale_shape_manual(values = STYLE_SHAPES, name = title) +

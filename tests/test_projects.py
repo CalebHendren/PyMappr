@@ -3,7 +3,8 @@ import json
 import pytest
 
 from pymappr import projects
-from pymappr.data_loader import build_manual_dataset, load_csv
+from pymappr.data_loader import (build_manual_dataset, combine_name_columns,
+                                 load_csv)
 from pymappr.legend import row_key
 from pymappr.projects import DatasetEntry
 from pymappr.styles import PointStyle
@@ -183,3 +184,18 @@ def test_saving_still_writes_styles_for_older_builds():
     data = projects.entry_to_dict(entry)
     assert data["styles"]["Pardosa distincta"]["marker"] == "Star"
     assert "legend_overrides" in data
+
+
+def test_a_combined_name_column_survives_saving(tmp_path):
+    path = tmp_path / "taxa.csv"
+    path.write_text("Genus,Species,Longitude,Latitude\n"
+                    "Eleusis,chapadensis,-68.4,-12.3\n", encoding="utf-8")
+    dataset, label = combine_name_columns(load_csv(str(path)),
+                                          ["Genus", "Species"])
+    entry = DatasetEntry(dataset=dataset, name="taxa.csv", group_by=label)
+    restored = projects.entry_from_dict(
+        json.loads(json.dumps(projects.entry_to_dict(entry))))
+    assert restored.group_by == "Genus Species"
+    assert restored.dataset.name_labels == ["Genus", "Species",
+                                            "Genus Species"]
+    assert restored.dataset.frame.iloc[0]["name3"] == "Eleusis chapadensis"

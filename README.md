@@ -26,7 +26,13 @@ Python as an offline desktop application.
 - A geodesically measured scale bar (kilometres, miles or both) with a
   choice of corner, segmented or plain styling, automatic or fixed length,
   and drag-to-place; the north arrow takes the same placement controls.
-- A colourblind-safe (Okabe-Ito) point palette alongside the default.
+- A colourblind-safe (Okabe-Ito) point palette alongside the default, and a
+  black & white palette with a settable point outline for black and white
+  (outlined) markers.
+- Combine name columns (e.g. Genus + Species) into one, so a legend row
+  reads "Eleusis chapadensis" without editing the file.
+- One-click publication style: black & white outlined markers in varied
+  shapes, a plain boxed legend with italic names, and 600 DPI export.
 - Projects (`.pymappr` files) with autosave/restore, and export/import for
   sharing.
 - Export the current map as PNG, or as a self-contained Python

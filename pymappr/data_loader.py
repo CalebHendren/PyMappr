@@ -10,7 +10,8 @@ from pymappr.coords import CoordinateError, parse_latitude, parse_longitude
 __all__ = ["ColumnMapping", "PointDataset", "read_csv", "read_table",
            "list_sheets", "headers_look_like_data", "guess_mapping",
            "build_dataset", "load_csv", "build_manual_dataset",
-           "SPREADSHEET_EXTENSIONS", "OPEN_FILETYPES"]
+           "combine_name_columns", "SPREADSHEET_EXTENSIONS",
+           "OPEN_FILETYPES"]
 
 _LON_HINTS = ("lon", "lng", "long", "longitude", "x")
 _LAT_HINTS = ("lat", "latitude", "y")
@@ -222,6 +223,38 @@ def build_dataset(frame: pd.DataFrame, mapping: ColumnMapping,
         labels = [f"Name {i + 1}" for i in range(len(name_cols))]
     result.attrs["name_labels"] = list(labels)
     return PointDataset(frame=result, source_path=source_path, skipped=skipped)
+
+
+def combine_name_columns(dataset: PointDataset, labels: list[str],
+                         separator: str = " ") -> tuple[PointDataset, str]:
+    """A copy of *dataset* with one more name column joining *labels*.
+
+    Genus + Species becomes "Genus Species", valued "Eleusis chapadensis",
+    so a legend can show the full name on one row. Blank parts are skipped
+    rather than leaving a stray separator. The result is an ordinary name
+    column, so grouping, filtering, saving and code export all see it.
+    Returns the new dataset and the new column's label.
+    """
+    keys = dict(zip(dataset.name_labels, dataset.name_keys))
+    missing = [label for label in labels if label not in keys]
+    if missing:
+        raise ValueError(f"No name column called {missing[0]!r}")
+    frame = dataset.frame.copy()
+    parts = frame[[keys[label] for label in labels]].fillna("").astype(str)
+    values = [separator.join(p.strip() for p in row if p.strip())
+              for row in parts.itertuples(index=False)]
+
+    existing = dataset.name_labels
+    base = separator.join(labels).strip() or "Combined"
+    label, counter = base, 2
+    while label in existing:
+        label = f"{base} ({counter})"
+        counter += 1
+    # Name columns are name1..nameN in order, ahead of lon/lat.
+    frame.insert(len(existing), f"name{len(existing) + 1}", values)
+    frame.attrs["name_labels"] = [*existing, label]
+    return (PointDataset(frame=frame, source_path=dataset.source_path,
+                         skipped=list(dataset.skipped)), label)
 
 
 def load_csv(path: str, mapping: ColumnMapping | None = None) -> PointDataset:

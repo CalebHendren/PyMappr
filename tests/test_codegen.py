@@ -10,11 +10,11 @@ import pandas as pd
 import pytest
 
 from pymappr import codecheck, codegen
-from pymappr.data_loader import build_manual_dataset
+from pymappr.data_loader import build_manual_dataset, combine_name_columns
 from pymappr.projections import get_projection
 from pymappr.legend import row_key
 from pymappr.projects import DatasetEntry, entry_from_dict
-from pymappr.styles import PointStyle
+from pymappr.styles import BLACK_AND_WHITE, BLACK_AND_WHITE_NAME, PointStyle
 
 
 def make_state(**overrides):
@@ -487,9 +487,12 @@ def test_label_layers_reach_the_script():
 
 
 def test_marker_styling_matches_the_app():
-    # Filled markers carry a white edge; open markers outline-only.
+    # Filled markers carry the point outline (white for a project saved
+    # before it was settable); open markers outline-only.
     code = codegen.generate_code(make_state(), [manual_entry()], "Python")
-    assert 'face, edge, lw = style["color"], "white", 0.5' in code
+    assert exec_python(code)["POINT_EDGE"] == {"color": "#ffffff",
+                                               "width": 0.5}
+    assert 'POINT_EDGE["color"]' in code
     assert 'face, edge, lw = "none", style["color"], 1.2' in code
     # Frame opacity is a setting now, so the call reads it from LEGEND
     # rather than hard-coding it - but it still defaults to 0.85.
@@ -583,6 +586,34 @@ def test_attribute_mode_styles_by_two_columns():
     assert "'symbol_col': 'Label'" in code
     # One style per per-point value, like the app's two-attribute mode.
     assert "'Site A'" in code and "'Site B'" in code
+
+
+def test_palette_and_point_outline_reach_the_script():
+    entry = manual_entry(color_by="Legend", symbol_by="Label", group_by="")
+    state = make_state(map={"palette": BLACK_AND_WHITE_NAME},
+                       point_edge={"color": "#333333", "width": 0.6})
+    ns = exec_python(codegen.generate_code(state, [entry], "Python"))
+    assert ns["POINT_EDGE"] == {"color": "#333333", "width": 0.6}
+    # Colours come from the map's palette, not always the default one.
+    colors = {style["color"] for style in ns["STYLES"].values()}
+    assert colors == {BLACK_AND_WHITE[0]}
+    r_code = codegen.generate_code(state, [entry], "R")
+    assert "POINT_STROKE <- 0.6" in r_code
+    style_colors = r_code.split("STYLE_COLORS <- c(")[1].split(")")[0]
+    assert '"#333333"' in style_colors
+
+
+def test_combined_name_column_is_exported():
+    entry = manual_entry()
+    entry.dataset, label = combine_name_columns(entry.dataset,
+                                                ["Legend", "Label"])
+    entry.group_by = label
+    entry.styles = {}
+    ns = exec_python(codegen.generate_code(make_state(), [entry], "Python"))
+    spec = ns["DATASETS"][0]
+    assert spec["group_col"] == "Legend Label"
+    labels = ns["point_labels"](ns["load_points"](spec), spec)
+    assert list(labels) == ["spiders Site A", "spiders Site B"]
 
 
 # --------------------------------- executing the generated pre-made code
