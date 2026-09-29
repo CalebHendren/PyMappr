@@ -182,25 +182,46 @@ def _beyond_latitude(values: pd.Series) -> bool:
     return bool((numeric.abs() > 90).any())
 
 
+def _parse_column(values: pd.Series, parse, limit: float):
+    """A coordinate column as degrees, plus the error for each row that has
+    none. Plain decimals convert in one go; only what that misses (DMS,
+    hemisphere letters, decimal commas, junk) goes through the row parser,
+    which also words the errors - so the result is the parser's either way.
+    """
+    numbers = pd.to_numeric(values.astype(str).str.strip(),
+                            errors="coerce").astype(float)
+    fast = numbers.notna() & (numbers.abs() <= limit)
+    degrees = numbers.where(fast)
+    errors: dict = {}
+    for idx in values.index[~fast]:
+        try:
+            degrees[idx] = parse(values[idx])
+        except CoordinateError as exc:
+            errors[idx] = exc
+    return degrees, errors
+
+
 def build_dataset(frame: pd.DataFrame, mapping: ColumnMapping,
                   source_path: str = "") -> PointDataset:
-    """Parse coordinates row by row, collecting per-row errors."""
+    """Parse the coordinates, skipping (and reporting) rows without a
+    usable pair."""
     name_cols = list(mapping.names)
-    rows: list[list] = []
-    skipped: list[str] = []
-    for idx, row in frame.iterrows():
-        line = idx + 2  # 1-based plus header row
-        try:
-            lon = parse_longitude(row[mapping.longitude])
-            lat = parse_latitude(row[mapping.latitude])
-        except CoordinateError as exc:
-            skipped.append(f"row {line}: {exc}")
-            continue
-        names = [str(row[col]).strip() for col in name_cols]
-        rows.append([*names, lon, lat])
+    lons, lon_errors = _parse_column(frame[mapping.longitude],
+                                     parse_longitude, 180.0)
+    lats, lat_errors = _parse_column(frame[mapping.latitude],
+                                     parse_latitude, 90.0)
+    bad = frame.index.isin(set(lon_errors) | set(lat_errors))
+    # 1-based, plus the header row; the longitude error wins, as it is the
+    # one a person reading the row left to right meets first.
+    skipped = [f"row {idx + 2}: {lon_errors.get(idx) or lat_errors[idx]}"
+               for idx in frame.index[bad]]
 
     keys = [f"name{i + 1}" for i in range(len(name_cols))]
-    result = pd.DataFrame(rows, columns=[*keys, "lon", "lat"])
+    result = pd.DataFrame(
+        {**{key: frame.loc[~bad, col].astype(str).str.strip()
+            for key, col in zip(keys, name_cols)},
+         "lon": lons[~bad], "lat": lats[~bad]},
+        columns=[*keys, "lon", "lat"]).reset_index(drop=True)
     if mapping.use_headers:
         labels = name_cols
     else:

@@ -125,6 +125,17 @@ def test_point_outline_round_trips_and_repaints_its_swatch(panel):
     assert panel.point_edge()[1] == 3.0
 
 
+def test_typing_redraws_once_the_typing_pauses(panel, tk_root):
+    calls = []
+    on_key = panel._after_typing(lambda: calls.append(1), delay_ms=20)
+    for _key in range(5):
+        on_key()
+    assert calls == []
+    tk_root.after(80, tk_root.quit)
+    tk_root.mainloop()
+    assert calls == [1]
+
+
 # ----------------------------------------------------- legend row editor
 
 

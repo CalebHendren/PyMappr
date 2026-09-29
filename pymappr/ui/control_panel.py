@@ -24,6 +24,8 @@ from pymappr.styles import (DEFAULT_PALETTE_NAME, PALETTES,
                             POINT_EDGE_COLOR, POINT_EDGE_WIDTH, palette_for)
 
 PANEL_WIDTH = 320
+# How long typing has to pause before a text or number box redraws the map.
+TYPING_PAUSE_MS = 300
 
 GRATICULE_CHOICES = {"Off": None, "1\N{DEGREE SIGN}": 1.0,
                      "5\N{DEGREE SIGN}": 5.0, "10\N{DEGREE SIGN}": 10.0}
@@ -306,16 +308,30 @@ class ControlPanel(ttk.Frame):
         render()
         return body
 
+    def _after_typing(self, command, delay_ms: int = TYPING_PAUSE_MS):
+        """A key handler that calls *command* once typing pauses, rather
+        than on every keystroke - each call redraws the map."""
+        pending: list[str] = []
+
+        def schedule(_event=None) -> None:
+            if pending:
+                self.after_cancel(pending.pop())
+            pending.append(self.after(
+                delay_ms, lambda: (pending.clear(), command())))
+
+        return schedule
+
     def _spin_row(self, parent, label: str, var: tk.StringVar, from_, to,
                   increment, command, width: int = 6):
-        """A labelled spinbox that reports on both arrow clicks and typing."""
+        """A labelled spinbox that reports at once on an arrow click and
+        once typing pauses."""
         row = ttk.Frame(parent)
         row.pack(fill="x", pady=2)
         ttk.Label(row, text=label).pack(side="left")
         spin = ttk.Spinbox(row, from_=from_, to=to, increment=increment,
                            width=width, textvariable=var, command=command)
         spin.pack(side="right")
-        spin.bind("<KeyRelease>", lambda _e: command())
+        spin.bind("<KeyRelease>", self._after_typing(command))
         return spin
 
     def _entry_row(self, parent, label: str, var: tk.StringVar, command,
@@ -325,7 +341,7 @@ class ControlPanel(ttk.Frame):
         ttk.Label(row, text=label).pack(side="left")
         entry = ttk.Entry(row, textvariable=var, width=width)
         entry.pack(side="right")
-        entry.bind("<KeyRelease>", lambda _e: command())
+        entry.bind("<KeyRelease>", self._after_typing(command))
         return entry
 
     def _color_row(self, parent, label: str, var: tk.StringVar, command):

@@ -768,3 +768,60 @@ def test_point_outline_reaches_the_map_and_the_legend():
     handle = _legend_of(r).legend_handles[0]
     assert handle.get_markeredgecolor() == "#000000"
     assert handle.get_markeredgewidth() == pytest.approx(0.8)
+
+
+def test_a_legend_only_change_leaves_the_points_as_drawn():
+    r = _renderer(9.0, 6.5)
+    groups = [("a", PointStyle(), [0.0], [0.0]),
+              ("b", PointStyle(color="#000000"), [5.0], [5.0])]
+    r.set_points(groups, None, None, LegendOptions())
+    drawn = list(r._point_artists)
+    r.set_points(groups, None, ["b", "a"],
+                 LegendOptions(location="upper left", counts=True))
+    assert r._point_artists == drawn        # same scatter objects
+    assert [t.get_text() for t in _legend_of(r).get_texts()] == ["b", "a"]
+    moved = [("a", PointStyle(), [1.0], [0.0]), groups[1]]
+    r.set_points(moved, None, None, LegendOptions())
+    assert r._point_artists != drawn        # the points really changed
+
+
+def test_a_globe_drag_reprojects_at_a_limited_rate_and_ends_where_released():
+    from pymappr.projections import GLOBE
+
+    r = _renderer(9.0, 6.5)
+    r.set_projection(GLOBE, 0.0, 0.0)
+    r.fig.canvas.draw()
+    seen = []
+    r.set_globe_rotate_callback(lambda lon0, lat0: seen.append(lon0))
+    r._on_canvas_press(_MouseEvent(r.ax, 400, 300, button=1))
+    for x in range(410, 470, 5):   # a burst of motion events, no pause
+        r._on_canvas_motion(_MouseEvent(r.ax, x, 300))
+    assert 1 <= len(seen) < 12       # the first applies, the burst coalesces
+    r._on_canvas_release(_MouseEvent(r.ax, 465, 300))
+    # The release applies the last position the drag reached.
+    assert seen[-1] == r.proj.lon_0
+    r2 = _renderer(9.0, 6.5)
+    r2.set_projection(GLOBE, 0.0, 0.0)
+    r2.fig.canvas.draw()
+    r2._on_canvas_press(_MouseEvent(r2.ax, 400, 300, button=1))
+    r2._on_canvas_motion(_MouseEvent(r2.ax, 465, 300))
+    assert r2.proj.lon_0 == pytest.approx(r.proj.lon_0)
+
+
+def test_labels_that_stay_in_view_keep_their_text_artists():
+    store = LayerStore()
+    if store.check_data():
+        pytest.skip("map data not downloaded")
+    fig = Figure(figsize=(9, 6.5), dpi=100)
+    FigureCanvasAgg(fig)
+    r = MapRenderer(fig, store)
+    r.set_labels("countries", True)
+    r.set_extent("Europe")
+    before = {t.get_text(): t for t in r._label_texts["countries"]}
+    x0, x1 = r.ax.get_xlim()
+    r.ax.set_xlim(x0 + 0.5, x1 + 0.5)   # a small pan
+    after = {t.get_text(): t for t in r._label_texts["countries"]}
+    kept = set(before) & set(after)
+    assert kept and all(before[name] is after[name] for name in kept)
+    assert all(t.axes is r.ax for t in after.values())
+

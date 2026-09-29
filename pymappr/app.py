@@ -949,12 +949,10 @@ class PyMapprApp:
         options = self._legend_options()
         layout = layout_points(self.entries, options, self._palette(),
                                self._filtered_frame)
-        self.renderer.set_structured_legend(layout.sections)
-        self.renderer.set_legend_row_order(layout.row_order)
-        self.renderer.set_point_groups(
+        self.renderer.set_points(
             [(label, style, rows["lon"].to_numpy(), rows["lat"].to_numpy())
-             for label, style, rows in layout.groups])
-        self._apply_legend(redraw=False)
+             for label, style, rows in layout.groups],
+            layout.sections, layout.row_order, options)
         self.renderer.redraw()
         self._warn_marker_load([d.entry for d in layout.datasets], options)
 
@@ -1158,16 +1156,11 @@ class PyMapprApp:
     def on_legend_position(self) -> None:
         # Choosing a preset position discards any manual (dragged) placement.
         self.renderer.clear_legend_anchor()
-        self._apply_legend()
+        self._push_points()
 
     def _legend_options(self) -> LegendOptions:
         """The panel's legend settings, with the title defaulted."""
         return with_default_title(self.entries, self.panel.legend_options())
-
-    def _apply_legend(self, redraw: bool = True) -> None:
-        self.renderer.set_legend(self._legend_options())
-        if redraw:
-            self.renderer.redraw()
 
     def on_edit_styles(self) -> None:
         entry = self._active_entry()

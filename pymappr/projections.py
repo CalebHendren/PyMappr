@@ -286,7 +286,7 @@ def _geod():
     return Geod(ellps="WGS84")
 
 
-@lru_cache(maxsize=None)
+@lru_cache(maxsize=64)
 def _transformer(crs: str):
     from pyproj import Transformer
 
@@ -325,7 +325,7 @@ def _cap_ring(lon_0: float, lat_0: float, radius_deg: float,
     return lon_0 + np.degrees(dlon), np.degrees(lat)
 
 
-@lru_cache(maxsize=None)
+@lru_cache(maxsize=16)
 def _cap_clip(lon_0: float, lat_0: float):
     """The visible spherical cap around (lon_0, lat_0) as lon/lat geometry
     for clipping vector layers, with +/-360 degree copies so caps crossing
@@ -377,7 +377,8 @@ def _build_lambert(name: str, lon_0: float | None,
                       bounds=bounds, lon_0=lon0, lon_halfspan=d.lon_halfspan)
 
 
-@lru_cache(maxsize=None)
+# Bounded: every globe spin step and Lambert origin edit is a new projection.
+@lru_cache(maxsize=64)
 def get_projection(name: str, lon_0: float | None = None,
                    lat_0: float | None = None) -> Projection:
     """Build a :class:`Projection` by name.
