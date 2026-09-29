@@ -1,14 +1,13 @@
 """Export-as-code dialog: show and save the Python/R map script.
 
 Selecting a language box pastes the pre-made functions from
-``pymappr/codegen.py`` (filled in with the current map settings) into the
+``pymappr/templates/`` (filled in with the current map settings) into the
 preview.
 
-Two ways to take it away, both ready to run with no setup:
+Two ways to take it away:
 
-* **Save code as** writes a single, self-contained ``.py``/``.R`` file -
-  point data embedded, missing packages installed on first run - so you
-  can paste it into an IDE and click Run.
+* **Save code as** writes a single, self-contained ``.py``/``.R`` file with
+  the point data embedded, so you can paste it into an IDE and click Run.
 * **Save as working directory** writes a whole runnable project folder
   (the script, the point data as CSV, a dependency manifest, a README,
   and a ``.gitignore``) to point an IDE at.
@@ -23,10 +22,11 @@ from tkinter import filedialog, messagebox, ttk
 from pymappr import codegen, projects
 
 WRAP = 560
-NOTE = ("The script installs any missing packages on first run and "
-        "downloads its base layers from Natural Earth, so you can just "
-        "open it in an IDE and click Run. Save a single self-contained "
-        "file, or a whole runnable project folder.")
+NOTE = ("The script downloads its base layers from Natural Earth, so you "
+        "can open it in an IDE and click Run. If a package it needs is "
+        "missing, it prints the command to install it (or run it with "
+        "--install-deps to install them for you). Save a single "
+        "self-contained file, or a whole runnable project folder.")
 
 # The R export reuses the Python code paths where it can, but some styling
 # details do not map one-to-one; flag it as best effort in the picker.

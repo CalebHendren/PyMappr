@@ -501,10 +501,13 @@ def test_marker_styling_matches_the_app():
     # Filled markers carry the point outline (white for a project saved
     # before it was settable); open markers outline-only.
     code = codegen.generate_code(make_state(), [manual_entry()], "Python")
-    assert exec_python(code)["POINT_EDGE"] == {"color": "#ffffff",
-                                               "width": 0.5}
-    assert 'POINT_EDGE["color"]' in code
-    assert 'face, edge, lw = "none", style["color"], 1.2' in code
+    ns = exec_python(code)
+    assert ns["POINT_EDGE"] == {"color": "#ffffff", "width": 0.5}
+    paint = ns["marker_paint"]
+    assert paint({"color": "#123456", "open": False}) == ("#123456",
+                                                          "#ffffff", 0.5)
+    assert paint({"color": "#123456", "open": True}) == ("none", "#123456",
+                                                         1.2)
     # Frame opacity is a setting now, so the call reads it from LEGEND
     # rather than hard-coding it - but it still defaults to 0.85.
     assert 'framealpha=LEGEND["frame_alpha"]' in code
@@ -704,23 +707,40 @@ def test_generated_projection_forward_matches_the_app():
 
 # ------------------------------------------------------------ bootstrap
 
-def test_python_script_bootstraps_missing_packages():
+def test_python_script_only_installs_packages_when_asked():
     code = codegen.generate_code(make_state(), [file_entry()], "Python")
-    # A pip-based bootstrap runs before the third-party imports, so a
-    # fresh interpreter installs what it needs on first run.
-    assert "def ensure_dependencies():" in code
-    assert "ensure_dependencies()" in code
-    assert '"-m", "pip", "install"' in code
+    # The check runs before the third-party imports it guards.
     boot = code.index("ensure_dependencies()\n")
     assert boot < code.index("import geopandas as gpd")
     # Paths are resolved relative to the script, not the shell's cwd.
     assert "SCRIPT_DIR" in code
 
+    ns = exec_python(code)
+    installs = []
 
-def test_r_script_bootstraps_missing_packages():
+    def import_module(name):
+        if name == "geopandas":
+            raise ImportError(name)
+
+    ns["importlib"] = types.SimpleNamespace(import_module=import_module,
+                                            invalidate_caches=lambda: None)
+    ns["subprocess"] = types.SimpleNamespace(check_call=installs.append)
+    ns["sys"] = types.SimpleNamespace(executable="python",
+                                      argv=["recreate_map.py"])
+    with pytest.raises(SystemExit) as stopped:
+        ns["ensure_dependencies"]()
+    assert "python -m pip install geopandas" in str(stopped.value)
+    assert installs == []
+    ns["sys"].argv.append("--install-deps")
+    ns["ensure_dependencies"]()
+    assert installs == [["python", "-m", "pip", "install", "geopandas"]]
+
+
+def test_r_script_only_installs_packages_when_asked():
     code = codegen.generate_code(make_state(), [file_entry()], "R")
     assert "ensure_packages <- function(pkgs)" in code
     assert 'ensure_packages(c("sf", "ggplot2"))' in code
+    assert '"--install-deps" %in% commandArgs(trailingOnly = TRUE)' in code
     assert "install.packages(missing" in code
     # The bootstrap runs before the libraries it guards.
     assert (code.index('ensure_packages(c("sf", "ggplot2"))')
