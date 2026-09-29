@@ -104,12 +104,10 @@ class PyMapprApp:
         self.toolbar = NavigationToolbar2Tk(self.canvas, toolbar_row,
                                             pack_toolbar=False)
         self.toolbar.update()
-        self.toolbar.pack(side="left", fill="x", expand=True)
+        # The zoom buttons are packed first so they keep their room; the
+        # toolbar, which stretches, gets whatever width is left.
         self._add_zoom_buttons(toolbar_row)
-        self.canvas.get_tk_widget().pack(side="top", fill="both", expand=True)
-
-        # Scroll wheel zooms the map about the cursor.
-        self.canvas.mpl_connect("scroll_event", self._on_scroll_zoom)
+        self.toolbar.pack(side="left", fill="x", expand=True)
 
         self.status = ttk.Label(map_frame, text="Ready. Add a data file or "
                                 "enter points manually to plot them, or "
@@ -122,6 +120,12 @@ class PyMapprApp:
 
         self.filter_bar = FilterBar(map_frame, self.on_filter)
         self.filter_bar.pack(side="bottom", fill="x")
+        # The map is packed last, so it takes the room between the toolbar
+        # and the bars below it rather than squeezing them.
+        self.canvas.get_tk_widget().pack(side="top", fill="both", expand=True)
+
+        # Scroll wheel zooms the map about the cursor.
+        self.canvas.mpl_connect("scroll_event", self._on_scroll_zoom)
 
         # Defaults: simple basemap with country borders.
         self.renderer.set_layer("countries", True)
@@ -230,14 +234,16 @@ class PyMapprApp:
     # ----------------------------------------------------------------- zoom
 
     def _add_zoom_buttons(self, parent) -> None:
-        """Big, obvious zoom buttons next to the matplotlib toolbar."""
-        ttk.Separator(parent, orient="vertical").pack(
-            side="left", fill="y", padx=6, pady=2)
-        ttk.Button(parent, text="\N{HEAVY MINUS SIGN} Zoom out",
-                   command=lambda: self.zoom_step(1 / 1.5)).pack(side="left")
+        """Big, obvious zoom buttons at the right end of the toolbar row.
+
+        Packed from the right, so the rightmost widget comes first."""
         ttk.Button(parent, text="\N{HEAVY PLUS SIGN} Zoom in",
-                   command=lambda: self.zoom_step(1.5)).pack(side="left",
-                                                             padx=(2, 0))
+                   command=lambda: self.zoom_step(1.5)).pack(side="right",
+                                                             padx=(2, 4))
+        ttk.Button(parent, text="\N{HEAVY MINUS SIGN} Zoom out",
+                   command=lambda: self.zoom_step(1 / 1.5)).pack(side="right")
+        ttk.Separator(parent, orient="vertical").pack(
+            side="right", fill="y", padx=6, pady=2)
 
     def zoom_step(self, factor: float) -> None:
         """Zoom about the view center (buttons, Ctrl+= / Ctrl+-)."""
