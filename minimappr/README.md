@@ -22,8 +22,8 @@ library. Run it after changing anything in here, and commit the regenerated
 | `template.html` | Page shell with `@@TOKENS@@` for the injected blocks |
 | `styles.css` | The `<style>` block |
 | `body.html` | The `<body>` markup: header, side panels, modals |
-| `vendor/` | D3 v7, d3-geo-projection v4, topojson-client v3 (verbatim, ISC-licensed) |
-| `data/land-110m.json`, `data/countries-110m.json` | world-atlas 110m TopoJSON basemap |
+| `vendor/` | d3-array v3, d3-geo v3, d3-geo-projection v4, topojson-client v3 (verbatim, ISC-licensed) |
+| `data/countries-110m.json` | world-atlas 110m TopoJSON basemap (countries plus merged land) |
 | `data/samples.json` | The three built-in sample datasets |
 | `app/*.js` | Application logic, concatenated in filename order |
 
