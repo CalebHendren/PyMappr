@@ -7,7 +7,6 @@ from pymappr.data_loader import (build_manual_dataset, combine_name_columns,
                                  load_csv)
 from pymappr.legend import row_key
 from pymappr.projects import DatasetEntry
-from pymappr.styles import PointStyle
 
 
 def make_entry():
@@ -16,8 +15,8 @@ def make_entry():
     return DatasetEntry(
         dataset=dataset, name="Pardosa distincta", visible=True,
         group_by="Legend", color_by="", symbol_by="", vary_symbols=False,
-        styles={"Pardosa distincta": PointStyle(color="#123456",
-                                                marker="Star", size=45.0)},
+        legend_overrides={row_key("group", "Pardosa distincta"): {
+            "color": "#123456", "marker": "Star", "size": 45.0}},
         manual={"text": "38,-100, Site A\n-25,140, Site B", "order": "lat,lon"})
 
 
@@ -50,8 +49,8 @@ def test_entry_roundtrip():
     assert restored.dataset.frame.iloc[0]["lon"] == pytest.approx(-100)
     assert restored.dataset.frame.iloc[0]["lat"] == pytest.approx(38)
     assert list(restored.dataset.frame["name2"]) == ["Site A", "Site B"]
-    style = restored.styles["Pardosa distincta"]
-    assert (style.color, style.marker, style.size) == ("#123456", "Star", 45.0)
+    assert restored.legend_overrides[row_key("group", "Pardosa distincta")] \
+        == {"color": "#123456", "marker": "Star", "size": 45.0}
 
 
 def test_entry_roundtrip_from_csv(tmp_path):
@@ -173,16 +172,32 @@ def test_old_projects_migrate_their_styles_into_row_overrides():
     })
     override = entry.legend_overrides[row_key("group", "Pardosa")]
     assert override == {"color": "#123456", "marker": "Star", "size": 45.0}
-    # The legacy field is still populated, so nothing that reads it breaks.
-    assert entry.styles["Pardosa"].marker == "Star"
+
+
+def test_a_newer_projects_styles_copy_does_not_pin_every_group():
+    # A project saved with legend_overrides also writes "styles" for older
+    # builds. Reading that copy back would pin every group's colour, and a
+    # palette change would then do nothing once the project was reopened.
+    entry = projects.entry_from_dict({
+        "name": "new", "columns": ["name1", "lon", "lat"],
+        "name_labels": ["Species"], "rows": [["Pardosa", -100.0, 38.0]],
+        "styles": {"Pardosa": {"color": "#d62728", "marker": "Circle",
+                               "size": 30.0}},
+        "legend_overrides": {},
+    })
+    assert entry.legend_overrides == {}
 
 
 def test_saving_still_writes_styles_for_older_builds():
     # An older PyMappr knows nothing about legend_overrides; writing both
     # keeps a project saved here openable there.
     entry = make_entry()
+    entry.legend_overrides[row_key("group", "Other")] = {"color": "#abcdef"}
     data = projects.entry_to_dict(entry)
     assert data["styles"]["Pardosa distincta"]["marker"] == "Star"
+    # Only pinned rows are written, filled out to the full old format.
+    assert data["styles"]["Other"] == {"color": "#abcdef",
+                                       "marker": "Circle", "size": 30.0}
     assert "legend_overrides" in data
 
 

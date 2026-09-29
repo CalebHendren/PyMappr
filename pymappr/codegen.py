@@ -6,20 +6,16 @@ import re
 from pymappr import __version__
 from pymappr.layers import (BATHYMETRY_STEPS, CONTINENT_EXTENTS,
                             LAYER_SPECS)
-from pymappr.legend import (LegendOptions, format_count, is_hidden,
-                            legend_counts,
-                            legend_sections, manual_order, order_labels,
-                            override_label, row_key)
+from pymappr.layout import column_key, layout_points, with_default_title
+from pymappr.legend import LegendOptions
 from pymappr.projections import CAP_CLIP_RADIUS, get_projection, is_globe
 from pymappr.renderer import (BATHYMETRY_COLORS, FILL_COLORS, FILL_LAYERS,
                               LABEL_STYLES, LINE_LAYERS, MARGINS_PLAIN,
                               MARGINS_WITH_TICKS, POINT_LAYERS, Z_BATHYMETRY,
                               Z_LAKE_FILL, Z_OCEAN, Z_POINT_LAYERS)
 from pymappr.decorations import CompassOptions, ScaleBarOptions
-from pymappr.styles import (POINT_EDGE_COLOR, POINT_EDGE_WIDTH, PointStyle,
-                            apply_override, attribute_style_maps,
-                            default_styles, group_points, palette_for,
-                            resolve_nesting, style_by_attributes)
+from pymappr.styles import (DEFAULT_PALETTE, POINT_EDGE_COLOR,
+                            POINT_EDGE_WIDTH, PointStyle, palette_for)
 from pymappr.updates import GITHUB_REPO
 
 LANGUAGES = ("Python", "R")
@@ -327,25 +323,6 @@ def _label_layers(m: dict, zoom: float) -> list[dict]:
     return labels
 
 
-def _display_labels(raw_labels: list[str], entry_name: str, multi: bool,
-                    attribute_mode: bool,
-                    used: set[str]) -> dict[str, str]:
-    """Raw group label -> legend label, disambiguated across datasets the
-    same way the app does it."""
-    mapping: dict[str, str] = {}
-    for label in raw_labels:
-        display = label
-        if multi and attribute_mode:
-            pass  # attribute rows are value names; sections carry the dataset
-        elif multi and label == "All points":
-            display = entry_name
-        elif multi and label in used:
-            display = f"{label} ({entry_name})"
-        used.add(display)
-        mapping[label] = display
-    return mapping
-
-
 def _dataset_filename(name: str, used: set[str]) -> str:
     """A filesystem-safe ``<name>.csv`` unique within *used*."""
     stem = re.sub(r"[^A-Za-z0-9._-]+", "_", str(name)).strip("._-")
@@ -373,36 +350,22 @@ def _dataset_configs(entries, data_mode: str = "inline",
                      options: LegendOptions | None = None,
                      palette: list[str] | None = None
                      ) -> tuple[list[dict], dict[str, PointStyle],
-                                dict[str, str], list | None]:
-    """Per-dataset script configs, the combined legend-label -> style map
-    (in render order), the point data to write as ``data/<name>.csv`` in
-    ``"files"`` mode, and the structured legend sections (None in plain
-    mode) - replicating the app's ``_push_points`` exactly. *palette* is the
-    map's colour palette (the default when None).
+                                dict[str, str], list | None, list | None]:
+    """Per-dataset script configs, the legend-label -> style map (in render
+    order), the point data to write as ``data/<name>.csv`` in ``"files"``
+    mode, the sectioned legend (None in plain mode) and the plain legend's
+    row order (None when sectioned).
+
+    Everything about what is drawn comes from :func:`layout_points`, the
+    same function the app draws with, so the script matches the map.
     """
-    options = options or LegendOptions()
-    visible = [e for e in entries if e.visible and len(e.dataset)]
-    multi = len(visible) > 1
-    any_attr = False
-    for entry in visible:
-        key_by_label = dict(zip(entry.dataset.name_labels,
-                                entry.dataset.name_keys))
-        if key_by_label.get(entry.symbol_by) is not None:
-            any_attr = True
-    used: set[str] = set()
+    layout = layout_points(entries, options or LegendOptions(),
+                           palette or DEFAULT_PALETTE)
     used_files: set[str] = set()
-    styles: dict[str, PointStyle] = {}
     configs: list[dict] = []
     data_files: dict[str, str] = {}
-    sections: list = []
-    row_order: list[str] = []
-    palette_offset = 0
-    for entry in visible:
-        frame = entry.dataset.frame
-        key_by_label = dict(zip(entry.dataset.name_labels,
-                                entry.dataset.name_keys))
-        color_key = key_by_label.get(entry.color_by)
-        symbol_key = key_by_label.get(entry.symbol_by)
+    for dataset in layout.datasets:
+        entry = dataset.entry
         # Every dataset is normalized to CSV (labels + Longitude/Latitude)
         # so the script never depends on the original file's format.
         csv_text = _inline_csv(entry)
@@ -415,8 +378,10 @@ def _dataset_configs(entries, data_mode: str = "inline",
             "group_col": None,
             "color_col": None,
             "symbol_col": None,
-            "default_label": entry.name,
-            "label_map": {},
+            # The label an ungrouped dataset's points are keyed by, before
+            # label_map turns it into the legend text.
+            "default_label": "All points",
+            "label_map": dataset.label_map,
             # Original source path, for a provenance comment only (not read
             # by the generated loader).
             "source": entry.dataset.source_path or None,
@@ -427,99 +392,14 @@ def _dataset_configs(entries, data_mode: str = "inline",
             data_files[rel] = csv_text
         else:
             config["inline_data"] = csv_text
-        if symbol_key is not None:
-            # Two-attribute styling: one render group per (color, symbol)
-            # pair, and a sectioned legend keyed by the two columns.
+        if dataset.attribute:
             config["color_col"] = entry.color_by or None
             config["symbol_col"] = entry.symbol_by or None
-            color_map, symbol_map = attribute_style_maps(frame, color_key,
-                                                         symbol_key,
-                                                         options.hierarchy,
-                                                         palette=palette)
-            nested = resolve_nesting(frame, color_key, symbol_key,
-                                     options.hierarchy)
-            combos = style_by_attributes(frame, color_key, symbol_key,
-                                         color_map, symbol_map,
-                                         entry.legend_overrides, nested,
-                                         palette=palette)
-            raw = [label for label, _style, _sub in combos]
-            display = _display_labels(raw, entry.name, multi, True, used)
-            for label, style, _sub in combos:
-                styles[display[label]] = style
-            prefix = (f"{entry.name}: "
-                      if (multi and options.dataset_prefix) else "")
-            # Same builder the app draws with, so an exported script's legend
-            # matches the map it was exported from.
-            sections += legend_sections(
-                frame, color_key, symbol_key, color_map, symbol_map,
-                entry.color_by, entry.symbol_by, prefix=prefix,
-                counts=legend_counts(frame, color_key, symbol_key)
-                if (options.counts or options.orders_by_count) else None,
-                options=options, overrides=entry.legend_overrides)
-        else:
-            group_key = key_by_label.get(entry.group_by)
-            groups = group_points(frame, group_key)
-            labels = [label for label, _sub in groups]
-            color_keys = None
-            if color_key is not None and color_key in frame.columns:
-                color_keys = [str(sub[color_key].iloc[0]) if len(sub) else ""
-                              for _label, sub in groups]
-            fresh = default_styles(labels, color_keys=color_keys,
-                                   vary_symbols=entry.vary_symbols,
-                                   palette_offset=palette_offset,
-                                   palette=palette)
-            palette_offset += len(labels)
-            display = _display_labels(labels, entry.name, multi, False, used)
-            # A row the user named themselves keeps that name; the rest get
-            # the disambiguated one worked out above.
-            over = {label: entry.legend_overrides.get(row_key("group", label))
-                    for label in labels}
-            display = {label: override_label(over[label]) or text
-                       for label, text in display.items()}
-            # Counts ride on the display label, exactly as the app puts them
-            # on the point-group label, so the exported legend matches.
-            total = sum(len(sub) for _label, sub in groups)
-            sizes = {label: len(sub) for label, sub in groups}
-            if options.counts:
-                display = {label: format_count(text, sizes[label], total,
-                                               options.count_format)
-                           for label, text in display.items()}
-            entry_styles = {}
-            for label in labels:
-                # entry.styles is the app's resolved style for the group, so
-                # it is the base here; an entry built without going through
-                # the app has only its defaults and the overrides.
-                style = apply_override(entry.styles.get(label, fresh[label]),
-                                       over[label])
-                styles[display[label]] = style
-                # Hidden rows keep their points but leave the legend.
-                if not is_hidden(over[label]):
-                    entry_styles[display[label]] = style
-            by_text = {display[label]: sizes[label] for label in labels}
-            place = {display[label]: manual_order(over[label])
-                     for label in labels}
-            ordered = _order_rows(list(entry_styles), options,
-                                  lambda t: by_text.get(t, 0), place)
-            row_order += ordered
-            if group_key is not None:
-                config["group_col"] = entry.group_by
-            if entry_styles:
-                title = entry.name if options.section_titles else ""
-                sections.append((title, [(t, entry_styles[t])
-                                         for t in ordered]))
-        config["label_map"] = display
+        elif column_key(entry, entry.group_by) is not None:
+            config["group_col"] = entry.group_by
         configs.append(config)
-    return (configs, styles, data_files, (sections if any_attr else None),
-            (None if any_attr else row_order))
-
-
-def _order_rows(labels: list, options: LegendOptions, count_of,
-                place: dict) -> list:
-    """Legend row order for group-by mode, manual ordering included."""
-    if options.order == "manual":
-        return sorted(labels, key=lambda t: (place.get(t, 1 << 30),
-                                             labels.index(t)))
-    return order_labels(labels, options.order, count_of)
+    styles = {label: style for label, style, _rows in layout.groups}
+    return configs, styles, data_files, layout.sections, layout.row_order
 
 
 def _inline_csv(entry) -> str:
@@ -569,12 +449,13 @@ def build_config(state: dict, entries, project_name: str = "map",
     layers, notes = _base_layers(m, zoom)
     label_layers = _label_layers(m, zoom)
     options = LegendOptions.from_dict(legend)
+    if not (options.title or "").strip():
+        options.title = None
+    options = with_default_title(entries, options)
     datasets, styles, data_files, sections, row_order = _dataset_configs(
         entries, data_mode, options, palette_for(m.get("palette")))
     edge = dict(state.get("point_edge") or {})
-    title = str(legend.get("title") or "").strip()
-    if not title and len(datasets) == 1 and datasets[0]["group_col"]:
-        title = datasets[0]["group_col"]
+    title = (options.title or "").strip()
     clip_cap = None
     if is_globe(projection_name):
         clip_cap = (round(projection.lon_0, 6), round(projection.lat_0, 6),

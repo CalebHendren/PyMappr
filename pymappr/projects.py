@@ -11,7 +11,7 @@ import pandas as pd
 
 from pymappr import __version__
 from pymappr.data_loader import PointDataset
-from pymappr.styles import PointStyle
+from pymappr.styles import PointStyle, row_key
 
 __all__ = ["PROJECT_EXTENSION", "DatasetEntry", "config_dir",
            "load_settings", "save_settings", "projects_dir",
@@ -106,12 +106,10 @@ class DatasetEntry:
     color_by: str = ""
     symbol_by: str = ""
     vary_symbols: bool = False
-    styles: dict[str, PointStyle] = field(default_factory=dict)
-    # Per-legend-row customization, keyed by pymappr.legend.row_key: a
+    # Per-legend-row customization, keyed by pymappr.styles.row_key: a
     # replacement label, a hidden flag, a manual position, and pinned
-    # color/marker/size. Unlike *styles* this covers the two-attribute
-    # modes as well, where rows are color values, symbol values and pairs
-    # rather than groups.
+    # color/marker/size. Everything else about a row's look is worked out
+    # from the palette each time, so it follows a palette change.
     legend_overrides: dict[str, dict] = field(default_factory=dict)
     # For typed-in datasets: {"text": ..., "order": ...} so they can be
     # re-opened in the manual entry dialog and edited.
@@ -133,11 +131,10 @@ def entry_to_dict(entry: DatasetEntry) -> dict:
         "color_by": entry.color_by,
         "symbol_by": entry.symbol_by,
         "vary_symbols": entry.vary_symbols,
-        # "styles" is still written so a project saved here still opens in
-        # an older PyMappr, which knows nothing about legend_overrides.
-        "styles": {label: {"color": style.color, "marker": style.marker,
-                           "size": style.size}
-                   for label, style in entry.styles.items()},
+        # "styles" is still written so a project saved here keeps its pinned
+        # group styles in an older PyMappr, which knows nothing about
+        # legend_overrides.
+        "styles": _legacy_styles(entry.legend_overrides),
         "legend_overrides": {key: dict(value) for key, value
                              in entry.legend_overrides.items()},
         "manual": entry.manual,
@@ -154,15 +151,6 @@ def entry_from_dict(data: dict) -> DatasetEntry:
     frame.attrs["name_labels"] = labels
     dataset = PointDataset(frame=frame,
                            source_path=str(data.get("source_path", "")))
-    styles = {}
-    for label, raw in dict(data.get("styles", {})).items():
-        try:
-            styles[label] = PointStyle(color=str(raw.get("color", "#d62728")),
-                                       marker=str(raw.get("marker", "Circle")),
-                                       size=float(raw.get("size", 30.0)))
-        except (TypeError, ValueError, AttributeError):
-            continue
-    overrides = _overrides_from_dict(data, styles)
     manual = data.get("manual")
     return DatasetEntry(
         dataset=dataset,
@@ -172,8 +160,7 @@ def entry_from_dict(data: dict) -> DatasetEntry:
         color_by=str(data.get("color_by", "")),
         symbol_by=str(data.get("symbol_by", "")),
         vary_symbols=bool(data.get("vary_symbols", False)),
-        styles=styles,
-        legend_overrides=overrides,
+        legend_overrides=_overrides_from_dict(data),
         manual=dict(manual) if isinstance(manual, dict) else None,
     )
 
@@ -181,20 +168,38 @@ def entry_from_dict(data: dict) -> DatasetEntry:
 _OVERRIDE_FIELDS = ("label", "hidden", "order", "color", "marker", "size")
 
 
-def _overrides_from_dict(data: dict, styles: dict) -> dict[str, dict]:
+def _legacy_styles(overrides: dict[str, dict]) -> dict[str, dict]:
+    """The pinned group styles, in the form older PyMappr builds read."""
+    prefix = row_key("group", "")
+    default = PointStyle()
+    return {key[len(prefix):]: {"color": o.get("color") or default.color,
+                                "marker": o.get("marker") or default.marker,
+                                "size": float(o.get("size") or default.size)}
+            for key, o in overrides.items()
+            if key.startswith(prefix)
+            and any(o.get(f) for f in ("color", "marker", "size"))}
+
+
+def _overrides_from_dict(data: dict) -> dict[str, dict]:
     """Read the per-row legend customizations, migrating a project saved
     before they existed.
 
-    Older projects carry only *styles*, keyed by group label. Those are the
-    same thing said a different way, so they are folded into group rows here
-    and the two never have to be kept in step at read time.
+    Such a project carries only "styles", keyed by group label - the same
+    thing said a different way - so it is folded into group rows. A newer
+    project's "styles" is only a copy for older builds; reading it back too
+    would pin every group's colour, and a palette change would then do
+    nothing after the project was reopened.
     """
-    from pymappr.legend import row_key
-
     overrides: dict[str, dict] = {}
-    for label, style in styles.items():
-        overrides[row_key("group", label)] = {
-            "color": style.color, "marker": style.marker, "size": style.size}
+    if "legend_overrides" not in data:
+        for label, raw in dict(data.get("styles", {})).items():
+            try:
+                overrides[row_key("group", label)] = {
+                    "color": str(raw.get("color", "#d62728")),
+                    "marker": str(raw.get("marker", "Circle")),
+                    "size": float(raw.get("size", 30.0))}
+            except (TypeError, ValueError, AttributeError):
+                continue
     for key, raw in dict(data.get("legend_overrides", {})).items():
         if not isinstance(raw, dict):
             continue

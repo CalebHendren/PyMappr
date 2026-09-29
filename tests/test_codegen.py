@@ -14,7 +14,7 @@ from pymappr.data_loader import build_manual_dataset, combine_name_columns
 from pymappr.projections import get_projection
 from pymappr.legend import row_key
 from pymappr.projects import DatasetEntry, entry_from_dict
-from pymappr.styles import BLACK_AND_WHITE, BLACK_AND_WHITE_NAME, PointStyle
+from pymappr.styles import BLACK_AND_WHITE, BLACK_AND_WHITE_NAME
 
 
 def make_state(**overrides):
@@ -50,8 +50,8 @@ def manual_entry(name="spiders", **kwargs):
     dataset = build_manual_dataset(
         name, "38,-100, Site A\n-25,140, Site B\n")
     defaults = dict(dataset=dataset, name=name, group_by="Legend",
-                    styles={name: PointStyle(color="#123456",
-                                             marker="Star", size=45.0)})
+                    legend_overrides={row_key("group", name): {
+                        "color": "#123456", "marker": "Star", "size": 45.0}})
     defaults.update(kwargs)
     return DatasetEntry(**defaults)
 
@@ -614,12 +614,21 @@ def test_palette_and_point_outline_reach_the_script():
     assert '"#333333"' in style_colors
 
 
+def test_an_ungrouped_dataset_draws_in_its_own_style():
+    # The script used to key these points by the dataset name while STYLES
+    # held "All points", so they fell back to a grey default.
+    entry = manual_entry(group_by="")
+    ns = exec_python(codegen.generate_code(make_state(), [entry], "Python"))
+    spec = ns["DATASETS"][0]
+    labels = ns["point_labels"](ns["load_points"](spec), spec)
+    assert set(labels) <= set(ns["STYLES"])
+
+
 def test_combined_name_column_is_exported():
     entry = manual_entry()
     entry.dataset, label = combine_name_columns(entry.dataset,
                                                 ["Legend", "Label"])
     entry.group_by = label
-    entry.styles = {}
     ns = exec_python(codegen.generate_code(make_state(), [entry], "Python"))
     spec = ns["DATASETS"][0]
     assert spec["group_col"] == "Legend Label"
