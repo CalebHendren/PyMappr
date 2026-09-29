@@ -1,5 +1,16 @@
+"""Render the README's example maps headlessly.
+
+    python scripts/make_screenshots.py                 # docs/images/*.png
+    python scripts/make_screenshots.py --out preview --all
+
+``--out`` writes somewhere else (a quick render check without touching the
+docs), and ``--all`` adds a few extra scenes that exercise more layers.
+Points are styled through pymappr.layout, exactly as the app styles them.
+"""
+
 from __future__ import annotations
 
+import argparse
 import sys
 from pathlib import Path
 
@@ -15,167 +26,110 @@ sys.path.insert(0, str(REPO_ROOT))
 from pymappr.data_loader import load_csv  # noqa: E402
 from pymappr.decorations import CompassOptions  # noqa: E402
 from pymappr.layers import LayerStore  # noqa: E402
+from pymappr.layout import layout_points, with_default_title  # noqa: E402
+from pymappr.legend import LegendOptions  # noqa: E402
+from pymappr.projects import DatasetEntry  # noqa: E402
 from pymappr.renderer import MapRenderer  # noqa: E402
-from pymappr.styles import (NEUTRAL_MARKER_COLOR,  # noqa: E402
-                            PointStyle, attribute_style_maps,
-                            default_styles, group_points,
-                            style_by_attributes)
+from pymappr.styles import DEFAULT_PALETTE  # noqa: E402
 
-OUT_DIR = REPO_ROOT / "docs" / "images"
 DPI = 110
+SAMPLES = REPO_ROOT / "sample_data"
 
 
 def new_renderer(store: LayerStore) -> MapRenderer:
     return MapRenderer(Figure(figsize=(10, 6.5)), store)
 
 
-def point_groups_for(dataset, key: str, color_by: str | None = None):
-    groups = group_points(dataset.frame, key)
-    color_keys = None
-    if color_by is not None:
-        color_keys = [str(sub[color_by].iloc[0]) for _label, sub in groups]
-    styles = default_styles([label for label, _ in groups],
-                            color_keys=color_keys)
-    return [(label, styles[label], sub["lon"].to_numpy(),
-             sub["lat"].to_numpy()) for label, sub in groups]
+def sample(name: str, **styling) -> DatasetEntry:
+    dataset = load_csv(str(SAMPLES / name))
+    return DatasetEntry(dataset=dataset, name=name, **styling)
 
 
-def attribute_render(dataset, color_key: str, symbol_key: str):
-    """Render groups + a compact color/symbol legend for two columns."""
-    color_map, symbol_map = attribute_style_maps(
-        dataset.frame, color_key, symbol_key)
-    groups = style_by_attributes(dataset.frame, color_key, symbol_key,
-                                 color_map, symbol_map)
-    point_groups = [(label, style, sub["lon"].to_numpy(),
-                     sub["lat"].to_numpy())
-                    for label, style, sub in groups]
-    keys = dict(zip(dataset.name_keys, dataset.name_labels))
-    sections = [
-        (keys.get(color_key, "Color"),
-         [(v, PointStyle(color=c, marker="Circle"))
-          for v, c in color_map.items()]),
-        (keys.get(symbol_key, "Symbol"),
-         [(v, PointStyle(color=NEUTRAL_MARKER_COLOR, marker=m))
-          for v, m in symbol_map.items()]),
-    ]
-    return point_groups, sections
+def show_points(renderer: MapRenderer, entry: DatasetEntry,
+                **legend) -> None:
+    """Draw a dataset and its legend the way the app does."""
+    options = with_default_title([entry], LegendOptions(**legend))
+    layout = layout_points([entry], options, DEFAULT_PALETTE)
+    renderer.set_points(
+        [(label, style, rows["lon"].to_numpy(), rows["lat"].to_numpy())
+         for label, style, rows in layout.groups],
+        layout.sections, layout.row_order, options)
 
 
-def save(renderer: MapRenderer, name: str) -> None:
-    """Save a full-canvas (landscape) render at the figure size."""
-    path = OUT_DIR / name
-    renderer.fig.savefig(path, dpi=DPI, facecolor="white")
-    print("wrote", path.relative_to(REPO_ROOT))
+def readme_scenes(store: LayerStore) -> dict:
+    """File name -> (renderer, crop to the map box?) for the README."""
+    beetles = sample("south_america_beetles.csv", color_by="Genus",
+                     symbol_by="Species")
+    seabirds = sample("world_seabirds.csv", group_by="Family")
+    orchids = sample("europe_orchids.csv", group_by="Genus")
+    scenes = {}
 
-
-def save_cropped(renderer: MapRenderer, name: str) -> None:
-    """Save cropped to the map box - used for portrait renders so the tall
-    frame comes out without its blank orientation side bars."""
-    path = OUT_DIR / name
-    renderer.save_image(str(path), fmt="png", dpi=DPI)
-    print("wrote", path.relative_to(REPO_ROOT))
-
-
-def main() -> int:
-    OUT_DIR.mkdir(parents=True, exist_ok=True)
-    store = LayerStore()
-    if (err := store.check_data()):
-        print(err)
-        return 1
-
-    sample = REPO_ROOT / "sample_data"
-    beetles = load_csv(str(sample / "south_america_beetles.csv"))
-    seabirds = load_csv(str(sample / "world_seabirds.csv"))
-    orchids = load_csv(str(sample / "europe_orchids.csv"))
-
-    # 1. Portrait orientation: South American beetles, color by Genus and
-    #    shape by Species, framed as a tall page (the headline of this
-    #    release). Cropped to the portrait frame.
-    beetle_groups, beetle_sections = attribute_render(beetles, "name1", "name2")
+    # Portrait orientation: beetles coloured by genus, shaped by species,
+    # framed as a tall page and cropped to it.
     r = new_renderer(store)
     r.set_basemap("blue_marble")
     r.set_layer("countries", True)
     r.set_extent("South America")
     r.set_orientation("portrait")
-    r.set_point_groups(beetle_groups)
-    r.set_structured_legend(beetle_sections)
-    r.set_legend(True, location="upper right", fontsize=7)
-    save_cropped(r, "beetles_portrait.png")
+    show_points(r, beetles, location="upper right", fontsize=7)
+    scenes["beetles_portrait.png"] = (r, True)
 
-    # 2. The same map in landscape: it fills the canvas instead of a tall
-    #    frame. Side by side with #1 this shows the orientation switch.
+    # The same map in landscape, for the orientation comparison.
     r = new_renderer(store)
     r.set_basemap("blue_marble")
     r.set_layer("countries", True)
     r.set_extent("South America")
-    r.set_point_groups(beetle_groups)
-    r.set_structured_legend(beetle_sections)
-    r.set_legend(True, location="upper right", fontsize=7)
-    save(r, "beetles_landscape.png")
+    show_points(r, beetles, location="upper right", fontsize=7)
+    scenes["beetles_landscape.png"] = (r, False)
 
-    # 3. World seabirds grouped by Family on a Mollweide projection with a
-    #    plain per-group legend.
+    # Seabirds grouped by family on Mollweide, with a plain legend.
     r = new_renderer(store)
     r.set_layer("countries", True)
     r.set_projection("Mollweide")
     r.set_ocean("blue")
-    r.set_point_groups(point_groups_for(seabirds, "name1"))
-    r.set_legend(True, title=seabirds.name_labels[0], location="lower left",
-                 fontsize=7)
-    save(r, "seabirds_world.png")
+    show_points(r, seabirds, location="lower left", fontsize=7)
+    scenes["seabirds_world.png"] = (r, False)
 
-    # 4. The same seabirds, but color by Family and shape by Genus: the
-    #    compact color + symbol key decodes every point with a handful of
-    #    colors and shapes.
+    # The same seabirds coloured by family and shaped by genus: the compact
+    # colour + symbol key.
     r = new_renderer(store)
-    r.set_extent("World")
     r.set_layer("countries", True)
     r.set_ocean("blue")
     r.set_point_alpha(0.75)
-    point_groups, sections = attribute_render(seabirds, "name1", "name2")
-    r.set_point_groups(point_groups)
-    r.set_structured_legend(sections)
-    r.set_legend(True, location="lower left", fontsize=7)
-    save(r, "seabirds_compact.png")
+    show_points(r, sample("world_seabirds.csv", color_by="Family",
+                          symbol_by="Genus"),
+                location="lower left", fontsize=7)
+    scenes["seabirds_compact.png"] = (r, False)
 
-    # 5. European orchids grouped by Genus over a shaded-relief basemap, with
-    #    country labels.
+    # Orchids by genus over shaded relief, with country labels.
     r = new_renderer(store)
     r.set_basemap("relief")
     r.set_extent((-11, 30, 35, 61))
     r.set_layer("countries", True)
     r.set_labels("countries", True)
-    r.set_point_groups(point_groups_for(orchids, "name1"))
-    r.set_legend(True, title=orchids.name_labels[0], location="upper right",
-                 fontsize=7)
-    save(r, "orchids_europe.png")
+    show_points(r, orchids, location="upper right", fontsize=7)
+    scenes["orchids_europe.png"] = (r, False)
 
-    # 6. Every country labelled on the offline Blue Marble basemap.
     r = new_renderer(store)
     r.set_basemap("blue_marble")
     r.set_layer("countries", True)
     r.set_labels("countries", True)
-    save(r, "blue_marble_world.png")
+    scenes["blue_marble_world.png"] = (r, False)
 
-    # 7. The Robinson projection with a 10 degree graticule and country
-    #    labels.
     r = new_renderer(store)
     r.set_layer("countries", True)
     r.set_projection("Robinson")
     r.set_graticule(10)
     r.set_labels("countries", True)
-    save(r, "robinson_world.png")
+    scenes["robinson_world.png"] = (r, False)
 
-    # 8. Countries layer off: political borders removed, continent outlines
-    #    kept.
+    # Countries off: borders removed, continent outlines kept.
     r = new_renderer(store)
     r.set_layer("countries", True)
     r.set_layer("countries", False)
     r.set_ocean("blue")
-    save(r, "continent_outlines.png")
+    scenes["continent_outlines.png"] = (r, False)
 
-    # 9. Physical world: bathymetry, land fill, glaciers, ice shelves,
-    #    deserts, playas, reefs, and the compass.
     r = new_renderer(store)
     r.set_layer("countries", True)
     r.set_bathymetry(True)
@@ -183,10 +137,10 @@ def main() -> int:
         r.set_fill_layer(key, True)
     r.set_layer("reefs", True)
     r.set_compass(CompassOptions(show=True))
-    save(r, "physical_world.png")
+    scenes["physical_world.png"] = (r, False)
 
-    # 10. Cities, airports, and ports over Europe: markers and labels are
-    #     scale-dependent, and the coastline switches to 10m automatically.
+    # Scale-dependent city markers and labels; the coastline switches to
+    # 10m on its own at this zoom.
     r = new_renderer(store)
     r.set_extent((-12, 32, 35, 62))
     r.set_layer("countries", True)
@@ -194,10 +148,8 @@ def main() -> int:
     for key in ("cities", "airports", "ports"):
         r.set_point_layer(key, True)
     r.set_labels("cities", True)
-    save(r, "cities_europe.png")
+    scenes["cities_europe.png"] = (r, False)
 
-    # 11. Boundary detail: disputed areas and boundaries, maritime
-    #     boundaries, EEZ / 200 nm limits, urban areas.
     r = new_renderer(store)
     r.set_extent((40, 110, -5, 45))
     r.set_layer("countries", True)
@@ -206,17 +158,79 @@ def main() -> int:
     for key in ("disputed_lines", "maritime", "eez"):
         r.set_layer(key, True)
     r.set_ocean("blue")
-    save(r, "boundaries_asia.png")
+    scenes["boundaries_asia.png"] = (r, False)
 
-    # 12. Time zones with capitals only.
     r = new_renderer(store)
     r.set_layer("countries", True)
     r.set_layer("timezones", True)
     r.set_labels("timezones", True)
     r.set_point_layer("cities", True)
     r.set_capitals_only(True)
-    save(r, "timezones_capitals.png")
+    scenes["timezones_capitals.png"] = (r, False)
+    return scenes
 
+
+def extra_scenes(store: LayerStore) -> dict:
+    """Layers the README images do not show, for a wider render check."""
+    scenes = {}
+    r = new_renderer(store)
+    r.set_extent("North America")
+    for key in ("countries", "states", "counties", "lakes_outline",
+                "rivers", "roads"):
+        r.set_layer(key, True)
+    r.set_lake_fill("blue")
+    r.set_ocean("blue")
+    r.set_graticule(5, show_labels=True)
+    for key in ("countries", "states", "lakes", "rivers"):
+        r.set_labels(key, True)
+    scenes["north_america_full.png"] = (r, False)
+
+    r = new_renderer(store)
+    r.set_extent((-107, -88, 25, 37))
+    for key in ("countries", "states", "counties"):
+        r.set_layer(key, True)
+    r.set_ocean("grey")
+    r.set_lake_fill("grey")
+    r.set_labels("counties", True)
+    r.set_labels("states", True)
+    r.set_graticule(1, show_labels=False)
+    scenes["texas_counties.png"] = (r, False)
+
+    r = new_renderer(store)
+    r.set_extent((-130, -60, 20, 55))
+    r.set_layer("sovereignty", True)
+    r.set_layer("states", True)
+    r.set_layer("dependencies", True)
+    r.set_fill_layer("parks", True)
+    r.set_labels("countries", True)
+    scenes["sovereignty_parks.png"] = (r, False)
+    return scenes
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("--out", type=Path,
+                        default=REPO_ROOT / "docs" / "images",
+                        help="folder to write the images to")
+    parser.add_argument("--all", action="store_true",
+                        help="also render the extra layer scenes")
+    args = parser.parse_args()
+    store = LayerStore()
+    if (err := store.check_data()):
+        print(err)
+        return 1
+    args.out.mkdir(parents=True, exist_ok=True)
+    scenes = readme_scenes(store)
+    if args.all:
+        scenes.update(extra_scenes(store))
+    for name, (renderer, cropped) in scenes.items():
+        path = args.out / name
+        if cropped:
+            # Portrait renders drop their blank orientation side bars.
+            renderer.save_image(str(path), fmt="png", dpi=DPI)
+        else:
+            renderer.fig.savefig(path, dpi=DPI, facecolor="white")
+        print("wrote", path)
     return 0
 
 

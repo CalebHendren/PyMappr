@@ -96,9 +96,9 @@ python -m pymappr
 ## Development
 
 ```bash
-python -m pytest tests/            # coordinate parser + CSV loader + styling tests
-python scripts/render_preview.py   # headless render smoke test -> preview/*.png
+python -m pytest tests/            # the test suite (a few tests need the map data)
 python scripts/make_screenshots.py # regenerate the README images
+python scripts/make_screenshots.py --out preview --all  # render check, more layers
 ```
 
 Project layout:
@@ -110,6 +110,10 @@ Project layout:
 - `pymappr/projections.py` - map projections (pyproj)
 - `pymappr/renderer.py` - matplotlib map rendering
 - `pymappr/styles.py` - point styles and group/color-by styling
+- `pymappr/legend.py` - legend options and legend rows
+- `pymappr/layout.py` - what every dataset draws (shared by the app and code
+  export)
+- `pymappr/codegen.py`, `pymappr/templates/` - Python/R code export
 - `pymappr/updates.py` - daily update check against the GitHub releases API
 - `pymappr/app.py`, `pymappr/ui/` - Tkinter application
 - `scripts/fetch_data.py` - downloads and prepares the bundled map data
