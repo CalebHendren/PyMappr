@@ -81,10 +81,10 @@ function renderDatasetList(){
     box.innerHTML="";
     box.setAttribute("role","listbox"); box.setAttribute("aria-label","Datasets");
     for(const ds of datasets){
-      const res=resolveGroups(ds);
-      const sw = res.groups[0] ? res.groups[0].style.color : "#888";
+      const sw = swatchColor(resolveGroups(ds));
       const row=document.createElement("div");
       row.className="ds"+(ds.id===selId?" sel":"");
+      row.dataset.id=ds.id;
       row.tabIndex=0;
       row.setAttribute("role","option");
       row.setAttribute("aria-selected", ds.id===selId ? "true" : "false");
@@ -108,6 +108,18 @@ function renderDatasetList(){
   // imported ones reopen their table (as CSV text) and column mapping.
   $("#btnEdit").disabled = !selectedDataset();
   $("#btnRemove").disabled = !selectedDataset();
+}
+// The list's colour chip: the first group's colour.
+function swatchColor(res){ return res.groups[0] ? res.groups[0].style.color : "#888"; }
+// Recolour the chips after a render, so colour and palette changes need not
+// rebuild the whole list. Hidden datasets are not resolved by the render.
+function updateSwatches(resolved){
+  const byId=new Map(resolved.map(({ds,res})=>[ds.id,res]));
+  for(const row of $$("#dslist .ds")){
+    const ds=datasets.find(d=>d.id===Number(row.dataset.id));
+    if(!ds) continue;
+    row.querySelector(".sw").style.background=swatchColor(byId.get(ds.id)||resolveGroups(ds));
+  }
 }
 function escapeHtml(s){ return String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
 
@@ -170,12 +182,12 @@ function legendRowsFor(ds){
                                style:g.style, depth:0}));
   }
   const rows=[];
-  if(resolveNesting(ds.rows,res.colorKey,res.symbolKey,opts.legHierarchy)){
-    const owner=ownerMap(ds.rows,res.symbolKey,res.colorKey);
+  if(res.nested){
+    const kidsOf=childrenByOwner(res);
     for(const [cv,color] of Object.entries(res.colorMap)){
       rows.push({key:rowKey("color",cv), value:cv, depth:0,
                  style:{color,marker:"Circle",size:ds.base.size}});
-      for(const sv of Object.keys(res.symbolMap).filter(s=>(owner[s]??"")===cv))
+      for(const sv of kidsOf.get(cv)||[])
         rows.push({key:rowKey("pair",cv,sv), value:sv, depth:1,
                    style:{color,marker:res.symbolMap[sv],size:ds.base.size}});
     }
@@ -210,7 +222,7 @@ function renderGroupOverrides(ds){
     show.addEventListener("change",()=>{ setOverride(ds,r.key,{hidden:!show.checked}); render(); });
 
     const c=document.createElement("input"); c.type="color"; c.value=o.color||r.style.color;
-    c.addEventListener("input",()=>{ setOverride(ds,r.key,{color:c.value}); render(); renderDatasetList(); });
+    c.addEventListener("input",()=>{ setOverride(ds,r.key,{color:c.value}); render(); });
 
     const m=document.createElement("select"); m.style.flex="1 1 auto";
     fillSelect(m, MARKERS, o.marker||r.style.marker);

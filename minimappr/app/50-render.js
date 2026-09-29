@@ -1,14 +1,57 @@
 /* rendering */
 const svg = $("#map");
-function el(tag, attrs){ const e=document.createElementNS(svgNS,tag);
-  if(attrs) for(const k in attrs) e.setAttribute(k, attrs[k]); return e; }
+function setAttrs(e, attrs){ for(const k in attrs) e.setAttribute(k, attrs[k]); return e; }
+function el(tag, attrs){ const e=document.createElementNS(svgNS,tag); return attrs ? setAttrs(e, attrs) : e; }
+function clearNode(node){ while(node.firstChild) node.removeChild(node.firstChild); }
 let sceneSize={w:0,h:0};
 
+// Every change asks for a render, and a colour picker or a drag asks dozens of
+// times a second. Coalescing those into one render per frame keeps the
+// controls smooth; anything that reads the finished SVG (the exports) calls
+// flushRender() first.
+let renderQueued=0;
 function render(){
+  if(!renderQueued) renderQueued=requestAnimationFrame(()=>{ renderQueued=0; renderNow(); });
+}
+function flushRender(){
+  if(!renderQueued) return;
+  cancelAnimationFrame(renderQueued); renderQueued=0; renderNow();
+}
+
+// The map is a fixed stack of layers. The basemap and the points are rebuilt
+// only when something they depend on changed, so restyling the legend or
+// retitling the map leaves thousands of point paths alone.
+const layers=(()=>{
+  const bg=el("rect",{x:0,y:0});
+  const defs=el("defs"), cp=el("clipPath",{id:"frameClip"}), clipRect=el("rect");
+  cp.appendChild(clipRect); defs.appendChild(cp);
+  const content=el("g",{"clip-path":"url(#frameClip)"});
+  // map layers live inside a viewport group so scroll-zoom / drag-pan can transform them
+  const viewport=el("g",{id:"viewport"}); content.appendChild(viewport);
+  const base=el("g"), points=el("g");
+  viewport.appendChild(base); viewport.appendChild(points);
+  const overlay=el("g"), legend=el("g");
+  for(const n of [bg,defs,content,overlay,legend]) svg.appendChild(n);
+  return {bg, clipRect, viewport, base, points, overlay, legend};
+})();
+let baseKey=null, pointsKey=null;
+// Projected basemap outlines, kept until the projection or the frame changes,
+// so toggling a layer or recolouring the land costs no reprojection.
+let pathCache={key:null, d:{}};
+function cachedPath(projKey, name, make){
+  if(pathCache.key!==projKey) pathCache={key:projKey, d:{}};
+  if(!(name in pathCache.d)) pathCache.d[name]=make()||"";
+  return pathCache.d[name];
+}
+// Stable ids for row arrays, so the points key can tell an edited dataset
+// (a new array) from an unchanged one without hashing every coordinate.
+const rowsIds=new WeakMap(); let nextRowsId=1;
+function rowsId(rows){ let id=rowsIds.get(rows); if(!id) rowsIds.set(rows, id=nextRowsId++); return id; }
+
+function renderNow(){
   const stage=$("#stage");
   const W=stage.clientWidth, H=stage.clientHeight;
   sceneSize={w:W,h:H};
-  while(svg.firstChild) svg.removeChild(svg.firstChild);
   svg.setAttribute("viewBox",`0 0 ${W} ${H}`);
   svg.setAttribute("width",W); svg.setAttribute("height",H);
 
@@ -20,133 +63,142 @@ function render(){
   const [[rx0,ry0],[rx1,ry1]] = rect;
   const rw=rx1-rx0, rh=ry1-ry0;
   const useRect = silhouetteIsRect();
-  const sphereD = useRect ? "" : (path({type:"Sphere"})||"");
+  const pd = currentProjDef();
+  const projKey = JSON.stringify([opts.projection, opts.extent, opts.centerLon, opts.centerLat,
+    opts.orientation, W, H]);
+  const sphereD = useRect ? "" : cachedPath(projKey, "sphere", ()=>path({type:"Sphere"}));
 
-  // background (mat)
-  svg.appendChild(el("rect",{x:0,y:0,width:W,height:H,fill:opts.matColor}));
+  // background (mat), and the clip for everything inside the map rectangle
+  setAttrs(layers.bg, {width:W, height:H, fill:opts.matColor});
+  setAttrs(layers.clipRect, {x:rx0, y:ry0, width:rw, height:rh});
+  layers.viewport.setAttribute("transform", viewTransform());
 
-  // clip map content to the map rectangle
-  const defs=el("defs"); const cp=el("clipPath",{id:"frameClip"});
-  cp.appendChild(el("rect",{x:rx0,y:ry0,width:rw,height:rh}));
-  defs.appendChild(cp); svg.appendChild(defs);
-  const content=el("g",{"clip-path":"url(#frameClip)"}); svg.appendChild(content);
-  // map layers live inside a viewport group so scroll-zoom / drag-pan can transform them
-  const viewport=el("g",{id:"viewport",transform:viewTransform()}); content.appendChild(viewport);
-
-  // ocean / earth silhouette
-  const oceanFill = OCEAN_COLORS[opts.ocean] || "#ffffff";
-  viewport.appendChild(useRect
-    ? el("rect",{x:rx0,y:ry0,width:rw,height:rh,fill:oceanFill,stroke:"none"})
-    : el("path",{d:sphereD, fill:oceanFill, stroke:"none"}));
-
-  // graticule
-  if(opts.graticule>0){
-    const g=d3.geoGraticule().step([opts.graticule,opts.graticule]);
-    viewport.appendChild(el("path",{d:path(g())||"", fill:"none", stroke:"#9aa3ac",
-      "stroke-width":0.5, "stroke-opacity":0.7}));
-  }
-  // land
-  if(opts.showLand){
-    viewport.appendChild(el("path",{d:path(LAND)||"", fill:opts.landColor, stroke:"none"}));
-  }
+  // basemap: ocean / earth silhouette, graticule, land, borders, coastline
   const lw=opts.lineWidth;
-  // borders
-  if(opts.showBorders){
-    viewport.appendChild(el("path",{d:path(BORDERS)||"", fill:"none", stroke:"#000000",
-      "stroke-width":0.55*lw, "stroke-opacity":0.85, "stroke-linejoin":"round"}));
-  }
-  // coastline
-  if(opts.showCoast){
-    viewport.appendChild(el("path",{d:path(LAND_MESH)||"", fill:"none", stroke:"#333333",
-      "stroke-width":0.7*lw, "stroke-linejoin":"round"}));
+  const bKey=JSON.stringify([projKey, opts.ocean, opts.graticule, opts.showLand, opts.landColor,
+    opts.showBorders, opts.showCoast, lw]);
+  if(bKey!==baseKey){
+    baseKey=bKey;
+    const base=layers.base; clearNode(base);
+    const oceanFill = OCEAN_COLORS[opts.ocean] || "#ffffff";
+    base.appendChild(useRect
+      ? el("rect",{x:rx0,y:ry0,width:rw,height:rh,fill:oceanFill,stroke:"none"})
+      : el("path",{d:sphereD, fill:oceanFill, stroke:"none"}));
+    if(opts.graticule>0){
+      const step=opts.graticule;
+      base.appendChild(el("path",{d:cachedPath(projKey, "grat"+step,
+          ()=>path(d3.geoGraticule().step([step,step])())),
+        fill:"none", stroke:"#9aa3ac", "stroke-width":0.5, "stroke-opacity":0.7}));
+    }
+    if(opts.showLand){
+      base.appendChild(el("path",{d:cachedPath(projKey, "land", ()=>path(LAND)),
+        fill:opts.landColor, stroke:"none"}));
+    }
+    if(opts.showBorders){
+      base.appendChild(el("path",{d:cachedPath(projKey, "borders", ()=>path(BORDERS)),
+        fill:"none", stroke:"#000000", "stroke-width":0.55*lw, "stroke-opacity":0.85,
+        "stroke-linejoin":"round"}));
+    }
+    if(opts.showCoast){
+      base.appendChild(el("path",{d:cachedPath(projKey, "coast", ()=>path(LAND_MESH)),
+        fill:"none", stroke:"#333333", "stroke-width":0.7*lw, "stroke-linejoin":"round"}));
+    }
   }
 
-  // points
-  const ptsG=el("g"); viewport.appendChild(ptsG);
-  const labelsG=el("g"); viewport.appendChild(labelsG);
-  const legendEntries=[]; // {label, style, kind}
-  const attrLegends=[];
-
-  for(const ds of datasets){
-    if(!ds.visible) continue;
-    const res=resolveGroups(ds);
-    for(const grp of res.groups){
-      for(const r of grp.rows){
-        if(currentProjDef().globe &&
-           d3.geoDistance([r.lon,r.lat],[opts.centerLon,opts.centerLat])>Math.PI/2) continue;
-        const xy=proj([r.lon, r.lat]);
-        if(!xy || !isFinite(xy[0]) || !isFinite(xy[1])) continue;
-        const r_=sizePx(grp.style.size)*1;
-        const p=el("path",{d:markerPath(grp.style.marker,r_),
-          transform:`translate(${xy[0].toFixed(2)},${xy[1].toFixed(2)})`});
-        if(isOpen(grp.style.marker)){ p.setAttribute("fill","none");
-          p.setAttribute("stroke",grp.style.color); p.setAttribute("stroke-width",Math.max(1.1,r_*0.22)); }
-        else { p.setAttribute("fill",grp.style.color); p.setAttribute("stroke","none"); }
-        p.setAttribute("fill-opacity", ds.opacity ?? 1);
-        if(isOpen(grp.style.marker)) p.setAttribute("stroke-opacity", ds.opacity ?? 1);
-        ptsG.appendChild(p);
-        if(opts.labels && r.label){
-          const t=el("text",{x:(xy[0]+r_+2).toFixed(2), y:(xy[1]+3).toFixed(2),
-            "font-family":"sans-serif","font-size":10,fill:"#222"});
-          t.textContent=r.label; labelsG.appendChild(t);
+  // points: one <g> per style carries the colour, opacity and stroke, and the
+  // marker outline is built once per group; each point is a translated path.
+  const visible=datasets.filter(d=>d.visible);
+  const resolved=visible.map(ds=>({ds, res:resolveGroups(ds)}));
+  const pKey=JSON.stringify([projKey, opts.labels, resolved.map(({ds,res})=>[
+    rowsId(ds.rows), ds.rows.length, ds.groupBy, ds.colorBy, ds.symbolBy, ds.opacity ?? 1,
+    res.groups.map(g=>[g.rows.length, g.style.color, g.style.marker, g.style.size])])]);
+  if(pKey!==pointsKey){
+    pointsKey=pKey;
+    const ptsG=layers.points; clearNode(ptsG);
+    const labelsG=el("g",{"font-family":"sans-serif","font-size":10,fill:"#222"});
+    const onGlobe=!!pd.globe, centre=[opts.centerLon,opts.centerLat];
+    for(const {ds,res} of resolved){
+      const op=ds.opacity ?? 1;
+      for(const grp of res.groups){
+        const st=grp.style, r_=sizePx(st.size), d=markerPath(st.marker,r_);
+        const g=el("g", isOpen(st.marker)
+          ? {fill:"none", stroke:st.color, "stroke-width":Math.max(1.1,r_*0.22), "stroke-opacity":op}
+          : {fill:st.color, "fill-opacity":op, stroke:"none"});
+        for(const r of grp.rows){
+          if(onGlobe && d3.geoDistance([r.lon,r.lat],centre)>Math.PI/2) continue;
+          const xy=proj([r.lon, r.lat]);
+          if(!xy || !isFinite(xy[0]) || !isFinite(xy[1])) continue;
+          g.appendChild(el("path",{d, transform:`translate(${xy[0].toFixed(2)},${xy[1].toFixed(2)})`}));
+          if(opts.labels && r.label){
+            const t=el("text",{x:(xy[0]+r_+2).toFixed(2), y:(xy[1]+3).toFixed(2)});
+            t.textContent=r.label; labelsG.appendChild(t);
+          }
         }
+        if(g.firstChild) ptsG.appendChild(g);
       }
     }
-    // legend building
-    if(res.mode==="attr"){
-      attrLegends.push({ds,res});
-    } else {
-      // Counts belong on the row text here too - reading opts.legCounts only
-      // in the attribute branch is what used to make "Show point counts" do
-      // nothing at all in plain Group-by mode.
-      const total=res.groups.reduce((a,g)=>a+g.rows.length,0);
-      const sizes={}, place={};
-      let rows=res.groups.map(grp=>{
-        const o=ds.overrides[rowKey("group",grp.label)];
-        // Hidden rows keep their points on the map but leave the legend.
-        if(isHidden(o)) return null;
-        const label=legendLabel(overrideLabel(o)||grp.label, grp.rows.length, total);
-        sizes[label]=grp.rows.length;
-        place[label]=manualOrder(o);
-        return {label, style:grp.style};
-      }).filter(Boolean);
-      const labels=rows.map(r=>r.label);
-      const order = opts.legOrder==="manual"
-        ? [...labels].sort((a,b)=>(place[a]-place[b])||(labels.indexOf(a)-labels.indexOf(b)))
-        : orderLabels(labels, opts.legOrder, l=>sizes[l]||0);
-      const rank={}; order.forEach((l,i)=>{ rank[l]=i; });
-      rows=rows.sort((a,b)=>(rank[a.label]??0)-(rank[b.label]??0));
-      const prefix=(datasets.filter(d=>d.visible).length>1 && opts.legDatasetPrefix)
-        ? ds.name+": " : "";
-      legendEntries.push({title:prefix+(ds.groupBy||ds.name||""), rows});
-    }
+    if(labelsG.firstChild) ptsG.appendChild(labelsG);
   }
 
-  // frame outline (unclipped, crisp)
-  svg.appendChild(useRect
+  // legend rows
+  const legendEntries=[]; // {title, rows:[{label, style}]}
+  const attrLegends=[];
+  const manyDatasets=visible.length>1;
+  for(const {ds,res} of resolved){
+    if(res.mode==="attr"){
+      attrLegends.push({ds,res});
+      continue;
+    }
+    // Counts belong on the row text here too - reading opts.legCounts only
+    // in the attribute branch is what used to make "Show point counts" do
+    // nothing at all in plain Group-by mode.
+    const total=res.groups.reduce((a,g)=>a+g.rows.length,0);
+    const sizes={}, place={}, first={};
+    let rows=res.groups.map((grp,i)=>{
+      const o=ds.overrides[rowKey("group",grp.label)];
+      // Hidden rows keep their points on the map but leave the legend.
+      if(isHidden(o)) return null;
+      const label=legendLabel(overrideLabel(o)||grp.label, grp.rows.length, total);
+      sizes[label]=grp.rows.length;
+      place[label]=manualOrder(o);
+      if(!(label in first)) first[label]=i;
+      return {label, style:grp.style};
+    }).filter(Boolean);
+    const labels=rows.map(r=>r.label);
+    const order = opts.legOrder==="manual"
+      ? [...labels].sort((a,b)=>(place[a]-place[b])||(first[a]-first[b]))
+      : orderLabels(labels, opts.legOrder, l=>sizes[l]||0);
+    const rank={}; order.forEach((l,i)=>{ rank[l]=i; });
+    rows=rows.sort((a,b)=>(rank[a.label]??0)-(rank[b.label]??0));
+    const prefix=(manyDatasets && opts.legDatasetPrefix) ? ds.name+": " : "";
+    legendEntries.push({title:prefix+(ds.groupBy||ds.name||""), rows});
+  }
+
+  // frame outline (unclipped, crisp), title and compass
+  const overlay=layers.overlay; clearNode(overlay);
+  overlay.appendChild(useRect
     ? el("rect",{x:rx0,y:ry0,width:rw,height:rh,fill:"none",stroke:"#5a6068","stroke-width":1})
     : el("path",{d:sphereD, fill:"none", stroke:"#5a6068","stroke-width":1}));
-
-  // title
   if(opts.title){
     const t=el("text",{x:W/2, y:26, "text-anchor":"middle","font-family":"sans-serif",
       "font-size":19,"font-weight":700,fill:"#1d2127"});
-    t.textContent=opts.title; svg.appendChild(t);
+    t.textContent=opts.title; overlay.appendChild(t);
   }
-  // compass
-  if(opts.compass) drawCompass(svg, drawRect(W,H));
+  if(opts.compass) drawCompass(overlay, rect);
 
   // legend
+  clearNode(layers.legend);
   if(opts.legShow && (legendEntries.length || attrLegends.length)){
-    drawLegend(svg, W, H, legendEntries, attrLegends);
+    drawLegend(layers.legend, W, H, legendEntries, attrLegends);
   }
 
-  $("#emptyHint").style.display = datasets.some(d=>d.visible && d.rows.length) ? "none":"block";
+  updateSwatches(resolved);
+  $("#emptyHint").style.display = visible.some(d=>d.rows.length) ? "none":"block";
   updateStagebar();
   scheduleSave();
 }
 
-function drawCompass(svg, rect){
+function drawCompass(parent, rect){
   const [[x0,y0],[x1]] = rect;
   const cx=x1-26, cy=y0+34;
   const g=el("g");
@@ -154,7 +206,7 @@ function drawCompass(svg, rect){
   g.appendChild(el("path",{d:poly([[cx,cy-20],[cx-4,cy-11],[cx+4,cy-11]]),fill:"#1a1a1a"}));
   const t=el("text",{x:cx,y:cy-24,"text-anchor":"middle","font-family":"sans-serif",
     "font-size":13,"font-weight":700,fill:"#1a1a1a"}); t.textContent="N";
-  g.appendChild(t); svg.appendChild(g);
+  g.appendChild(t); parent.appendChild(g);
 }
 
 function legendItems(entries, attrLegends){
@@ -179,27 +231,28 @@ function legendItems(entries, attrLegends){
     const ov=key=>ds.overrides[key];
     // Rows in display order; manual ordering is whatever the user dragged
     // them into, with rows they never touched falling to the end.
-    const ordered=(values, keyOf, countKey)=>{
+    const ordered=(values, keyOf, countKeyOf)=>{
       if(opts.legOrder!=="manual")
-        return orderLabels(values, opts.legOrder, v=>countOf(countKey(v)));
+        return orderLabels(values, opts.legOrder, v=>countOf(countKeyOf(v)));
+      const at=new Map(values.map((v,i)=>[v,i]));
       return [...values].sort((a,b)=>
         (manualOrder(ov(keyOf(a)))-manualOrder(ov(keyOf(b))))
-        || (values.indexOf(a)-values.indexOf(b)));
+        || (at.get(a)-at.get(b)));
     };
-    if(resolveNesting(ds.rows, res.colorKey, res.symbolKey, opts.legHierarchy)){
+    if(res.nested){
       // The two columns form a hierarchy, so list each symbol value under the
       // colour group it belongs to, drawn in the marker and colour it has on
       // the map. Two independent keys would imply colours x symbols
       // combinations when only `symbols` of them exist, and leave the reader
       // to work out which colour each symbol goes with by hunting the map.
-      const owner=ownerMap(ds.rows, res.symbolKey, res.colorKey);
+      const kidsOf=childrenByOwner(res);
       const rows=[];
       // Every colour group is listed. MiniMappr has no filter, so the only
       // way a group ends up childless is forced nesting, where each symbol
       // is claimed by the first group it appears under - and dropping those
       // would take colours off the legend that are still drawn on the map.
       const parents=ordered(Object.keys(res.colorMap),
-        cv=>rowKey("color",cv), v=>"c "+v);
+        cv=>rowKey("color",cv), v=>countKey("c",v));
       for(const cv of parents){
         const color=res.colorMap[cv];
         const parentOverride=ov(rowKey("color",cv));
@@ -207,13 +260,13 @@ function legendItems(entries, attrLegends){
         // its colour, so leaving them behind would orphan them.
         if(isHidden(parentOverride)) continue;
         const kids=ordered(
-          Object.keys(res.symbolMap).filter(sv=>(owner[sv]??"")===cv),
-          sv=>rowKey("pair",cv,sv), k=>"p "+cv+" "+k)
+          kidsOf.get(cv)||[],
+          sv=>rowKey("pair",cv,sv), k=>countKey("p",cv,k))
           .filter(sv=>!isHidden(ov(rowKey("pair",cv,sv))));
-        rows.push({label:lab(cv,"c "+cv,parentOverride), depth:0,
+        rows.push({label:lab(cv,countKey("c",cv),parentOverride), depth:0,
           style:applyOverride(groupSwatch(color, kids, res.symbolMap, ds.base.size),
                               parentOverride)});
-        for(const sv of kids) rows.push({label:lab(sv,"p "+cv+" "+sv,ov(rowKey("pair",cv,sv))), depth:1,
+        for(const sv of kids) rows.push({label:lab(sv,countKey("p",cv,sv),ov(rowKey("pair",cv,sv))), depth:1,
           style:applyOverride({color, marker:res.symbolMap[sv], size:ds.base.size},
                               ov(rowKey("pair",cv,sv)))});
       }
@@ -224,23 +277,34 @@ function legendItems(entries, attrLegends){
     // Genuinely crossed: a shape really does appear in every colour here, so
     // the neutral symbol swatches are honest and the two keys stay separate.
     if(Object.keys(res.colorMap).length){
-      const values=ordered(Object.keys(res.colorMap), v=>rowKey("color",v), v=>"c "+v)
+      const values=ordered(Object.keys(res.colorMap), v=>rowKey("color",v), v=>countKey("c",v))
         .filter(v=>!isHidden(ov(rowKey("color",v))));
-      const rows=values.map(v=>({label:lab(v,"c "+v,ov(rowKey("color",v))), colorOnly:true,
+      const rows=values.map(v=>({label:lab(v,countKey("c",v),ov(rowKey("color",v))), colorOnly:true,
         style:applyOverride({color:res.colorMap[v],marker:"Circle",size:ds.base.size},
                             ov(rowKey("color",v)))}));
       if(rows.length) sections.push({title:sectionTitle(prefix,res.colorKey||"Colour"), rows});
     }
     if(Object.keys(res.symbolMap).length){
-      const values=ordered(Object.keys(res.symbolMap), v=>rowKey("symbol",v), v=>"s "+v)
+      const values=ordered(Object.keys(res.symbolMap), v=>rowKey("symbol",v), v=>countKey("s",v))
         .filter(v=>!isHidden(ov(rowKey("symbol",v))));
-      const rows=values.map(v=>({label:lab(v,"s "+v,ov(rowKey("symbol",v))), symbolOnly:true,
+      const rows=values.map(v=>({label:lab(v,countKey("s",v),ov(rowKey("symbol",v))), symbolOnly:true,
         style:applyOverride({color:opts.legSymbolColor,marker:res.symbolMap[v],size:ds.base.size},
                             ov(rowKey("symbol",v)))}));
       if(rows.length) sections.push({title:sectionTitle(prefix,res.symbolKey||"Symbol"), rows});
     }
   }
   return sections;
+}
+
+// Symbol values under each colour value of a nested key, in symbol order.
+function childrenByOwner(res){
+  const kids=new Map();
+  for(const sv of Object.keys(res.symbolMap)){
+    const cv=res.owner[sv]??""; let list=kids.get(cv);
+    if(!list) kids.set(cv, list=[]);
+    list.push(sv);
+  }
+  return kids;
 }
 
 // A nested key's group row swatch: a plain circle, the shape of its first
@@ -260,21 +324,32 @@ function sectionTitle(prefix, ...parts){
   return prefix + (parts.filter(Boolean).join(opts.legTitleSeparator)||"Key");
 }
 
-// Point counts for legend rows: by column value, and by "colour symbol" for
-// the leaf rows of a nested key. "_total" is what percentages divide by.
+// Point counts for legend rows: by column value ("c"/"s"), and by colour +
+// symbol ("p") for the leaf rows of a nested key. The parts are joined with
+// ROW_SEP, like rowKey, so a value holding spaces cannot collide with another
+// pair. "_total" is what percentages divide by.
+function countKey(...parts){ return parts.join(ROW_SEP); }
 function legendCounts(rows, colorKey, symbolKey){
   const counts={_total:rows.length};
   const bump=k=>{ counts[k]=(counts[k]||0)+1; };
   for(const r of rows){
     const c=r._attr[colorKey]??"", s=r._attr[symbolKey]??"";
-    if(colorKey) bump("c "+c);
-    if(symbolKey) bump("s "+s);
-    if(colorKey&&symbolKey) bump("p "+c+" "+s);
+    if(colorKey) bump(countKey("c",c));
+    if(symbolKey) bump(countKey("s",s));
+    if(colorKey&&symbolKey) bump(countKey("p",c,s));
   }
   return counts;
 }
 
-function drawLegend(svg, W, H, entries, attrLegends){
+// Text width from an offscreen canvas. Measuring an SVG <text> instead forces
+// a layout of the whole map, thousands of freshly drawn points included.
+const measureCtx=document.createElement("canvas").getContext("2d");
+function textWidth(text, size, family, bold, italic){
+  measureCtx.font=`${italic?"italic ":""}${bold?700:400} ${size}px ${family}`;
+  return measureCtx.measureText(text).width;
+}
+
+function drawLegend(parent, W, H, entries, attrLegends){
   const sections=legendItems(entries, attrLegends);
   if(!sections.length) return;
   const fs=opts.legFont, scale=opts.legScale, cols=Math.max(1,opts.legCols);
@@ -283,10 +358,7 @@ function drawLegend(svg, W, H, entries, attrLegends){
   const pad=opts.legPad, gap=opts.legSwatchGap;
   const rowH=fs*(1.05+opts.legRowSpacing), swW=fs*1.7*scale;
   const g=el("g"); g.style.cursor="move";
-  // measure
-  const measure=el("text",{"font-family":font,"font-size":fs,visibility:"hidden"});
-  svg.appendChild(measure);
-  const textW=s=>{ measure.textContent=s; return measure.getComputedTextLength(); };
+  const textW=s=>textWidth(s, fs, font, false, false);
 
   let maxLabel=0;
   const flat=[];
@@ -380,17 +452,22 @@ function drawLegend(svg, W, H, entries, attrLegends){
       } else { yy+=rowH*0.4; }
     }
   }
-  svg.removeChild(measure);
-  // drag
+  // Dragging only slides the drawn legend; the map is rendered once, on release.
   g.addEventListener("mousedown",ev=>{
     ev.preventDefault(); ev.stopPropagation(); // don't also start a map pan
-    const startX=ev.clientX, startY=ev.clientY, ox=bx, oy=by;
-    function mv(e){ legendDrag={x:(ox+(e.clientX-startX))/W, y:(oy+(e.clientY-startY))/H}; render(); }
-    function up(){ window.removeEventListener("mousemove",mv); window.removeEventListener("mouseup",up); }
+    const startX=ev.clientX, startY=ev.clientY;
+    let dx=0, dy=0;
+    function mv(e){
+      dx=clamp(bx+e.clientX-startX, 2, W-boxW-2)-bx;
+      dy=clamp(by+e.clientY-startY, 2, H-boxH-2)-by;
+      g.setAttribute("transform",`translate(${dx},${dy})`);
+    }
+    function up(){ window.removeEventListener("mousemove",mv); window.removeEventListener("mouseup",up);
+      if(dx||dy){ legendDrag={x:(bx+dx)/W, y:(by+dy)/H}; render(); } }
     window.addEventListener("mousemove",mv); window.addEventListener("mouseup",up);
   });
   g.addEventListener("dblclick",ev=>{ ev.stopPropagation(); legendDrag=null; render(); });
-  svg.appendChild(g);
+  parent.appendChild(g);
 }
 
 function updateStagebar(){

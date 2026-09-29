@@ -117,5 +117,5 @@ let rt; new ResizeObserver(()=>{ clearTimeout(rt); rt=setTimeout(render,60); }).
 syncOrigin(!restored);   // keep any restored centre/extent when reloading
 syncStylePanel();
 renderDatasetList();
-render();
+renderNow();
 clampView(); applyView(); // keep a restored zoom/pan valid for the current window size
