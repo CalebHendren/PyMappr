@@ -4,7 +4,6 @@ import math
 import re
 
 from pymappr import __version__
-from pymappr.codecheck import LANGUAGES
 from pymappr.layers import (BATHYMETRY_STEPS, CONTINENT_EXTENTS,
                             LAYER_SPECS)
 from pymappr.legend import (LegendOptions, format_count, is_hidden,
@@ -23,6 +22,7 @@ from pymappr.styles import (POINT_EDGE_COLOR, POINT_EDGE_WIDTH, PointStyle,
                             resolve_nesting, style_by_attributes)
 from pymappr.updates import GITHUB_REPO
 
+LANGUAGES = ("Python", "R")
 CODE_EXTENSIONS = {"Python": ".py", "R": ".R"}
 
 # Home page for the attribution comment at the top of every script.

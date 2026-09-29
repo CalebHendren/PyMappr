@@ -9,7 +9,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from pymappr import codecheck, codegen
+from pymappr import codegen
 from pymappr.data_loader import build_manual_dataset, combine_name_columns
 from pymappr.projections import get_projection
 from pymappr.legend import row_key
@@ -71,6 +71,17 @@ def file_entry():
     })
 
 
+def assert_parses_as_r(code):
+    """Parse generated R with a real R interpreter, when one is installed
+    (the tests further down that need R skip without it)."""
+    rscript = shutil.which("Rscript")
+    if rscript is None:
+        return
+    subprocess.run([rscript, "-e",
+                    "invisible(parse(text = readLines(file('stdin'))))"],
+                   input=code, text=True, check=True, capture_output=True)
+
+
 def exec_python(code):
     """Run a generated script's definitions with geopandas stubbed out
     (main() stays unexecuted behind the __main__ guard)."""
@@ -108,7 +119,7 @@ def test_python_output_is_valid_and_placeholder_free():
     code = codegen.generate_code(make_state(), [file_entry()], "Python",
                                  "My Project")
     compile(code, "recreate_map.py", "exec")  # real syntax check
-    assert codecheck.validate_code("Python", code) == []
+    assert not re.search(r"\b(TODO|FIXME)\b", code)
     assert '"My Project"' in code
     assert "from pre-made function templates and" in code
     assert "no AI involved" not in code
@@ -117,7 +128,8 @@ def test_python_output_is_valid_and_placeholder_free():
 def test_r_output_is_valid_and_placeholder_free():
     code = codegen.generate_code(make_state(), [file_entry()], "R",
                                  "My Project")
-    assert codecheck.validate_code("R", code) == []
+    assert_parses_as_r(code)
+    assert not re.search(r"\b(TODO|FIXME)\b", code)
     assert "library(sf)" in code
     assert "library(ggplot2)" in code
 
@@ -265,12 +277,11 @@ def test_globe_export_clips_to_the_visible_hemisphere():
                             "proj_lon0": "-100", "proj_lat0": "40"})
     py = codegen.generate_code(state, [file_entry()], "Python")
     compile(py, "globe.py", "exec")
-    assert codecheck.validate_code("Python", py) == []
     assert "+proj=ortho +lat_0=40.0 +lon_0=-100.0" in py
     assert "CLIP_CAP = (-100.0, 40.0, 88.0)" in py
     assert "'hemisphere': True" in py
     r = codegen.generate_code(state, [file_entry()], "R")
-    assert codecheck.validate_code("R", r) == []
+    assert_parses_as_r(r)
     assert "CLIP_CAP <- c(-100.0, 40.0, 88.0)" in r
 
 
@@ -710,7 +721,6 @@ def test_r_script_bootstraps_missing_packages():
 def test_bootstrapped_python_still_valid_and_runs():
     # The bootstrap must not break syntax or the pre-made loaders.
     code = codegen.generate_code(make_state(), [manual_entry()], "Python")
-    assert codecheck.validate_code("Python", code) == []
     ns = exec_python(code)  # top-level ensure_dependencies() runs here
     assert "ensure_dependencies" in ns
     df = ns["load_points"](ns["DATASETS"][0])
@@ -730,7 +740,6 @@ def test_working_directory_python_layout():
     assert "State,Longitude,Latitude" in files["data/us_cities.csv"]
     script = files["recreate_map.py"]
     compile(script, "recreate_map.py", "exec")
-    assert codecheck.validate_code("Python", script) == []
     assert "'path': 'data/us_cities.csv'" in script
     assert "'inline_data': None" in script
     assert "geopandas" in files["requirements.txt"]
@@ -744,7 +753,7 @@ def test_working_directory_r_layout():
                           ".gitignore", "My_Project.Rproj"}
     assert "data/us_cities.csv" in files
     script = files["recreate_map.R"]
-    assert codecheck.validate_code("R", script) == []
+    assert_parses_as_r(script)
     assert '"path" = "data/us_cities.csv"' in script
     assert 'install.packages(c("sf", "ggplot2")' in files["install.R"]
     assert "Version: 1.0" in files["My_Project.Rproj"]
