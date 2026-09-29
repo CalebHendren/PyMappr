@@ -6,7 +6,7 @@ import importlib.util
 from pathlib import Path
 
 from pymappr.layers import (BATHYMETRY_STEPS, DERIVED, LAYER_SPECS,
-                            OPTIONAL_LAYERS)
+                            OPTIONAL_LAYERS, BoundedCache)
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -69,3 +69,13 @@ def test_bathymetry_steps_are_sorted_shallow_to_deep():
     depths = [depth for _letter, depth in BATHYMETRY_STEPS]
     assert depths == sorted(depths)
     assert depths[0] == 0 and depths[-1] == 10000
+
+
+def test_bounded_cache_forgets_the_least_recently_used_entry():
+    # Projection-keyed caches use this: every globe spin step is a new
+    # projection, and an unbounded cache kept every one of them.
+    cache = BoundedCache(maxsize=2)
+    cache["a"], cache["b"] = 1, 2
+    assert cache["a"] == 1          # "a" is now the most recently used
+    cache["c"] = 3
+    assert list(cache) == ["a", "c"]

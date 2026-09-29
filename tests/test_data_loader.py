@@ -3,9 +3,9 @@ import textwrap
 import pytest
 
 from pymappr.data_loader import (ColumnMapping, build_dataset,
-                                build_manual_dataset, guess_mapping,
-                                headers_look_like_data, list_sheets,
-                                load_csv, read_csv, read_table)
+                                build_manual_dataset, combine_name_columns,
+                                guess_mapping, headers_look_like_data,
+                                list_sheets, load_csv, read_table)
 
 
 def write(tmp_path, text, name="points.csv"):
@@ -25,8 +25,7 @@ def test_documented_layout(tmp_path):
     ds = load_csv(path)
     assert len(ds) == 3
     assert ds.skipped == []
-    assert ds.name1_label == "County"
-    assert ds.name2_label == "City"
+    assert ds.name_labels[:2] == ["County", "City"]
     row = ds.frame.iloc[1]
     assert row["name1"] == "King"
     assert row["lon"] == pytest.approx(-(122 + 19 / 60 + 59 / 3600))
@@ -38,13 +37,35 @@ def test_header_guessing_out_of_order(tmp_path):
         lat,lng,place
         30.5,-97.1,Somewhere
     """)
-    frame = read_csv(path)
+    frame = read_table(path)
     mapping = guess_mapping(frame)
     assert mapping.longitude == "lng"
     assert mapping.latitude == "lat"
-    assert mapping.name1 == "place"
+    assert mapping.names[0] == "place"
     ds = build_dataset(frame, mapping)
     assert ds.frame.iloc[0]["lon"] == pytest.approx(-97.1)
+
+
+def test_short_hints_do_not_match_inside_other_words(tmp_path):
+    # "x" sits in Taxon and "y" in Locality; they must not win over the
+    # real Long./Lat. columns.
+    path = write(tmp_path, """\
+        Taxon,Locality,Long.,Lat.
+        Eleusis,Manaus,-60.0,-3.1
+    """)
+    mapping = guess_mapping(read_table(path))
+    assert (mapping.longitude, mapping.latitude) == ("Long.", "Lat.")
+    assert mapping.names == ["Taxon", "Locality"]
+
+
+def test_darwin_core_coordinate_headers(tmp_path):
+    path = write(tmp_path, """\
+        scientificName,decimalLatitude,decimalLongitude
+        Eleusis andina,-3.1,-60.0
+    """)
+    mapping = guess_mapping(read_table(path))
+    assert mapping.longitude == "decimalLongitude"
+    assert mapping.latitude == "decimalLatitude"
 
 
 def test_positional_fallback_without_hints(tmp_path):
@@ -52,9 +73,9 @@ def test_positional_fallback_without_hints(tmp_path):
         A,B,C,D
         Travis,Austin,-97.7431,30.2672
     """)
-    mapping = guess_mapping(read_csv(path))
+    mapping = guess_mapping(read_table(path))
     assert mapping.names == ["A", "B"]
-    assert (mapping.name1, mapping.name2) == ("A", "B")
+    assert mapping.names[:2] == ["A", "B"]
     assert (mapping.longitude, mapping.latitude) == ("C", "D")
 
 
@@ -82,12 +103,12 @@ def test_generic_name_labels_option(tmp_path):
         Country,State,County,City,Longitude,Latitude
         United States,Wyoming,Campbell,Gillette,-105.5022,44.2911
     """)
-    frame = read_csv(path)
+    frame = read_table(path)
     mapping = guess_mapping(frame)
     mapping.use_headers = False
     ds = build_dataset(frame, mapping)
     assert ds.name_labels == ["Name 1", "Name 2", "Name 3", "Name 4"]
-    assert ds.name1_label == "Name 1"
+    assert ds.name_labels[0] == "Name 1"
 
 
 def test_bad_rows_skipped_and_reported(tmp_path):
@@ -111,7 +132,7 @@ def test_explicit_mapping_overrides_guess(tmp_path):
         junk,-97.1,30.5
     """)
     mapping = ColumnMapping(longitude="x", latitude="y", names=["ignored"])
-    ds = build_dataset(read_csv(path), mapping)
+    ds = build_dataset(read_table(path), mapping)
     assert len(ds) == 1
     assert ds.frame.iloc[0]["name1"] == "junk"
 
@@ -122,7 +143,7 @@ def test_too_few_columns(tmp_path):
         1.0
     """)
     with pytest.raises(ValueError):
-        guess_mapping(read_csv(path))
+        guess_mapping(read_table(path))
 
 
 # ------------------------------------------------- first row is data, not headers
@@ -235,3 +256,40 @@ def test_build_manual_dataset_dms_and_errors():
     assert "line 2" in ds.skipped[0]
     assert "line 3" in ds.skipped[1]
     assert ds.frame.iloc[0]["lat"] == pytest.approx(47 + 36 / 60 + 35 / 3600)
+
+
+def _taxa(tmp_path):
+    return load_csv(write(tmp_path, """\
+        Family,Genus,Species,Longitude,Latitude
+        Staphylinidae,Eleusis,chapadensis,-68.4,-12.3
+        Staphylinidae,Xanthopygus,,-41.2,-18.1
+        """))
+
+
+def test_combine_name_columns_adds_a_joined_name_column(tmp_path):
+    dataset = _taxa(tmp_path)
+    combined, label = combine_name_columns(dataset, ["Genus", "Species"])
+    assert label == "Genus Species"
+    assert combined.name_labels == ["Family", "Genus", "Species",
+                                    "Genus Species"]
+    # Name columns stay name1..nameN ahead of the coordinates.
+    assert list(combined.frame.columns) == ["name1", "name2", "name3",
+                                            "name4", "lon", "lat"]
+    # A blank part is skipped rather than leaving a trailing separator.
+    assert list(combined.frame["name4"]) == ["Eleusis chapadensis",
+                                             "Xanthopygus"]
+    # The dataset it was made from is left alone.
+    assert dataset.name_labels == ["Family", "Genus", "Species"]
+    assert "name4" not in dataset.frame.columns
+
+
+def test_combine_name_columns_separator_and_unique_labels(tmp_path):
+    dataset = _taxa(tmp_path)
+    dashed, label = combine_name_columns(dataset, ["Family", "Genus"], " - ")
+    assert label == "Family - Genus"
+    assert dashed.frame["name4"].iloc[0] == "Staphylinidae - Eleusis"
+    once, _first = combine_name_columns(dataset, ["Genus", "Species"])
+    _twice, second = combine_name_columns(once, ["Genus", "Species"])
+    assert second == "Genus Species (2)"
+    with pytest.raises(ValueError):
+        combine_name_columns(dataset, ["Genus", "Subspecies"])

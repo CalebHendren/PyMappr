@@ -6,6 +6,11 @@ updates:
     schedule:
       interval: "monthly"
     open-pull-requests-limit: 2
+    # requirements.txt lists the oldest versions PyMappr works with (tested
+    # on Python 3.11), not the newest: builds already install the latest
+    # release above each floor. Only raise a floor when a release no longer
+    # satisfies it (or for a security fix), rather than every month.
+    versioning-strategy: increase-if-necessary
     labels:
       - "dependencies"
     # One PR for the whole set. Separate PRs all edit requirements.txt, so

@@ -22,30 +22,18 @@ from dataclasses import asdict, dataclass
 import pandas as pd
 
 from pymappr.options import values_from_dict
-from pymappr.styles import (PointStyle, apply_override, owner_map,
-                            resolve_nesting)
+from pymappr.styles import (ROW_SEP, PointStyle, apply_override, owner_map,
+                            resolve_nesting, row_key)
 
 __all__ = ["NEUTRAL_MARKER_COLOR", "LEGEND_LOCATIONS", "HIERARCHY_MODES",
            "ENTRY_ORDERS", "COUNT_FORMATS", "GROUP_SWATCHES", "FONT_FAMILIES",
-           "TITLE_ALIGNMENTS", "LegendOptions", "legend_counts",
+           "TITLE_ALIGNMENTS", "LegendOptions", "PUBLICATION_LEGEND",
+           "legend_counts", "format_count",
            "legend_sections", "order_labels", "ROW_SEP", "row_key",
-           "apply_override", "override_label", "is_hidden", "manual_order"]
+           "override_label", "is_hidden", "manual_order"]
 
-# Legend rows are identified by a tagged key - the same tagging
-# :func:`legend_counts` uses - so a value that appears in both the color and
-# the symbol column cannot have one row's customization land on the other.
-# NUL separates the parts because it cannot occur in a data value, unlike
-# "/" or ":" which routinely do.
-ROW_SEP = "\x00"
-
-
-def row_key(kind: str, *parts: str) -> str:
-    """A legend row's identity: ``row_key("pair", genus, species)``.
-
-    *kind* is ``"group"`` (a group-by row), ``"color"``, ``"symbol"``, or
-    ``"pair"`` (a nested key's leaf).
-    """
-    return ROW_SEP.join((kind,) + tuple(str(p) for p in parts))
+# Legend rows are keyed by :func:`pymappr.styles.row_key` - the same tagging
+# :func:`legend_counts` uses.
 
 # Marker color used in the legend's "symbol" key, where shape (not color)
 # carries the meaning. Only meaningful for crossed data, where a shape really
@@ -186,6 +174,23 @@ class LegendOptions:
         return 0.4 if sectioned else 0.8
 
 
+# The legend half of the "Publication style" preset: a plain white box with a
+# thin black border, and italic entries because taxon names are set in
+# italics. Only these fields change; everything else keeps the user's value.
+PUBLICATION_LEGEND = {
+    "frame": True,
+    "frame_color": "#ffffff",
+    "frame_alpha": 1.0,
+    "frame_edge_color": "#000000",
+    "frame_width": 0.5,
+    "rounded": False,
+    "shadow": False,
+    "label_italic": True,
+    "fontsize": 9.0,
+    "title_fontsize": 10.0,
+}
+
+
 # --------------------------------------------------------------- overrides
 
 # A per-row customization is a plain dict so it serializes straight into a
@@ -258,18 +263,21 @@ def _legend_label(value: str, counts: dict, key, options: LegendOptions,
     format. A renamed row still gets its count - the rename is about what
     the row is called, not about dropping its numbers."""
     label = override_label(override) or value or options.blank_label
-    if not options.counts:
-        return label
     n = counts.get(key)
-    if n is None:
+    if not options.counts or n is None:
         return label
-    total = counts.get(("total",), 0)
+    return format_count(label, n, counts.get(("total",), 0),
+                        options.count_format)
+
+
+def format_count(label: str, n: int, total: int, fmt: str) -> str:
+    """*label* with its point count appended in *fmt* (see COUNT_FORMATS)."""
     pct = (100.0 * n / total) if total else 0.0
-    if options.count_format == "n":
+    if fmt == "n":
         return f"{label} {n}"
-    if options.count_format == "(n, %)":
+    if fmt == "(n, %)":
         return f"{label} ({n}, {pct:.0f}%)"
-    if options.count_format == "%":
+    if fmt == "%":
         return f"{label} {pct:.0f}%"
     return f"{label} ({n})"
 

@@ -9,12 +9,12 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from pymappr import codecheck, codegen
-from pymappr.data_loader import build_manual_dataset
+from pymappr import codegen
+from pymappr.data_loader import build_manual_dataset, combine_name_columns
 from pymappr.projections import get_projection
 from pymappr.legend import row_key
 from pymappr.projects import DatasetEntry, entry_from_dict
-from pymappr.styles import PointStyle
+from pymappr.styles import BLACK_AND_WHITE, BLACK_AND_WHITE_NAME
 
 
 def make_state(**overrides):
@@ -50,8 +50,8 @@ def manual_entry(name="spiders", **kwargs):
     dataset = build_manual_dataset(
         name, "38,-100, Site A\n-25,140, Site B\n")
     defaults = dict(dataset=dataset, name=name, group_by="Legend",
-                    styles={name: PointStyle(color="#123456",
-                                             marker="Star", size=45.0)})
+                    legend_overrides={row_key("group", name): {
+                        "color": "#123456", "marker": "Star", "size": 45.0}})
     defaults.update(kwargs)
     return DatasetEntry(**defaults)
 
@@ -69,6 +69,17 @@ def file_entry():
         "styles": {"Wyoming": {"color": "#123456", "marker": "Star",
                                "size": 45.0}},
     })
+
+
+def assert_parses_as_r(code):
+    """Parse generated R with a real R interpreter, when one is installed
+    (the tests further down that need R skip without it)."""
+    rscript = shutil.which("Rscript")
+    if rscript is None:
+        return
+    subprocess.run([rscript, "-e",
+                    "invisible(parse(text = readLines(file('stdin'))))"],
+                   input=code, text=True, check=True, capture_output=True)
 
 
 def exec_python(code):
@@ -108,7 +119,7 @@ def test_python_output_is_valid_and_placeholder_free():
     code = codegen.generate_code(make_state(), [file_entry()], "Python",
                                  "My Project")
     compile(code, "recreate_map.py", "exec")  # real syntax check
-    assert codecheck.validate_code("Python", code) == []
+    assert not re.search(r"\b(TODO|FIXME)\b", code)
     assert '"My Project"' in code
     assert "from pre-made function templates and" in code
     assert "no AI involved" not in code
@@ -117,7 +128,8 @@ def test_python_output_is_valid_and_placeholder_free():
 def test_r_output_is_valid_and_placeholder_free():
     code = codegen.generate_code(make_state(), [file_entry()], "R",
                                  "My Project")
-    assert codecheck.validate_code("R", code) == []
+    assert_parses_as_r(code)
+    assert not re.search(r"\b(TODO|FIXME)\b", code)
     assert "library(sf)" in code
     assert "library(ggplot2)" in code
 
@@ -265,12 +277,11 @@ def test_globe_export_clips_to_the_visible_hemisphere():
                             "proj_lon0": "-100", "proj_lat0": "40"})
     py = codegen.generate_code(state, [file_entry()], "Python")
     compile(py, "globe.py", "exec")
-    assert codecheck.validate_code("Python", py) == []
     assert "+proj=ortho +lat_0=40.0 +lon_0=-100.0" in py
     assert "CLIP_CAP = (-100.0, 40.0, 88.0)" in py
     assert "'hemisphere': True" in py
     r = codegen.generate_code(state, [file_entry()], "R")
-    assert codecheck.validate_code("R", r) == []
+    assert_parses_as_r(r)
     assert "CLIP_CAP <- c(-100.0, 40.0, 88.0)" in r
 
 
@@ -487,10 +498,16 @@ def test_label_layers_reach_the_script():
 
 
 def test_marker_styling_matches_the_app():
-    # Filled markers carry a white edge; open markers outline-only.
+    # Filled markers carry the point outline (white for a project saved
+    # before it was settable); open markers outline-only.
     code = codegen.generate_code(make_state(), [manual_entry()], "Python")
-    assert 'face, edge, lw = style["color"], "white", 0.5' in code
-    assert 'face, edge, lw = "none", style["color"], 1.2' in code
+    ns = exec_python(code)
+    assert ns["POINT_EDGE"] == {"color": "#ffffff", "width": 0.5}
+    paint = ns["marker_paint"]
+    assert paint({"color": "#123456", "open": False}) == ("#123456",
+                                                          "#ffffff", 0.5)
+    assert paint({"color": "#123456", "open": True}) == ("none", "#123456",
+                                                         1.2)
     # Frame opacity is a setting now, so the call reads it from LEGEND
     # rather than hard-coding it - but it still defaults to 0.85.
     assert 'framealpha=LEGEND["frame_alpha"]' in code
@@ -585,6 +602,43 @@ def test_attribute_mode_styles_by_two_columns():
     assert "'Site A'" in code and "'Site B'" in code
 
 
+def test_palette_and_point_outline_reach_the_script():
+    entry = manual_entry(color_by="Legend", symbol_by="Label", group_by="")
+    state = make_state(map={"palette": BLACK_AND_WHITE_NAME},
+                       point_edge={"color": "#333333", "width": 0.6})
+    ns = exec_python(codegen.generate_code(state, [entry], "Python"))
+    assert ns["POINT_EDGE"] == {"color": "#333333", "width": 0.6}
+    # Colours come from the map's palette, not always the default one.
+    colors = {style["color"] for style in ns["STYLES"].values()}
+    assert colors == {BLACK_AND_WHITE[0]}
+    r_code = codegen.generate_code(state, [entry], "R")
+    assert "POINT_STROKE <- 0.6" in r_code
+    style_colors = r_code.split("STYLE_COLORS <- c(")[1].split(")")[0]
+    assert '"#333333"' in style_colors
+
+
+def test_an_ungrouped_dataset_draws_in_its_own_style():
+    # The script used to key these points by the dataset name while STYLES
+    # held "All points", so they fell back to a grey default.
+    entry = manual_entry(group_by="")
+    ns = exec_python(codegen.generate_code(make_state(), [entry], "Python"))
+    spec = ns["DATASETS"][0]
+    labels = ns["point_labels"](ns["load_points"](spec), spec)
+    assert set(labels) <= set(ns["STYLES"])
+
+
+def test_combined_name_column_is_exported():
+    entry = manual_entry()
+    entry.dataset, label = combine_name_columns(entry.dataset,
+                                                ["Legend", "Label"])
+    entry.group_by = label
+    ns = exec_python(codegen.generate_code(make_state(), [entry], "Python"))
+    spec = ns["DATASETS"][0]
+    assert spec["group_col"] == "Legend Label"
+    labels = ns["point_labels"](ns["load_points"](spec), spec)
+    assert list(labels) == ["spiders Site A", "spiders Site B"]
+
+
 # --------------------------------- executing the generated pre-made code
 
 def test_generated_python_functions_actually_run():
@@ -653,23 +707,40 @@ def test_generated_projection_forward_matches_the_app():
 
 # ------------------------------------------------------------ bootstrap
 
-def test_python_script_bootstraps_missing_packages():
+def test_python_script_only_installs_packages_when_asked():
     code = codegen.generate_code(make_state(), [file_entry()], "Python")
-    # A pip-based bootstrap runs before the third-party imports, so a
-    # fresh interpreter installs what it needs on first run.
-    assert "def ensure_dependencies():" in code
-    assert "ensure_dependencies()" in code
-    assert '"-m", "pip", "install"' in code
+    # The check runs before the third-party imports it guards.
     boot = code.index("ensure_dependencies()\n")
     assert boot < code.index("import geopandas as gpd")
     # Paths are resolved relative to the script, not the shell's cwd.
     assert "SCRIPT_DIR" in code
 
+    ns = exec_python(code)
+    installs = []
 
-def test_r_script_bootstraps_missing_packages():
+    def import_module(name):
+        if name == "geopandas":
+            raise ImportError(name)
+
+    ns["importlib"] = types.SimpleNamespace(import_module=import_module,
+                                            invalidate_caches=lambda: None)
+    ns["subprocess"] = types.SimpleNamespace(check_call=installs.append)
+    ns["sys"] = types.SimpleNamespace(executable="python",
+                                      argv=["recreate_map.py"])
+    with pytest.raises(SystemExit) as stopped:
+        ns["ensure_dependencies"]()
+    assert "python -m pip install geopandas" in str(stopped.value)
+    assert installs == []
+    ns["sys"].argv.append("--install-deps")
+    ns["ensure_dependencies"]()
+    assert installs == [["python", "-m", "pip", "install", "geopandas"]]
+
+
+def test_r_script_only_installs_packages_when_asked():
     code = codegen.generate_code(make_state(), [file_entry()], "R")
     assert "ensure_packages <- function(pkgs)" in code
     assert 'ensure_packages(c("sf", "ggplot2"))' in code
+    assert '"--install-deps" %in% commandArgs(trailingOnly = TRUE)' in code
     assert "install.packages(missing" in code
     # The bootstrap runs before the libraries it guards.
     assert (code.index('ensure_packages(c("sf", "ggplot2"))')
@@ -679,7 +750,6 @@ def test_r_script_bootstraps_missing_packages():
 def test_bootstrapped_python_still_valid_and_runs():
     # The bootstrap must not break syntax or the pre-made loaders.
     code = codegen.generate_code(make_state(), [manual_entry()], "Python")
-    assert codecheck.validate_code("Python", code) == []
     ns = exec_python(code)  # top-level ensure_dependencies() runs here
     assert "ensure_dependencies" in ns
     df = ns["load_points"](ns["DATASETS"][0])
@@ -699,7 +769,6 @@ def test_working_directory_python_layout():
     assert "State,Longitude,Latitude" in files["data/us_cities.csv"]
     script = files["recreate_map.py"]
     compile(script, "recreate_map.py", "exec")
-    assert codecheck.validate_code("Python", script) == []
     assert "'path': 'data/us_cities.csv'" in script
     assert "'inline_data': None" in script
     assert "geopandas" in files["requirements.txt"]
@@ -713,7 +782,7 @@ def test_working_directory_r_layout():
                           ".gitignore", "My_Project.Rproj"}
     assert "data/us_cities.csv" in files
     script = files["recreate_map.R"]
-    assert codecheck.validate_code("R", script) == []
+    assert_parses_as_r(script)
     assert '"path" = "data/us_cities.csv"' in script
     assert 'install.packages(c("sf", "ggplot2")' in files["install.R"]
     assert "Version: 1.0" in files["My_Project.Rproj"]

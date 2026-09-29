@@ -14,6 +14,7 @@ import tkinter as tk
 from tkinter import colorchooser, ttk
 
 from pymappr.styles import MARKERS, PointStyle
+from pymappr.ui.control_panel import TYPING_PAUSE_MS
 
 # Blank means "leave it as the styling rules worked it out", so a row that
 # was only renamed still follows a palette change.
@@ -38,6 +39,7 @@ class LegendEditorDialog(tk.Toplevel):
         # button looking broken.
         self.on_reorder = on_reorder or on_change
         self._widgets: dict[str, dict] = {}
+        self._pending_redraw: str | None = None
 
         outer = ttk.Frame(self, padding=10)
         outer.pack(fill="both", expand=True)
@@ -104,8 +106,8 @@ class LegendEditorDialog(tk.Toplevel):
         entry = ttk.Entry(parent, textvariable=label, width=18)
         entry.grid(row=index, column=2, padx=4, pady=3)
         entry.bind("<KeyRelease>",
-                   lambda _e, k=key, v=label: self._set(k, "label",
-                                                        v.get().strip()))
+                   lambda _e, k=key, v=label: self._set(
+                       k, "label", v.get().strip(), redraw=False))
 
         color_button = tk.Button(
             parent, width=4, relief="ridge",
@@ -130,7 +132,8 @@ class LegendEditorDialog(tk.Toplevel):
                                                                         v))
         spin.grid(row=index, column=5, padx=4, pady=3)
         spin.bind("<KeyRelease>",
-                  lambda _e, k=key, v=size: self._set_size(k, v))
+                  lambda _e, k=key, v=size: self._set_size(k, v,
+                                                           redraw=False))
 
         move = ttk.Frame(parent)
         move.grid(row=index, column=6, padx=4)
@@ -144,9 +147,10 @@ class LegendEditorDialog(tk.Toplevel):
 
     # ------------------------------------------------------------ edits
 
-    def _set(self, key: str, field: str, value) -> None:
+    def _set(self, key: str, field: str, value, redraw: bool = True) -> None:
         """Record one field of a row's customization, dropping it entirely
-        when it goes back to the default so the project stays clean."""
+        when it goes back to the default so the project stays clean. Typing
+        passes *redraw* False: the map redraws once typing pauses."""
         override = self.overrides.setdefault(key, {})
         if value in (None, "", False):
             override.pop(field, None)
@@ -154,15 +158,26 @@ class LegendEditorDialog(tk.Toplevel):
             override[field] = value
         if not override:
             self.overrides.pop(key, None)
+        if redraw:
+            self.on_change()
+        else:
+            if self._pending_redraw:
+                self.after_cancel(self._pending_redraw)
+            self._pending_redraw = self.after(TYPING_PAUSE_MS,
+                                              self._redraw_now)
+
+    def _redraw_now(self) -> None:
+        self._pending_redraw = None
         self.on_change()
 
-    def _set_size(self, key: str, var: tk.StringVar) -> None:
+    def _set_size(self, key: str, var: tk.StringVar,
+                  redraw: bool = True) -> None:
         try:
             size = float(var.get())
         except ValueError:
             return  # mid-edit; the spinbox reports on every keystroke
         if 1 <= size <= 1000:
-            self._set(key, "size", size)
+            self._set(key, "size", size, redraw)
 
     def _pick_color(self, key: str) -> None:
         button = self._widgets[key]["color"]

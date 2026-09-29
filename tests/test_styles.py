@@ -3,10 +3,12 @@
 import matplotlib.markers
 import pandas as pd
 
-from pymappr.styles import (DEFAULT_PALETTE, MARKER_CYCLE, MARKERS,
-                            OPEN_SUFFIX, PointStyle, attribute_style_maps,
-                            default_styles, group_points, marker_load,
-                            nests_within, resolve_nesting,
+from pymappr.styles import (BLACK_AND_WHITE, BLACK_AND_WHITE_NAME,
+                            DEFAULT_PALETTE, MARKER_CYCLE, MARKERS,
+                            OPEN_SUFFIX, PALETTES, PointStyle,
+                            attribute_style_maps, default_styles,
+                            group_points, marker_load, nests_within,
+                            palette_for, resolve_nesting,
                             style_by_attributes)
 
 
@@ -203,3 +205,12 @@ def test_attribute_maps_stable_when_a_value_is_filtered_out():
     hemiptera = next(style for label, style, _ in groups
                      if label.startswith("Hemiptera"))
     assert hemiptera.color == color_map["Hemiptera"]
+
+
+def test_black_and_white_palette_is_offered():
+    assert PALETTES[BLACK_AND_WHITE_NAME] == BLACK_AND_WHITE
+    assert palette_for(BLACK_AND_WHITE_NAME)[:2] == ["#000000", "#ffffff"]
+    # With symbols varying, every group still gets its own look.
+    styles = default_styles(list("abcdef"), vary_symbols=True,
+                            palette=BLACK_AND_WHITE)
+    assert len({(s.color, s.marker) for s in styles.values()}) == 6

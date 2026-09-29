@@ -25,6 +25,9 @@ datas = [
     (str(DATA_DIR / "shapes"), "data/shapes"),
     (str(DATA_DIR / "basemap"), "data/basemap"),
     (str(DATA_DIR / "icon"), "data/icon"),
+    # The code export reads its script templates as text rather than
+    # importing them, so they have to be collected by hand.
+    (str(REPO_ROOT / "pymappr" / "templates"), "pymappr/templates"),
 ]
 binaries = []
 
@@ -65,6 +68,10 @@ a = Analysis(
         # pandas loads its Excel engine lazily; without this the frozen
         # app cannot import .xlsx workbooks.
         "openpyxl",
+        # Pillow finds Tk through this module at runtime, when matplotlib's
+        # toolbar makes its icons; without it the frozen app dies on start
+        # with "No module named 'PIL._tkinter_finder'".
+        "PIL._tkinter_finder",
         *collect_submodules("pyogrio", filter=lambda name: ".tests" not in name),
     ],
     excludes=[

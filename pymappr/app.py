@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import dataclasses
 import json
 import shutil
 import threading
@@ -22,28 +23,26 @@ from matplotlib.figure import Figure  # noqa: E402
 from pymappr import __version__, projects, updates  # noqa: E402
 from pymappr.data_loader import (OPEN_FILETYPES, PointDataset,  # noqa: E402
                                  build_dataset, build_manual_dataset,
-                                 guess_mapping, headers_look_like_data,
-                                 list_sheets, read_table)
+                                 combine_name_columns, guess_mapping,
+                                 headers_look_like_data, list_sheets,
+                                 read_table)
 from pymappr.decorations import (CompassOptions,  # noqa: E402
                                  ScaleBarOptions)
 from pymappr.layers import LayerStore  # noqa: E402
+from pymappr.layout import (MapLayout, column_key,  # noqa: E402
+                            editor_rows, layout_points, with_default_title)
+from pymappr.legend import (ENTRY_ORDERS, PUBLICATION_LEGEND,  # noqa: E402
+                            LegendOptions)
 from pymappr.projects import PROJECT_EXTENSION, DatasetEntry  # noqa: E402
 from pymappr.renderer import MapRenderer  # noqa: E402
-from pymappr.legend import (ENTRY_ORDERS, LegendOptions,  # noqa: E402
-                            apply_override, is_hidden, legend_counts,
-                            legend_sections, manual_order, order_labels,
-                            override_label, row_key)
-from pymappr.styles import (DEFAULT_PALETTE_NAME,  # noqa: E402
-                            LEGIBLE_MARKER_LIMIT, PointStyle,
-                            attribute_style_maps, default_styles,
-                            group_points, marker_load, owner_map,
-                            resolve_nesting, style_by_attributes)
+from pymappr.styles import (BLACK_AND_WHITE_NAME,  # noqa: E402
+                            DEFAULT_PALETTE_NAME, LEGIBLE_MARKER_LIMIT,
+                            POINT_EDGE_COLOR, POINT_EDGE_WIDTH, PointStyle,
+                            apply_override, marker_load, resolve_nesting,
+                            row_key)
 from pymappr.ui.column_mapper import ColumnMapperDialog  # noqa: E402
-from pymappr.ui.control_panel import (COMPASS_STYLE_LABELS,  # noqa: E402
-                                      SCALE_LENGTH_LABELS,
-                                      SCALE_STYLE_LABELS,
-                                      SCALE_UNIT_LABELS,
-                                      ControlPanel)
+from pymappr.ui.combine_columns import CombineColumnsDialog  # noqa: E402
+from pymappr.ui.control_panel import ControlPanel, name_for  # noqa: E402
 from pymappr.ui.filter_bar import FilterBar  # noqa: E402
 from pymappr.ui.legend_editor import LegendEditorDialog  # noqa: E402
 from pymappr.ui.manual_entry import ManualEntryDialog  # noqa: E402
@@ -51,16 +50,17 @@ from pymappr.ui.projects_dialog import ProjectsDialog  # noqa: E402
 
 MAX_SKIPPED_SHOWN = 12
 UNTITLED = "Untitled"
+# The point and export half of the "Publication style" preset (the legend
+# half is pymappr.legend.PUBLICATION_LEGEND).
+PUBLICATION_POINT_EDGE = ("#000000", 0.6)
+PUBLICATION_DPI = "600"
 PROJECT_FILETYPES = [("PyMappr project", "*" + PROJECT_EXTENSION),
                      ("All files", "*.*")]
 
 
-def _label_for(labels: dict, value: str, fallback: str) -> str:
-    """The display label a ``{label: value}`` mapping stores *value* under."""
-    for label, stored in labels.items():
-        if stored == value:
-            return label
-    return fallback
+def _pinned_style(style: PointStyle) -> dict:
+    """A legend-row override pinning every part of *style*."""
+    return {"color": style.color, "marker": style.marker, "size": style.size}
 
 
 class PyMapprApp:
@@ -210,7 +210,7 @@ class PyMapprApp:
                               command=self.on_check_updates)
         help_menu.add_separator()
         help_menu.add_command(label="Support me on Ko-fi",
-                              command=self._open_kofi)
+                              command=self.on_open_kofi)
         menubar.add_cascade(label="Help", menu=help_menu)
         self.root.config(menu=menubar)
         self.root.bind("<Control-n>", lambda _e: self.on_new_project())
@@ -291,9 +291,8 @@ class PyMapprApp:
             "naturalearthdata.com",
             parent=self.root)
 
-    def _open_kofi(self) -> None:
-        from pymappr.ui.control_panel import KOFI_URL
-        webbrowser.open(KOFI_URL)
+    def on_open_kofi(self) -> None:
+        webbrowser.open(updates.KOFI_URL)
 
     # -------------------------------------------------------------- updates
 
@@ -582,6 +581,7 @@ class PyMapprApp:
                 "anchor": list(self.renderer.legend_anchor() or ()) or None,
             },
             "point_alpha": p.point_alpha_var.get(),
+            "point_edge": dict(zip(("color", "width"), p.point_edge())),
             "view": {"xlim": list(xlim), "ylim": list(ylim)},
         }
 
@@ -613,25 +613,10 @@ class PyMapprApp:
         # "compass" is the original bare flag; the options dict arrived
         # later, so an older project has only the flag and defaults the rest.
         compass = CompassOptions.from_dict(m.get("compass_options"))
-        p.compass_var.set(m.get("compass", compass.show))
-        p.compass_position_var.set(compass.position)
-        p.compass_style_var.set(_label_for(COMPASS_STYLE_LABELS,
-                                           compass.style, "Arrow with N"))
-        p.compass_size_var.set(f"{compass.size:g}")
-
+        compass.show = bool(m.get("compass", compass.show))
+        p.set_compass_options(compass)
         bar = ScaleBarOptions.from_dict(m.get("scale_bar"))
-        p.scale_bar_var.set(bar.show)
-        p.scale_units_var.set(_label_for(SCALE_UNIT_LABELS, bar.units,
-                                         "Kilometres"))
-        p.scale_position_var.set(bar.position)
-        p.scale_style_var.set(_label_for(SCALE_STYLE_LABELS, bar.style,
-                                         "Segmented"))
-        p.scale_length_mode_var.set(_label_for(SCALE_LENGTH_LABELS,
-                                               bar.length_mode, "Automatic"))
-        p.scale_fixed_length_var.set(
-            "" if bar.fixed_length is None else f"{bar.fixed_length:g}")
-        p.scale_draggable_var.set(bar.draggable)
-        p.update_scale_length_state()
+        p.set_scale_bar_options(bar)
         self._scale_bar_corner = bar.position
         self._scale_bar_anchor = bar.anchor
         p.palette_var.set(m.get("palette", DEFAULT_PALETTE_NAME))
@@ -657,8 +642,15 @@ class PyMapprApp:
         self.renderer.set_legend_anchor(
             tuple(anchor) if isinstance(anchor, (list, tuple))
             and len(anchor) == 2 else None)
-        p.point_alpha_var.set(state.get("point_alpha",
-                                        defaults["point_alpha"]))
+        p.set_point_alpha(state.get("point_alpha", defaults["point_alpha"]))
+        # Projects saved before the outline was settable used white.
+        edge = dict(state.get("point_edge") or {})
+        try:
+            edge_width = float(edge.get("width", POINT_EDGE_WIDTH))
+        except (TypeError, ValueError):
+            edge_width = POINT_EDGE_WIDTH
+        p.set_point_edge(str(edge.get("color") or POINT_EDGE_COLOR),
+                         edge_width)
 
         self._busy(True)
         try:
@@ -668,12 +660,11 @@ class PyMapprApp:
             renderer.set_basemap(p.basemap_var.get())
             renderer.set_orientation(p.orientation())
             renderer.set_extent(p.continent_var.get())
-            for key, var in p.layer_vars.items():
-                self._restore_layer(renderer.set_layer, key, var)
-            for key, var in p.fill_vars.items():
-                self._restore_layer(renderer.set_fill_layer, key, var)
-            for key, var in p.point_vars.items():
-                self._restore_layer(renderer.set_point_layer, key, var)
+            for setter, vars_ in ((renderer.set_layer, p.layer_vars),
+                                  (renderer.set_fill_layer, p.fill_vars),
+                                  (renderer.set_point_layer, p.point_vars)):
+                for key, var in vars_.items():
+                    self._apply_layer(setter, key, var.get(), var)
             renderer.set_bathymetry(p.bathymetry_var.get())
             renderer.set_capitals_only(p.capitals_only_var.get())
             renderer.set_ocean(p.ocean_var.get())
@@ -688,6 +679,7 @@ class PyMapprApp:
                 show_labels=not p.hide_grid_labels_var.get())
             renderer.set_line_width_scale(p.line_width_var.get())
             renderer.set_point_alpha(p.point_alpha_var.get())
+            renderer.set_point_edge(*p.point_edge())
         finally:
             self._busy(False)
 
@@ -703,23 +695,28 @@ class PyMapprApp:
 
     # ----------------------------------------------------------------- data
 
-    def _restore_layer(self, setter, key: str,
-                       var: tk.BooleanVar) -> None:
-        """Apply one layer toggle while restoring state, tolerating optional
-        layers whose data was never downloaded (untick them silently instead
-        of aborting the whole restore)."""
-        want = var.get()
-        if want and not self.store.has_layer_data(key):
+    def _apply_layer(self, setter, key: str, visible: bool,
+                     var: tk.BooleanVar):
+        """Show or hide one layer, unticking *var* when it cannot be drawn.
+
+        Optional external layers (biodiversity, ecoregions) may not be
+        downloaded, and any layer's data could be missing or corrupt. Returns
+        None when it worked, ``"missing"`` when the data is not downloaded,
+        or the exception that stopped it - the caller decides whether to
+        say so (a toggle does, a project restore stays quiet)."""
+        if visible and not self.store.has_layer_data(key):
             var.set(False)
-            return
+            return "missing"
         try:
-            setter(key, want)
-        except Exception:  # noqa: BLE001 - a bad layer must not block restore
+            setter(key, visible)
+        except Exception as exc:  # noqa: BLE001 - a bad layer must not crash
             var.set(False)
             try:
-                setter(key, False)
+                setter(key, False)  # drop any half-built artists
             except Exception:  # noqa: BLE001
                 pass
+            return exc
+        return None
 
     def _active_entry(self) -> DatasetEntry | None:
         if self.active is None or not (0 <= self.active < len(self.entries)):
@@ -812,7 +809,8 @@ class PyMapprApp:
             return
         self._add_entry(DatasetEntry(
             dataset=dataset, name=r["legend"], group_by="Legend",
-            styles={r["legend"]: r["style"]},
+            legend_overrides={row_key("group", r["legend"]):
+                              _pinned_style(r["style"])},
             manual={"text": r["text"], "order": r["order"]}))
         self.set_status(f"Added {len(dataset)} manually entered points.")
 
@@ -827,7 +825,8 @@ class PyMapprApp:
                 "To change a file-based dataset, edit the file and add "
                 "it again.", parent=self.root)
             return
-        style = entry.styles.get(entry.name) or PointStyle()
+        style = apply_override(PointStyle(), entry.legend_overrides.get(
+            row_key("group", entry.name)))
         dialog = ManualEntryDialog(
             self.root, legend=entry.name, text=entry.manual.get("text", ""),
             order=entry.manual.get("order", "lat,lon"), style=style)
@@ -838,9 +837,12 @@ class PyMapprApp:
         dataset = build_manual_dataset(r["legend"], r["text"], r["order"])
         if not self._report_skipped(dataset):
             return
+        # The legend name is the group's value, so a rename moves the row.
+        old = entry.legend_overrides.pop(row_key("group", entry.name), {})
+        entry.legend_overrides[row_key("group", r["legend"])] = {
+            **old, **_pinned_style(r["style"])}
         entry.dataset = dataset
         entry.name = r["legend"]
-        entry.styles = {r["legend"]: r["style"]}
         entry.manual = {"text": r["text"], "order": r["order"]}
         self._sync_dataset_ui()
         self._push_points()
@@ -922,15 +924,6 @@ class PyMapprApp:
 
     # ------------------------------------------------------------ rendering
 
-    @staticmethod
-    def _entry_key(entry: DatasetEntry, label: str) -> str | None:
-        """Frame column key for a name-column display label ("" = None)."""
-        if not label or label == "None":
-            return None
-        mapping = dict(zip(entry.dataset.name_labels,
-                           entry.dataset.name_keys))
-        return mapping.get(label)
-
     def _filtered_frame(self, entry: DatasetEntry):
         """The entry's frame with the filter bar applied (active entry
         only - the filter bar always points at the selected dataset)."""
@@ -945,39 +938,23 @@ class PyMapprApp:
             return frame
         return frame[frame[key].fillna("").isin(allowed)]
 
+    def _layout(self) -> MapLayout:
+        """What every visible dataset draws, with the filter applied."""
+        return layout_points(self.entries, self._legend_options(),
+                             self._palette(), self._filtered_frame)
+
     def _push_points(self) -> None:
         """Rebuild the plotted points and legend from every visible
         dataset."""
         options = self._legend_options()
-        visible = [e for e in self.entries if e.visible and len(e.dataset)]
-        multi = len(visible) > 1
-        any_attr = any(self._entry_key(e, e.symbol_by) is not None
-                       for e in visible)
-        render_groups: list = []
-        sections: list = []
-        row_order: list[str] = []
-        palette_offset = 0
-        used_labels: set[str] = set()
-        for entry in visible:
-            if self._entry_key(entry, entry.symbol_by) is not None:
-                groups, entry_sections = self._attribute_groups(entry, multi,
-                                                                options)
-                render_groups += groups
-                sections += entry_sections
-            else:
-                groups, legend_entries, palette_offset = self._plain_groups(
-                    entry, palette_offset, multi, used_labels, options)
-                render_groups += groups
-                row_order += [label for label, _style in legend_entries]
-                if any_attr and legend_entries:
-                    title = entry.name if options.section_titles else ""
-                    sections.append((title, legend_entries))
-        self.renderer.set_structured_legend(sections if any_attr else None)
-        self.renderer.set_legend_row_order(None if any_attr else row_order)
-        self.renderer.set_point_groups(render_groups)
-        self._apply_legend(redraw=False)
+        layout = layout_points(self.entries, options, self._palette(),
+                               self._filtered_frame)
+        self.renderer.set_points(
+            [(label, style, rows["lon"].to_numpy(), rows["lat"].to_numpy())
+             for label, style, rows in layout.groups],
+            layout.sections, layout.row_order, options)
         self.renderer.redraw()
-        self._warn_marker_load(visible, options)
+        self._warn_marker_load([d.entry for d in layout.datasets], options)
 
     def _warn_marker_load(self, visible: list[DatasetEntry],
                           options: LegendOptions) -> None:
@@ -988,11 +965,11 @@ class PyMapprApp:
             return
         worst, worst_entry = 0, None
         for entry in visible:
-            symbol_key = self._entry_key(entry, entry.symbol_by)
+            symbol_key = column_key(entry, entry.symbol_by)
             if symbol_key is None:
                 continue
             load = marker_load(entry.dataset.frame,
-                               self._entry_key(entry, entry.color_by),
+                               column_key(entry, entry.color_by),
                                symbol_key, options.hierarchy)
             if load > worst:
                 worst, worst_entry = load, entry
@@ -1023,139 +1000,6 @@ class PyMapprApp:
             self.set_status("Ready.")
         self._legend_warning = ""
 
-    def _plain_groups(self, entry: DatasetEntry, palette_offset: int,
-                      multi: bool, used_labels: set[str],
-                      options: LegendOptions):
-        """Render groups for a dataset in group-by mode. Styles come from
-        the full, unfiltered grouping so each group's color/symbol stays
-        put while filter values are toggled."""
-        frame = entry.dataset.frame
-        group_key = self._entry_key(entry, entry.group_by)
-        groups = group_points(frame, group_key)
-        labels = [label for label, _ in groups]
-        color_key = self._entry_key(entry, entry.color_by)
-        color_keys = None
-        if color_key is not None and color_key in frame.columns:
-            # One color-key per group: the group's value in the color-by
-            # column (e.g. every cat group keyed "Felines").
-            color_keys = [str(sub[color_key].iloc[0]) if len(sub) else ""
-                          for _label, sub in groups]
-        fresh = default_styles(labels, color_keys=color_keys,
-                               vary_symbols=entry.vary_symbols,
-                               palette_offset=palette_offset,
-                               palette=self._palette())
-        # Keep customized styles for groups that still exist.
-        entry.styles = {
-            lb: apply_override(fresh[lb],
-                               entry.legend_overrides.get(row_key("group", lb)))
-            for lb in labels}
-        shown = group_points(self._filtered_frame(entry), group_key)
-        total = sum(len(sub) for _label, sub in shown)
-        render = []
-        legend_entries = []
-        sizes: dict[str, int] = {}
-        placed: dict[str, int] = {}
-        for label, sub in shown:
-            override = entry.legend_overrides.get(row_key("group", label))
-            style = entry.styles.get(label, PointStyle())
-            display = override_label(override) or label
-            # With several datasets on the map, disambiguate legend rows:
-            # a lone "All points" group takes the dataset's name, and a
-            # label already used by another dataset gets it appended. A row
-            # the user named themselves is left alone.
-            if not override_label(override):
-                if multi and label == "All points":
-                    display = entry.name
-                elif multi and label in used_labels:
-                    display = f"{label} ({entry.name})"
-            used_labels.add(display)
-            # The plain legend labels its rows from the point groups, so the
-            # count has to go on here rather than only on the legend copy -
-            # otherwise "Show point counts" does nothing in group-by mode.
-            display = self._counted_label(display, len(sub), total, options)
-            render.append((display, style, sub["lon"].to_numpy(),
-                           sub["lat"].to_numpy()))
-            # Hidden rows keep their points on the map but leave the legend,
-            # which the row-order list below is what actually enforces.
-            if is_hidden(override):
-                continue
-            legend_entries.append((display, style))
-            sizes[display] = len(sub)
-            placed[display] = manual_order(override)
-        if options.order == "manual":
-            order = sorted(sizes, key=lambda lb: placed.get(lb, 1 << 30))
-        else:
-            order = order_labels(list(sizes), options.order,
-                                 lambda lb: sizes.get(lb, 0))
-        rank = {label: i for i, label in enumerate(order)}
-        legend_entries.sort(key=lambda row: rank.get(row[0], len(rank)))
-        return render, legend_entries, palette_offset + len(labels)
-
-    @staticmethod
-    def _counted_label(label: str, n: int, total: int,
-                       options: LegendOptions) -> str:
-        """A plain-mode legend row's text with its count appended. The
-        sectioned path gets this from pymappr.legend; group-by mode counts
-        whole groups, so it is a row count rather than a tagged lookup."""
-        if not options.counts:
-            return label
-        pct = (100.0 * n / total) if total else 0.0
-        if options.count_format == "n":
-            return f"{label} {n}"
-        if options.count_format == "(n, %)":
-            return f"{label} ({n}, {pct:.0f}%)"
-        if options.count_format == "%":
-            return f"{label} {pct:.0f}%"
-        return f"{label} ({n})"
-
-    def _attribute_groups(self, entry: DatasetEntry, multi: bool,
-                          options: LegendOptions):
-        """Render groups + legend sections for a dataset styled by a color
-        column and a symbol column at once (Symbol by set). Style maps come
-        from the full dataset so colors, symbols, and the legend stay
-        stable as the filter hides values."""
-        frame = entry.dataset.frame
-        color_key = self._entry_key(entry, entry.color_by)
-        symbol_key = self._entry_key(entry, entry.symbol_by)
-        color_map, symbol_map = attribute_style_maps(frame, color_key,
-                                                     symbol_key,
-                                                     options.hierarchy,
-                                                     palette=self._palette())
-        shown_frame = self._filtered_frame(entry)
-        nested = resolve_nesting(frame, color_key, symbol_key,
-                                 options.hierarchy)
-        groups = style_by_attributes(shown_frame, color_key, symbol_key,
-                                     color_map, symbol_map,
-                                     entry.legend_overrides, nested,
-                                     palette=self._palette())
-        # Group-by styles do not apply here; the rows are color values,
-        # symbol values and pairs, and they live in legend_overrides.
-        entry.styles = {}
-        render = [
-            (label, style, sub["lon"].to_numpy(), sub["lat"].to_numpy())
-            for label, style, sub in groups
-        ]
-
-        # Legend sections list only the values currently shown: anything
-        # unticked in the filter bar disappears from the legend too.
-        def shown_values(key):
-            if key is None or key not in shown_frame.columns:
-                return None
-            return set(shown_frame[key].fillna(""))
-
-        prefix = f"{entry.name}: " if (multi and options.dataset_prefix) else ""
-        shown_colors = shown_values(color_key)
-        shown_symbols = shown_values(symbol_key)
-        # Ordering by count needs the numbers even when they are not shown.
-        counts = (legend_counts(shown_frame, color_key, symbol_key)
-                  if (options.counts or options.orders_by_count) else {})
-        sections = legend_sections(
-            frame, color_key, symbol_key, color_map, symbol_map,
-            entry.color_by, entry.symbol_by, shown_colors=shown_colors,
-            shown_symbols=shown_symbols, counts=counts, prefix=prefix,
-            options=options, overrides=entry.legend_overrides)
-        return render, sections
-
     def _warn_forced_nesting(self, visible: list[DatasetEntry],
                              options: LegendOptions) -> bool:
         """Warn when "Always nest" is applied to columns that genuinely
@@ -1165,8 +1009,8 @@ class PyMapprApp:
         if options.hierarchy != "always":
             return False
         for entry in visible:
-            color_key = self._entry_key(entry, entry.color_by)
-            symbol_key = self._entry_key(entry, entry.symbol_by)
+            color_key = column_key(entry, entry.color_by)
+            symbol_key = column_key(entry, entry.symbol_by)
             if symbol_key is None or color_key is None:
                 continue
             frame = entry.dataset.frame
@@ -1219,10 +1063,8 @@ class PyMapprApp:
             return
         value = self.panel.group_by_var.get()
         entry.group_by = "" if value == "None" else value
-        # New grouping: rebuild styles from scratch for the new groups. Row
-        # customizations are keyed by value, so any that still name a group
-        # that exists keep applying and the rest lie dormant.
-        entry.styles = {}
+        # Row customizations are keyed by value, so any that still name a
+        # group that exists keep applying and the rest lie dormant.
         self._push_points()
 
     def on_style_scheme(self) -> None:
@@ -1235,48 +1077,90 @@ class PyMapprApp:
         entry.color_by = "" if color == "None" else color
         entry.symbol_by = "" if symbol == "None" else symbol
         entry.vary_symbols = self.panel.vary_symbols_var.get()
-        entry.styles = {}
         self._push_points()
 
     def on_point_alpha(self) -> None:
         self.renderer.set_point_alpha(self.panel.point_alpha_var.get())
         self.renderer.redraw()
 
-    def on_legend_options(self) -> None:
-        """A look-only change: restyle the legend that is already there."""
-        self._apply_legend()
+    def on_point_edge(self) -> None:
+        self.renderer.set_point_edge(*self.panel.point_edge())
+        self.renderer.redraw()
 
-    def on_legend_content(self) -> None:
-        """A change to the rows themselves - counts, order, nesting, the
-        text of a label. Those are baked into the rows when the groups are
-        built, so this has to rebuild rather than restyle."""
+    def on_combine_columns(self) -> None:
+        """Join name columns (Genus + Species) into a new column and group
+        by it, so each legend row carries the full name."""
+        entry = self._active_entry()
+        labels = entry.dataset.name_labels if entry else []
+        if len(labels) < 2:
+            messagebox.showinfo(
+                "Combine columns",
+                "Select a dataset with at least two name columns first.",
+                parent=self.root)
+            return
+
+        first_row = PointDataset(frame=entry.dataset.frame.head(1),
+                                 source_path="")
+
+        def preview(chosen, separator):
+            sample, _label = combine_name_columns(first_row, chosen,
+                                                  separator)
+            values = sample.frame[sample.name_keys[-1]]
+            return str(values.iloc[0]) if len(values) else ""
+
+        dialog = CombineColumnsDialog(self.root, labels, preview)
+        self.root.wait_window(dialog)
+        if dialog.result is None:
+            return
+        chosen, separator = dialog.result
+        entry.dataset, label = combine_name_columns(entry.dataset, chosen,
+                                                    separator)
+        # Group by the new column; Symbol by would switch the legend to the
+        # two-column key and hide the full names again.
+        entry.group_by = label
+        entry.symbol_by = ""
+        self._sync_dataset_ui()
+        self._push_points()
+        self.set_status(f"Added the column \N{LEFT DOUBLE QUOTATION MARK}"
+                        f"{label}\N{RIGHT DOUBLE QUOTATION MARK} and grouped "
+                        "by it.")
+
+    def on_publication_style(self) -> None:
+        """Apply several settings at once for a journal figure: black and
+        white points with black outlines and varied shapes, a plain boxed
+        legend with italic names, and 600 DPI export. Rows the user styled
+        by hand in the legend editor keep their styling."""
+        p = self.panel
+        p.palette_var.set(BLACK_AND_WHITE_NAME)
+        p.set_point_edge(*PUBLICATION_POINT_EDGE)
+        p.set_point_alpha(1.0)
+        p.set_legend_options(dataclasses.replace(p.legend_options(),
+                                                 **PUBLICATION_LEGEND))
+        p.dpi_var.set(PUBLICATION_DPI)
+        # Three shades alone cannot tell more than three groups apart.
+        for entry in self.entries:
+            entry.vary_symbols = True
+        p.vary_symbols_var.set(True)
+        self.renderer.set_point_alpha(1.0)
+        self.renderer.set_point_edge(*p.point_edge())
+        self._push_points()
+        self.set_status("Applied the publication style. Export with "
+                        "File \N{RIGHTWARDS ARROW} Save map as "
+                        f"({PUBLICATION_DPI} DPI).")
+
+    def on_legend_options(self) -> None:
+        """Any legend setting changed. Rebuilding is one legend build, so
+        there is no separate restyle-only path to keep in step with it."""
         self._push_points()
 
     def on_legend_position(self) -> None:
         # Choosing a preset position discards any manual (dragged) placement.
         self.renderer.clear_legend_anchor()
-        self._apply_legend()
+        self._push_points()
 
     def _legend_options(self) -> LegendOptions:
-        """The panel's legend settings, with the title defaulted.
-
-        With a single dataset in plain mode the title falls back to its
-        group-by column; in two-attribute mode the legend's own sections
-        name the columns, and with several datasets no one column fits.
-        """
-        options = self.panel.legend_options()
-        if options.title is None:
-            visible = [e for e in self.entries if e.visible and len(e.dataset)]
-            if (len(visible) == 1
-                    and self._entry_key(visible[0], visible[0].symbol_by)
-                    is None):
-                options.title = visible[0].group_by or None
-        return options
-
-    def _apply_legend(self, redraw: bool = True) -> None:
-        self.renderer.set_legend(self._legend_options())
-        if redraw:
-            self.renderer.redraw()
+        """The panel's legend settings, with the title defaulted."""
+        return with_default_title(self.entries, self.panel.legend_options())
 
     def on_edit_styles(self) -> None:
         entry = self._active_entry()
@@ -1284,7 +1168,12 @@ class PyMapprApp:
             messagebox.showinfo("No data", "Add a dataset first to "
                                 "customize its legend.", parent=self.root)
             return
-        rows = self._legend_rows(entry)
+        # The editor shows each row in the colour the map gives it, which in
+        # group-by mode depends on the datasets drawn before this one.
+        drawn = next((d for d in self._layout().datasets if d.entry is entry),
+                     None)
+        rows = editor_rows(entry, self._legend_options(), self._palette(),
+                           drawn.palette_offset if drawn else 0)
         if not rows:
             messagebox.showinfo(
                 "Nothing to customize",
@@ -1301,86 +1190,8 @@ class PyMapprApp:
         the reorder buttons flip the Order setting rather than leaving the
         user to work out why nothing moved.
         """
-        self.panel.legend_order_var.set(
-            self.panel._name_for(ENTRY_ORDERS, "manual"))
+        self.panel.legend_vars["order"].set(name_for(ENTRY_ORDERS, "manual"))
         self._push_points()
-
-    def _legend_rows(self, entry: DatasetEntry) -> list:
-        """The dataset's legend rows for the editor, as
-        ``(key, display value, default PointStyle, depth)``.
-
-        Built from the same style maps the legend is, so the editor lists
-        exactly the rows that appear on the map - in group-by mode the
-        groups, and in two-attribute mode the color values, symbol values
-        or nested pairs, whichever the key is made of.
-        """
-        options = self._legend_options()
-        frame = entry.dataset.frame
-        color_key = self._entry_key(entry, entry.color_by)
-        symbol_key = self._entry_key(entry, entry.symbol_by)
-        if symbol_key is None:
-            return self._sorted_rows(
-                [(row_key("group", label), label,
-                  entry.styles.get(label, PointStyle()), 0)
-                 for label in entry.styles], entry)
-
-        color_map, symbol_map = attribute_style_maps(frame, color_key,
-                                                     symbol_key,
-                                                     options.hierarchy,
-                                                     palette=self._palette())
-        rows: list = []
-        if resolve_nesting(frame, color_key, symbol_key, options.hierarchy):
-            owner = owner_map(frame, symbol_key, color_key)
-            for value, color in color_map.items():
-                kids = [s for s in symbol_map if owner.get(s, "") == value]
-                rows.append((row_key("color", value), value,
-                             PointStyle(color=color, marker="Circle"), 0))
-                rows += self._sorted_rows(
-                    [(row_key("pair", value, kid), kid,
-                      PointStyle(color=color, marker=symbol_map[kid]), 1)
-                     for kid in kids], entry)
-            return self._sorted_rows(rows, entry, blocks=True)
-        rows += self._sorted_rows(
-            [(row_key("color", value), value,
-              PointStyle(color=color, marker="Circle"), 0)
-             for value, color in color_map.items()], entry)
-        rows += self._sorted_rows(
-            [(row_key("symbol", value), value,
-              PointStyle(color=options.symbol_swatch_color, marker=marker), 0)
-             for value, marker in symbol_map.items()], entry)
-        return rows
-
-    @staticmethod
-    def _sorted_rows(rows: list, entry: DatasetEntry,
-                     blocks: bool = False) -> list:
-        """Editor rows in the order the legend draws them.
-
-        With *blocks*, each depth-0 row carries the children that follow it,
-        so reordering genera moves their species along rather than shuffling
-        the two levels together.
-        """
-        def position(row):
-            return manual_order(entry.legend_overrides.get(row[0]))
-
-        # The original index is the tie-break, so rows the user never placed
-        # keep the order the data gave them. It is captured up front: reading
-        # it back off the list being sorted would look it up in a list that
-        # is already being rearranged.
-        if not blocks:
-            ranked = sorted(((position(row), index, row)
-                             for index, row in enumerate(rows)),
-                            key=lambda item: item[:2])
-            return [row for _pos, _index, row in ranked]
-        grouped: list = []
-        for row in rows:
-            if row[3] == 0:
-                grouped.append([row])
-            elif grouped:
-                grouped[-1].append(row)
-        ordered = sorted(((position(block[0]), index, block)
-                          for index, block in enumerate(grouped)),
-                         key=lambda item: item[:2])
-        return [row for _pos, _index, block in ordered for row in block]
 
     def on_basemap(self) -> None:
         mode = self.panel.basemap_var.get()
@@ -1445,39 +1256,25 @@ class PyMapprApp:
         self.renderer.redraw()
 
     def _toggle_layer(self, key: str, visible: bool, setter,
-                      var: tk.BooleanVar | None = None) -> None:
-        """Shared busy-cursor plumbing for every kind of layer toggle.
-
-        Optional external layers (biodiversity, ecoregions) may not be
-        downloaded, and any layer's data could be missing or corrupt; rather
-        than crash, revert the checkbox and explain."""
-        if visible and not self.store.has_layer_data(key):
-            if var is not None:
-                var.set(False)
-            self._optional_layer_missing(key)
-            return
+                      var: tk.BooleanVar) -> None:
+        """A layer checkbox changed: draw it with a busy cursor, and explain
+        (and untick) when it cannot be drawn."""
         if visible:
             self.set_status(f"Loading {key.replace('_', ' ')} layer"
                             f"\N{HORIZONTAL ELLIPSIS}")
             self._busy(True)
         try:
-            setter(key, visible)
-        except Exception as exc:  # noqa: BLE001 - a bad layer must not crash
+            problem = self._apply_layer(setter, key, visible, var)
+        finally:
             if visible:
                 self._busy(False)
                 self.set_status("Ready.")
-                if var is not None:
-                    var.set(False)
-                try:
-                    setter(key, False)  # drop any half-built artists
-                except Exception:  # noqa: BLE001
-                    pass
-            self._layer_load_error(key, exc)
-            return
-        if visible:
-            self._busy(False)
-            self.set_status("Ready.")
-        self.renderer.redraw()
+        if problem == "missing":
+            self._optional_layer_missing(key)
+        elif problem is not None:
+            self._layer_load_error(key, problem)
+        else:
+            self.renderer.redraw()
 
     def _optional_layer_missing(self, key: str) -> None:
         label = key.replace("_", " ")
@@ -1550,13 +1347,17 @@ class PyMapprApp:
 
     def on_palette(self) -> None:
         """The colour palette changed: restyle every dataset's groups.
-
-        Clearing ``styles`` re-derives them from the new palette; per-row
-        customizations live in ``legend_overrides`` and are untouched, so a
-        colour the user pinned stays pinned.
-        """
-        for entry in self.entries:
-            entry.styles = {}
+        Colours pinned per legend row live in ``legend_overrides`` and stay
+        pinned."""
+        # White points vanish inside a white outline, so a palette with
+        # white in it brings a black outline along.
+        color, width = self.panel.point_edge()
+        if ("#ffffff" in self._palette()
+                and color.lower() in ("#ffffff", "white")):
+            self.panel.set_point_edge("#000000", width)
+            self.renderer.set_point_edge(*self.panel.point_edge())
+            self.set_status("Point outline set to black so white points "
+                            "stay visible.")
         self._push_points()
 
     def on_lake_fill(self) -> None:

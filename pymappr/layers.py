@@ -4,6 +4,7 @@ import os
 import pickle
 import sys
 import warnings
+from collections import OrderedDict
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -11,7 +12,7 @@ import numpy as np
 import pandas as pd
 
 __all__ = ["LayerStore", "LAYER_SPECS", "OPTIONAL_LAYERS",
-           "CONTINENT_EXTENTS", "default_data_dir"]
+           "CONTINENT_EXTENTS", "default_data_dir", "BoundedCache"]
 
 # Bump when the cached frame format changes; stale caches are rebuilt.
 _CACHE_VERSION = 1
@@ -36,7 +37,6 @@ class LayerSpec:
     # Resolution steps as (min zoom, directory), ascending by zoom. Empty =
     # single resolution. Zoom 0 shows the whole world; +1 per 2x magnification.
     resolutions: tuple[tuple[float, str], ...] = ()
-    label_directory: str | None = None  # resolution used for label anchors
     label_column: str = "name"
 
     def directory_for_zoom(self, zoom: float | None) -> str:
@@ -185,6 +185,30 @@ CONTINENT_EXTENTS = {
 }
 
 
+class BoundedCache(OrderedDict):
+    """A dict that forgets its least recently used entries past *maxsize*.
+
+    Caches keyed by projection need this: spinning the globe or editing a
+    Lambert origin makes a new projection at every step, and an unbounded
+    cache would keep every one of them.
+    """
+
+    def __init__(self, maxsize: int):
+        super().__init__()
+        self.maxsize = maxsize
+
+    def __getitem__(self, key):
+        value = super().__getitem__(key)
+        self.move_to_end(key)
+        return value
+
+    def __setitem__(self, key, value):
+        super().__setitem__(key, value)
+        self.move_to_end(key)
+        while len(self) > self.maxsize:
+            self.popitem(last=False)
+
+
 def default_data_dir() -> Path:
     """Locate data/ both from a source checkout and a PyInstaller bundle."""
     if getattr(sys, "frozen", False):
@@ -206,7 +230,8 @@ class LayerStore:
         self.data_dir = Path(data_dir) if data_dir else default_data_dir()
         self._dir_frames: dict[str, "object"] = {}      # directory -> frame
         self._derived_frames: dict[str, "object"] = {}  # derived key -> frame
-        self._projected: dict[tuple[str, str], "object"] = {}
+        # (directory, CRS) -> reprojected frame; a few projections' worth.
+        self._projected = BoundedCache(maxsize=48)
         self._labels: dict[str, pd.DataFrame] = {}
         self._basemaps: dict[str, np.ndarray] = {}
         self._cache_root: Path | None | bool = False  # False = not probed yet
@@ -424,9 +449,6 @@ class LayerStore:
             # frame() without a zoom returns the default resolution, so
             # label anchors stay stable while the drawn resolution switches.
             gdf = self.frame(key)
-            if spec.label_directory is not None:
-                gdf = self._frame_for_directory(spec.label_directory,
-                                                spec.shapefile)
             label_col = spec.label_column
             df = gdf[gdf[label_col].notna() & (gdf[label_col] != "")].copy()
             if key in ("cities", "capitals"):

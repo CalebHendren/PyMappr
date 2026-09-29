@@ -60,6 +60,9 @@ jobs:
           if (-not (Test-Path "dist/PyMappr/_internal/data/shapes")) {
             throw "bundled map data missing"
           }
+          if (-not (Test-Path "dist/PyMappr/_internal/pymappr/templates/recreate_map.py")) {
+            throw "code export templates missing"
+          }
 
       - name: Build installer (Inno Setup)
         run: |
@@ -160,6 +163,7 @@ jobs:
         run: |
           test -x dist/PyMappr/PyMappr || { echo "PyMappr binary missing"; exit 1; }
           test -d dist/PyMappr/_internal/data/shapes || exit 1
+          test -f dist/PyMappr/_internal/pymappr/templates/recreate_map.py || exit 1
 
       - name: Package tarball and .deb
         run: bash packaging/build_linux.sh ubuntu --deb
@@ -207,6 +211,7 @@ jobs:
         run: |
           test -x dist/PyMappr/PyMappr || { echo "PyMappr binary missing"; exit 1; }
           test -d dist/PyMappr/_internal/data/shapes || exit 1
+          test -f dist/PyMappr/_internal/pymappr/templates/recreate_map.py || exit 1
 
       - name: Package tarball
         run: bash packaging/build_linux.sh arch
@@ -263,6 +268,7 @@ jobs:
         run: |
           test -x dist/PyMappr/PyMappr || { echo "PyMappr binary missing"; exit 1; }
           test -d dist/PyMappr/_internal/data/shapes || exit 1
+          test -f dist/PyMappr/_internal/pymappr/templates/recreate_map.py || exit 1
 
       - name: Package tarball
         run: bash packaging/build_linux.sh fedora

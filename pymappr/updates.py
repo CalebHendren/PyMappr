@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import json
-import os
-import sys
 import threading
 import time
 import urllib.request
@@ -14,19 +12,15 @@ GITHUB_REPO = "CalebHendren/PyMappr"
 LATEST_RELEASE_API = ("https://api.github.com/repos/"
                       f"{GITHUB_REPO}/releases/latest")
 RELEASES_URL = f"https://github.com/{GITHUB_REPO}/releases"
+KOFI_URL = "https://ko-fi.com/calebhendren"
 CHECK_INTERVAL = 24 * 60 * 60  # at most one automatic check per day
 
 
 def _state_path() -> Path:
     """Per-user file holding the time of the last automatic check."""
-    if sys.platform == "win32":
-        base = Path(os.environ.get("APPDATA", str(Path.home())))
-    elif sys.platform == "darwin":
-        base = Path.home() / "Library" / "Application Support"
-    else:
-        base = Path(os.environ.get("XDG_CONFIG_HOME",
-                                   str(Path.home() / ".config")))
-    return base / "PyMappr" / "update_check.json"
+    from pymappr.projects import config_dir
+
+    return config_dir() / "update_check.json"
 
 
 def _load_state() -> dict:

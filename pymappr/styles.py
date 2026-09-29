@@ -7,10 +7,13 @@ from dataclasses import dataclass
 import pandas as pd
 
 __all__ = ["PointStyle", "MARKERS", "OPEN_SUFFIX", "DEFAULT_PALETTE",
-           "OKABE_ITO", "PALETTES", "DEFAULT_PALETTE_NAME", "palette_for",
-           "group_points", "default_styles", "attribute_style_maps",
-           "style_by_attributes", "LEGIBLE_MARKER_LIMIT", "nests_within",
-           "resolve_nesting", "owner_map", "marker_load", "apply_override"]
+           "OKABE_ITO", "BLACK_AND_WHITE", "BLACK_AND_WHITE_NAME", "PALETTES",
+           "DEFAULT_PALETTE_NAME", "palette_for", "POINT_EDGE_COLOR",
+           "POINT_EDGE_WIDTH", "group_points", "default_styles",
+           "attribute_style_maps", "style_by_attributes",
+           "LEGIBLE_MARKER_LIMIT", "nests_within", "resolve_nesting",
+           "owner_map", "marker_load", "apply_override", "ROW_SEP",
+           "row_key"]
 
 # How many distinct shapes stay tellable apart at map point sizes. MARKER_CYCLE
 # runs much longer, but past roughly this many the tail (triangle down, thin
@@ -65,13 +68,24 @@ OKABE_ITO = [
     "#56b4e9", "#f0e442", "#000000",
 ]
 
+# Black, white and grey: the look of a printed journal figure. White points
+# only show with a dark outline, so pick this with a black Point outline.
+BLACK_AND_WHITE = ["#000000", "#ffffff", "#808080"]
+
 # Display name -> palette. The key is what projects and exported scripts
 # store, so renaming one would orphan saved maps.
+BLACK_AND_WHITE_NAME = "Black & white"
 PALETTES = {
     "Default": DEFAULT_PALETTE,
     "Colourblind safe (Okabe-Ito)": OKABE_ITO,
+    BLACK_AND_WHITE_NAME: BLACK_AND_WHITE,
 }
 DEFAULT_PALETTE_NAME = "Default"
+
+# The outline drawn around filled markers (open markers outline in their own
+# colour instead). White keeps overlapping points apart on a light map.
+POINT_EDGE_COLOR = "#ffffff"
+POINT_EDGE_WIDTH = 0.5
 
 
 def palette_for(name: str | None) -> list[str]:
@@ -93,6 +107,22 @@ class PointStyle:
     def is_open(self) -> bool:
         """Open markers draw only the outline in the style's color."""
         return self.marker.endswith(OPEN_SUFFIX)
+
+
+# Legend rows are identified by a tagged key, so a value that appears in both
+# the color and the symbol column cannot have one row's customization land on
+# the other. NUL separates the parts because it cannot occur in a data value,
+# unlike "/" or ":" which routinely do.
+ROW_SEP = "\x00"
+
+
+def row_key(kind: str, *parts: str) -> str:
+    """A legend row's identity: ``row_key("pair", genus, species)``.
+
+    *kind* is ``"group"`` (a group-by row), ``"color"``, ``"symbol"``, or
+    ``"pair"`` (a nested key's leaf).
+    """
+    return ROW_SEP.join((kind,) + tuple(str(p) for p in parts))
 
 
 def apply_override(style: PointStyle | None,
@@ -326,18 +356,13 @@ def style_by_attributes(frame: pd.DataFrame, color_key: str | None,
 
 def _override_for(style: PointStyle, overrides: dict, cval: str, sval: str,
                   nested: bool) -> PointStyle:
-    """Apply whichever legend row's customization governs this combination.
-
-    Keys are built inline rather than imported from pymappr.legend, which
-    imports this module.
-    """
-    sep = "\x00"
+    """Apply whichever legend row's customization governs this combination."""
     if nested:
-        return apply_override(style, overrides.get(sep.join(("pair", cval,
-                                                             sval))))
+        return apply_override(style, overrides.get(row_key("pair", cval,
+                                                           sval)))
     # Crossed: color comes from the color row, shape and size from the
     # symbol row, exactly as the two independent keys show them.
-    style = apply_override(style, overrides.get(sep.join(("symbol", sval))))
-    color = (overrides.get(sep.join(("color", cval))) or {}).get("color")
+    style = apply_override(style, overrides.get(row_key("symbol", sval)))
+    color = (overrides.get(row_key("color", cval)) or {}).get("color")
     return PointStyle(color=color or style.color, marker=style.marker,
                       size=style.size)

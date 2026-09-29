@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 from contextlib import contextmanager
 
 import matplotlib.patheffects as patheffects
@@ -11,13 +12,13 @@ from matplotlib.patches import Polygon, Rectangle
 from matplotlib.ticker import AutoLocator, FuncFormatter, MultipleLocator
 
 from pymappr.layers import (BATHYMETRY_STEPS, CONTINENT_EXTENTS, LAYER_SPECS,
-                            LayerStore)
+                            BoundedCache, LayerStore)
 from pymappr.decorations import (CompassOptions, ScaleBarOptions,
                                  corner_anchor, format_length,
                                  nice_length, unit_metres)
 from pymappr.legend import LegendOptions
 from pymappr.projections import GLOBE, get_projection
-from pymappr.styles import PointStyle
+from pymappr.styles import POINT_EDGE_COLOR, POINT_EDGE_WIDTH, PointStyle
 
 __all__ = ["MapRenderer"]
 
@@ -142,8 +143,15 @@ ORIENTATION_ASPECT = {"landscape": None, "portrait": _PORTRAIT_ASPECT}
 # Horizontal world copies drawn for wrap-around panning, in world-widths.
 _WRAP_OFFSETS = (-1, 0, 1)
 
-# Warped-basemap grid (columns x rows) for projected satellite rendering.
+# Warped-basemap grid (columns x rows) for projected satellite rendering,
+# and the coarser one used while the globe is being dragged: a full warp is
+# most of the cost of a spin step, and the drag only needs a preview.
 _WARP_GRID = (1600, 800)
+_DRAG_WARP_GRID = (400, 200)
+
+# The globe re-projects at most this often (seconds) while being dragged;
+# the last position is always applied when the drag ends.
+_SPIN_INTERVAL = 0.05
 
 # Fraction of the shorter side of the map box the globe's disk spans, so it
 # sits centred with a margin instead of running the full length of the canvas.
@@ -299,6 +307,8 @@ class MapRenderer:
         # data; None keeps the order the point groups were added in.
         self._legend_row_order: list[str] | None = None
         self._point_alpha = 1.0
+        # Outline (colour, width) around filled markers, map and legend alike.
+        self._point_edge = (POINT_EDGE_COLOR, POINT_EDGE_WIDTH)
 
         # Manual legend placement: dragging the legend (when enabled) anchors
         # its lower-left corner here, in axes fraction, with no limit; None
@@ -314,9 +324,11 @@ class MapRenderer:
         self._artist_res: dict[str, str] = {}
         self._point_layer_artists: dict[str, list] = {}
         self._label_texts: dict[str, list] = {}
-        self._label_xy_cache: dict[tuple[str, str], tuple[np.ndarray, np.ndarray]] = {}
-        self._point_xy_cache: dict[tuple[str, str], tuple[np.ndarray, np.ndarray]] = {}
-        self._warp_cache: dict[tuple, tuple[np.ndarray, tuple]] = {}
+        # Keyed by projection, so bounded: a globe spin is a new projection
+        # at every step.
+        self._label_xy_cache = BoundedCache(maxsize=32)
+        self._point_xy_cache = BoundedCache(maxsize=32)
+        self._warp_cache = BoundedCache(maxsize=3)
         self._in_wrap = False
         self._in_limits_refresh = False
 
@@ -375,6 +387,20 @@ class MapRenderer:
             finally:
                 self._in_limits_refresh = was_refreshing
 
+    @contextmanager
+    def _one_view_change(self):
+        """Change both axis limits with one view refresh rather than one per
+        axis - each refresh rebuilds the labels and point layers."""
+        if self._in_limits_refresh:
+            yield
+            return
+        self._in_limits_refresh = True
+        try:
+            yield
+        finally:
+            self._in_limits_refresh = False
+        self._on_limits_changed(self.ax)
+
     def set_extent(self, extent) -> None:
         """*extent* is a continent name or a (lon0, lon1, lat0, lat1) tuple
         in degrees; it is projected into map coordinates here.
@@ -413,8 +439,9 @@ class MapRenderer:
                 cy = min(max((y0 + y1) / 2, wy0 + new_h / 2), wy1 - new_h / 2)
                 y0, y1 = cy - new_h / 2, cy + new_h / 2
 
-        self.ax.set_xlim(x0, x1)
-        self.ax.set_ylim(y0, y1)
+        with self._one_view_change():
+            self.ax.set_xlim(x0, x1)
+            self.ax.set_ylim(y0, y1)
 
     def set_orientation(self, name: str) -> None:
         """Switch the map between ``"landscape"`` (fill the canvas) and
@@ -486,8 +513,9 @@ class MapRenderer:
                 short = zoomed
         half_h = short if box_ratio >= 1.0 else short / box_ratio
         half_w = half_h * box_ratio
-        self.ax.set_xlim(cx - half_w, cx + half_w)
-        self.ax.set_ylim(cy - half_h, cy + half_h)
+        with self._one_view_change():
+            self.ax.set_xlim(cx - half_w, cx + half_w)
+            self.ax.set_ylim(cy - half_h, cy + half_h)
 
     def _refit_view_to_box(self) -> None:
         """Re-fit the current view to the current orientation's axes box.
@@ -530,8 +558,9 @@ class MapRenderer:
 
     def set_view(self, xlim, ylim) -> None:
         """Restore axis limits saved by :meth:`get_view` (same projection)."""
-        self.ax.set_xlim(tuple(xlim))
-        self.ax.set_ylim(tuple(ylim))
+        with self._one_view_change():
+            self.ax.set_xlim(tuple(xlim))
+            self.ax.set_ylim(tuple(ylim))
 
     def zoom(self, factor: float, center: tuple[float, float] | None = None) -> None:
         """Zoom the view by *factor* (>1 zooms in), keeping *center* (map
@@ -554,8 +583,11 @@ class MapRenderer:
             center = None
         cx = center[0] if center is not None else (x0 + x1) / 2
         cy = center[1] if center is not None else (y0 + y1) / 2
-        self.ax.set_xlim(cx - (cx - x0) / factor, cx + (x1 - cx) / factor)
-        self.ax.set_ylim(cy - (cy - y0) / factor, cy + (y1 - cy) / factor)
+        with self._one_view_change():
+            self.ax.set_xlim(cx - (cx - x0) / factor,
+                             cx + (x1 - cx) / factor)
+            self.ax.set_ylim(cy - (cy - y0) / factor,
+                             cy + (y1 - cy) / factor)
 
     def _zoom_level(self) -> float:
         x0, x1 = self.ax.get_xlim()
@@ -741,10 +773,11 @@ class MapRenderer:
         img = self.store.basemap_image(mode)
         if self.proj.is_geographic:
             return img, (-180, 180, -90, 90)
-        cache_key = (self.proj.key, mode)
+        grid = _DRAG_WARP_GRID if self._globe_drag else _WARP_GRID
+        cache_key = (self.proj.key, mode, grid)
         if cache_key not in self._warp_cache:
             wx0, wx1, wy0, wy1 = self.proj.bounds
-            nx, ny = _WARP_GRID
+            nx, ny = grid
             xs = np.linspace(wx0, wx1, nx)
             ys = np.linspace(wy1, wy0, ny)  # top row first (origin="upper")
             gx, gy = np.meshgrid(xs, ys)
@@ -870,6 +903,10 @@ class MapRenderer:
             # aspect=None stops geopandas from forcing equal axes aspect,
             # which would letterbox the map inside the canvas.
             gdf.plot(ax=self.ax, zorder=zorder, aspect=None, **plot_kwargs)
+            # geopandas 1.2+ names the axes after the CRS ("Geodetic
+            # latitude [degree]"), which would crop into every export.
+            self.ax.set_xlabel("")
+            self.ax.set_ylabel("")
             if len(self.ax.collections) == before:
                 return artists
             base = self.ax.collections[before]
@@ -1039,11 +1076,11 @@ class MapRenderer:
 
     def _refresh_point_layers(self) -> None:
         """(Re)draw the visible point-marker layers for the current zoom;
-        features appear once their min_zoom/scalerank allows."""
+        features appear once their min_zoom/scalerank allows. Runs on every
+        pan and zoom step, so an existing layer's markers are moved rather
+        than rebuilt."""
         zoom = self._zoom_level()
-        for artists in self._point_layer_artists.values():
-            for artist in artists:
-                artist.remove()
+        previous = self._point_layer_artists
         self._point_layer_artists = {}
         for key in self._point_layers_visible:
             layer = key
@@ -1055,25 +1092,30 @@ class MapRenderer:
             if not show.any():
                 continue
             offsets = self._offsets()
-            px = np.concatenate([xs[show] + off for off in offsets])
-            py = np.tile(ys[show], len(offsets))
-            with self._preserving_view():
-                artist = self.ax.scatter(
-                    px, py, s=size, c=face, marker=marker,
-                    edgecolors=edge, linewidths=0.5,
-                    zorder=Z_POINT_LAYERS)
+            xy = np.column_stack(
+                [np.concatenate([xs[show] + off for off in offsets]),
+                 np.tile(ys[show], len(offsets))])
+            (artist,) = previous.pop(key, [None])
+            if artist is not None and artist._pym_layer == layer:
+                artist.set_offsets(xy)
+            else:
+                if artist is not None:
+                    artist.remove()
+                with self._preserving_view():
+                    artist = self.ax.scatter(
+                        xy[:, 0], xy[:, 1], s=size, c=face, marker=marker,
+                        edgecolors=edge, linewidths=0.5,
+                        zorder=Z_POINT_LAYERS)
+                artist._pym_layer = layer
             self._point_layer_artists[key] = [artist]
+        for artists in previous.values():
+            for artist in artists:
+                artist.remove()
 
     # ------------------------------------------------ compass and scale bar
 
-    def set_compass(self, options) -> None:
-        """Set the north arrow's options. A bare bool is still accepted so
-        older callers (and projects that stored just a flag) keep working."""
-        if isinstance(options, bool):
-            options = CompassOptions(show=options,
-                                     position=self._compass.position,
-                                     style=self._compass.style,
-                                     size=self._compass.size)
+    def set_compass(self, options: CompassOptions) -> None:
+        """Set the north arrow's options."""
         self._compass = options
         self._apply_compass()
 
@@ -1340,6 +1382,12 @@ class MapRenderer:
         return self._label_xy_cache[cache_key]
 
     def _refresh_labels(self) -> None:
+        """Place the labels for the current view.
+
+        This runs on every pan and zoom step, so a label that stays in view
+        keeps its Text artist (moved and resized); only labels coming into
+        view are created, and only those leaving it are removed.
+        """
         zoom = self._zoom_level()
         x0, x1 = sorted(self.ax.get_xlim())
         y0, y1 = sorted(self.ax.get_ylim())
@@ -1353,64 +1401,74 @@ class MapRenderer:
         to_pixels = self.ax.transData
         px_per_pt = self.fig.dpi / 72.0
         for key in LABEL_STYLES:
-            for text in self._label_texts.get(key, []):
-                text.remove()
-            self._label_texts[key] = []
-            if key not in self._label_visible:
-                continue
+            previous = {text._pym_id: text
+                        for text in self._label_texts.get(key, [])}
+            texts = self._label_texts[key] = []
             source, font, min_zoom, feature_bias = LABEL_STYLES[key]
-            if zoom < min_zoom:
-                continue
-            if key == "cities" and self._capitals_only:
-                source = "capitals"
-            points = self.store.label_points(source)
-            xs, ys = self._label_xy(source)
-            font = dict(font)
-            font["fontsize"] = font["fontsize"] * font_scale
-            cap = LAYER_SPECS["cities" if source == "capitals"
-                              else source].label_cap
-            texts = []
-            # Consider the wrapped world copies so labels follow the view
-            # across the antimeridian.
-            candidates = []
-            for off in self._offsets():
-                in_view = ((xs + off >= x0) & (xs + off <= x1)
-                           & (ys >= y0) & (ys <= y1)
-                           & np.isfinite(xs) & np.isfinite(ys))
-                sub = points[in_view].copy()
-                sub["px"] = xs[in_view] + off
-                sub["py"] = ys[in_view]
-                candidates.append(sub)
-            import pandas as pd
+            if key in self._label_visible and zoom >= min_zoom:
+                if key == "cities" and self._capitals_only:
+                    source = "capitals"
+                font = dict(font)
+                font["fontsize"] = font["fontsize"] * font_scale
+                va = font.pop("va", "bottom" if key in POINT_LAYERS
+                              else "center")  # above a marker dot
+                for ident, name, px, py in self._label_candidates(
+                        key, source, feature_bias, zoom, (x0, x1, y0, y1)):
+                    offset = self._label_offsets.get((key, name))
+                    lx = px + (offset[0] if offset else 0.0)
+                    ly = py + (offset[1] if offset else 0.0)
+                    rect = self._estimate_rect(to_pixels, lx, ly, name,
+                                               font["fontsize"] * px_per_pt)
+                    if (offset is None
+                            and self._overlaps_any(rect, placed_rects)):
+                        continue
+                    placed_rects.append(rect)
+                    text = previous.pop(ident, None)
+                    if text is None:
+                        text = self.ax.text(
+                            lx, ly, name, ha="center", va=va,
+                            zorder=Z_LABELS, clip_on=True,
+                            path_effects=_LABEL_HALO, picker=True, **font)
+                        text._pym_id = ident
+                        text._pym_key = (key, name)
+                    else:
+                        text.set_position((lx, ly))
+                        text.set_fontsize(font["fontsize"])
+                    text._pym_base = (px, py)
+                    texts.append(text)
+            for text in previous.values():
+                text.remove()
 
-            eligible = pd.concat(candidates)
+    def _label_candidates(self, key, source, feature_bias, zoom, view):
+        """(identity, text, x, y) for the labels of *source* in view, most
+        important first and at most the layer's cap. The wrapped world
+        copies count, so labels follow the view across the antimeridian."""
+        x0, x1, y0, y1 = view
+        points = self.store.label_points(source)
+        xs, ys = self._label_xy(source)
+        ranks = points["min_label"].to_numpy()
+        names = points["text"].to_numpy()
+        finite = np.isfinite(xs) & np.isfinite(ys)
+        rows, shifts = [], []
+        for off in self._offsets():
+            inside = (finite & (xs + off >= x0) & (xs + off <= x1)
+                      & (ys >= y0) & (ys <= y1))
             if feature_bias is not None:
                 # Per-feature zoom culling: a place is labelled only once
                 # Natural Earth's curated min_label rank allows it, so e.g.
                 # only the biggest cities are named when zoomed out.
-                eligible = eligible[eligible["min_label"] <= zoom + feature_bias]
-            eligible = eligible.nsmallest(cap, "min_label")
-            if key in POINT_LAYERS:  # label sits above the marker dot
-                font.setdefault("va", "bottom")
-            for row in eligible.itertuples():
-                offset = self._label_offsets.get((key, row.text))
-                lx = row.px + (offset[0] if offset else 0.0)
-                ly = row.py + (offset[1] if offset else 0.0)
-                rect = self._estimate_rect(to_pixels, lx, ly, row.text,
-                                           font["fontsize"] * px_per_pt)
-                if offset is None and self._overlaps_any(rect, placed_rects):
-                    continue
-                placed_rects.append(rect)
-                kwargs = dict(font)
-                va = kwargs.pop("va", "center")
-                text = self.ax.text(
-                    lx, ly, row.text, ha="center", va=va,
-                    zorder=Z_LABELS, clip_on=True,
-                    path_effects=_LABEL_HALO, picker=True, **kwargs)
-                text._pym_key = (key, row.text)
-                text._pym_base = (row.px, row.py)
-                texts.append(text)
-            self._label_texts[key] = texts
+                inside &= ranks <= zoom + feature_bias
+            found = np.nonzero(inside)[0]
+            rows.append(found)
+            shifts.append(np.full(len(found), off))
+        rows, shifts = np.concatenate(rows), np.concatenate(shifts)
+        cap = LAYER_SPECS["cities" if source == "capitals"
+                          else source].label_cap
+        # Stable, so equal ranks keep their order - as nsmallest did.
+        for i in np.argsort(ranks[rows], kind="stable")[:cap]:
+            row, off = int(rows[i]), float(shifts[i])
+            yield ((source, row, off), str(names[row]),
+                   float(xs[row] + off), float(ys[row]))
 
     @staticmethod
     def _estimate_rect(to_pixels, x: float, y: float, text: str,
@@ -1449,8 +1507,8 @@ class MapRenderer:
     def set_label_dragging(self, enabled: bool) -> None:
         self._label_dragging_enabled = enabled
 
-    def _clamp_label_offset(self, bx: float, by: float,
-                            dx: float, dy: float) -> tuple[float, float]:
+    def _clamp_label_offset(self, dx: float,
+                            dy: float) -> tuple[float, float]:
         """Limit *dx, dy* so the label stays within 1% of the current
         view extent from its original position."""
         x0, x1 = self.ax.get_xlim()
@@ -1534,7 +1592,8 @@ class MapRenderer:
 
     def _globe_press(self, event) -> None:
         self._globe_drag = {"x": event.x, "y": event.y,
-                            "lon0": self.proj.lon_0, "lat0": self.proj.lat_0}
+                            "lon0": self.proj.lon_0, "lat0": self.proj.lat_0,
+                            "pending": None, "applied_at": None}
 
     def _spin_globe(self, event) -> None:
         if self._globe_drag is None or event.x is None or event.y is None:
@@ -1549,7 +1608,20 @@ class MapRenderer:
         lat0 = drag["lat0"] - (event.y - drag["y"]) * scale
         lat0 = max(-90.0, min(90.0, lat0))
         lon0 = ((lon0 + 180.0) % 360.0) - 180.0
+        drag["pending"] = (lon0, lat0)
+        last = drag["applied_at"]
+        if last is None or time.monotonic() - last >= _SPIN_INTERVAL:
+            self._apply_spin()
+
+    def _apply_spin(self) -> None:
+        """Re-centre the globe on the drag's latest position."""
+        drag = self._globe_drag
+        lon0, lat0 = drag["pending"]
+        drag["pending"] = None
         self.set_projection(GLOBE, lon0, lat0)
+        # Timed from the end of the rebuild: the interval is breathing room
+        # between rebuilds, not a deadline they compete with.
+        drag["applied_at"] = time.monotonic()
         if self._on_globe_rotate is not None:
             self._on_globe_rotate(lon0, lat0)
         self.redraw()
@@ -1652,7 +1724,7 @@ class MapRenderer:
         bx, by = text._pym_base
         raw_dx = event.xdata + gx - bx
         raw_dy = event.ydata + gy - by
-        dx, dy = self._clamp_label_offset(bx, by, raw_dx, raw_dy)
+        dx, dy = self._clamp_label_offset(raw_dx, raw_dy)
         text.set_position((bx + dx, by + dy))
         self.redraw()
 
@@ -1669,7 +1741,17 @@ class MapRenderer:
 
     def _on_canvas_release(self, event) -> None:
         if self._globe_drag is not None:
+            if self._globe_drag["pending"] is not None:
+                self._apply_spin()
+            dragged = self._globe_drag["applied_at"] is not None
             self._globe_drag = None
+            if dragged and self._basemap != "simple":
+                # The drag drew a coarse preview; finish at full resolution.
+                for artist in self._artists.pop(f"raster_{self._basemap}",
+                                                []):
+                    artist.remove()
+                self.set_basemap(self._basemap)
+                self.redraw()
             return
         if self._scale_bar_drag is not None:
             self._scale_bar_drag = None
@@ -1683,7 +1765,7 @@ class MapRenderer:
         self._label_drag = None
         tx, ty = text.get_position()
         bx, by = text._pym_base
-        dx, dy = self._clamp_label_offset(bx, by, tx - bx, ty - by)
+        dx, dy = self._clamp_label_offset(tx - bx, ty - by)
         self._label_offsets[text._pym_key] = (dx, dy)
 
     # ------------------------------------------------------------ graticule
@@ -1754,11 +1836,37 @@ class MapRenderer:
 
     def set_point_groups(self, groups) -> None:
         """*groups* is a list of (label, PointStyle, lons, lats)."""
-        self._point_groups = [
-            (label, style, np.asarray(lons, float), np.asarray(lats, float))
-            for label, style, lons, lats in groups
-        ]
+        self._point_groups = self._as_groups(groups)
         self._rebuild_points()
+
+    def set_points(self, groups, sections: list | None,
+                   row_order: list[str] | None,
+                   options: LegendOptions) -> None:
+        """Install the point groups and everything about the legend that
+        describes them at once, so the legend is built once rather than once
+        per setter. When the points themselves are unchanged - a legend
+        setting changed - they are left as drawn."""
+        groups = self._as_groups(groups)
+        unchanged = (len(groups) == len(self._point_groups) and all(
+            style == old_style and np.array_equal(lons, old_lons)
+            and np.array_equal(lats, old_lats)
+            for (_l, style, lons, lats), (_o, old_style, old_lons, old_lats)
+            in zip(groups, self._point_groups)))
+        self._point_groups = groups
+        self._legend_sections = sections
+        self._legend_row_order = (list(row_order) if row_order is not None
+                                  else None)
+        self._legend = options
+        if unchanged:
+            self._update_legend()
+        else:
+            self._rebuild_points()
+
+    @staticmethod
+    def _as_groups(groups) -> list:
+        return [(label, style, np.asarray(lons, float),
+                 np.asarray(lats, float))
+                for label, style, lons, lats in groups]
 
     def set_legend(self, options: LegendOptions) -> None:
         """Install the full set of legend settings and redraw the legend."""
@@ -1802,6 +1910,19 @@ class MapRenderer:
         self._point_alpha = max(min(float(alpha), 1.0), 0.05)
         self._rebuild_points()
 
+    def set_point_edge(self, color: str, width: float) -> None:
+        """Outline filled markers in *color* at *width* points (0 = none)."""
+        self._point_edge = (color or POINT_EDGE_COLOR,
+                            max(float(width), 0.0))
+        self._rebuild_points()
+
+    def _marker_paint(self, style: PointStyle) -> tuple[str, str, float]:
+        """(face, edge, edge width) for a marker: open markers draw only an
+        outline in their own colour, filled ones take the point outline."""
+        if style.is_open:
+            return "none", style.color, 1.2
+        return (style.color, *self._point_edge)
+
     def _rebuild_points(self) -> None:
         for artist in self._point_artists:
             artist.remove()
@@ -1813,10 +1934,7 @@ class MapRenderer:
                     xs, ys = self.proj.forward(lons, lats)
                     xs = np.concatenate([xs + off for off in offsets])
                     ys = np.tile(ys, len(offsets))
-                    if style.is_open:  # outline-only marker
-                        face, edge, lw = "none", style.color, 1.2
-                    else:
-                        face, edge, lw = style.color, "white", 0.5
+                    face, edge, lw = self._marker_paint(style)
                     self._point_artists.append(self.ax.scatter(
                         xs, ys, s=style.size, c=face,
                         marker=style.mpl_marker, zorder=Z_POINTS,
@@ -1831,10 +1949,7 @@ class MapRenderer:
         if style is None:
             return Line2D([], [], linestyle="", marker="")
         area = style.size if size is None else size
-        if style.is_open:
-            face, edge, edge_w = "none", style.color, 1.2
-        else:
-            face, edge, edge_w = style.color, "white", 0.5
+        face, edge, edge_w = self._marker_paint(style)
         return Line2D([], [], linestyle="", marker=style.mpl_marker,
                       markersize=max(np.sqrt(area), 2),
                       markerfacecolor=face, color=style.color,

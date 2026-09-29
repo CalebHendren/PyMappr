@@ -11,7 +11,7 @@ import tkinter as tk
 import pytest
 
 from pymappr.legend import LegendOptions, row_key
-from pymappr.styles import PointStyle
+from pymappr.styles import POINT_EDGE_COLOR, POINT_EDGE_WIDTH, PointStyle
 from pymappr.ui.legend_editor import LegendEditorDialog
 from pymappr.ui.control_panel import ControlPanel
 
@@ -82,9 +82,9 @@ def test_every_option_round_trips_through_the_widgets(panel):
 
 
 def test_a_blank_swatch_gap_means_automatic(panel):
-    panel.legend_handle_pad_var.set("")
+    panel.legend_vars["handle_text_pad"].set("")
     assert panel.legend_options().handle_text_pad is None
-    panel.legend_handle_pad_var.set("1.5")
+    panel.legend_vars["handle_text_pad"].set("1.5")
     assert panel.legend_options().handle_text_pad == pytest.approx(1.5)
 
 
@@ -92,24 +92,48 @@ def test_half_typed_numbers_fall_back_instead_of_raising(panel):
     # Spinboxes report on every keystroke, so "" and "-" are ordinary
     # states the panel has to survive rather than error on.
     for partial in ("", "-", ".", "abc"):
-        panel.legend_fontsize_var.set(partial)
-        panel.legend_columns_var.set(partial)
+        panel.legend_vars["fontsize"].set(partial)
+        panel.legend_vars["columns"].set(partial)
         options = panel.legend_options()
         assert options.fontsize == LegendOptions().fontsize
         assert options.columns == LegendOptions().columns
 
 
 def test_numbers_are_clamped_to_their_range(panel):
-    panel.legend_fontsize_var.set("999")
+    panel.legend_vars["fontsize"].set("999")
     assert panel.legend_options().fontsize == 32.0
-    panel.legend_columns_var.set("0")
+    panel.legend_vars["columns"].set("0")
     assert panel.legend_options().columns == 1
 
 
 def test_colour_swatches_repaint_when_options_are_restored(panel):
     panel.set_legend_options(LegendOptions(frame_color="#abcdef"))
-    button = panel._color_buttons[str(panel.legend_frame_color_var)]
+    button = panel._color_buttons[str(panel.legend_vars["frame_color"])]
     assert button.cget("bg") == "#abcdef"
+
+
+def test_point_outline_defaults_to_the_old_white_edge(panel):
+    assert panel.point_edge() == (POINT_EDGE_COLOR, POINT_EDGE_WIDTH)
+
+
+def test_point_outline_round_trips_and_repaints_its_swatch(panel):
+    panel.set_point_edge("#000000", 0.6)
+    assert panel.point_edge() == ("#000000", pytest.approx(0.6))
+    button = panel._color_buttons[str(panel.point_edge_color_var)]
+    assert button.cget("bg") == "#000000"
+    panel.point_edge_width_var.set("99")
+    assert panel.point_edge()[1] == 3.0
+
+
+def test_typing_redraws_once_the_typing_pauses(panel, tk_root):
+    calls = []
+    on_key = panel._after_typing(lambda: calls.append(1), delay_ms=20)
+    for _key in range(5):
+        on_key()
+    assert calls == []
+    tk_root.after(80, tk_root.quit)
+    tk_root.mainloop()
+    assert calls == [1]
 
 
 # ----------------------------------------------------- legend row editor

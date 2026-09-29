@@ -2,27 +2,25 @@ from __future__ import annotations
 
 import math
 import re
+from functools import lru_cache
+from pathlib import Path
 
 from pymappr import __version__
-from pymappr.codecheck import LANGUAGES
 from pymappr.layers import (BATHYMETRY_STEPS, CONTINENT_EXTENTS,
                             LAYER_SPECS)
-from pymappr.legend import (LegendOptions, is_hidden, legend_counts,
-                            legend_sections, manual_order, order_labels,
-                            override_label, row_key)
+from pymappr.layout import column_key, layout_points, with_default_title
+from pymappr.legend import LegendOptions
 from pymappr.projections import CAP_CLIP_RADIUS, get_projection, is_globe
 from pymappr.renderer import (BATHYMETRY_COLORS, FILL_COLORS, FILL_LAYERS,
                               LABEL_STYLES, LINE_LAYERS, MARGINS_PLAIN,
                               MARGINS_WITH_TICKS, POINT_LAYERS, Z_BATHYMETRY,
                               Z_LAKE_FILL, Z_OCEAN, Z_POINT_LAYERS)
-from pymappr.decorations import (CompassOptions, ScaleBarOptions,
-                                 corner_anchor, format_length,
-                                 nice_length, unit_metres)
-from pymappr.styles import (PointStyle, apply_override, attribute_style_maps,
-                            default_styles, group_points, resolve_nesting,
-                            style_by_attributes)
+from pymappr.decorations import CompassOptions, ScaleBarOptions
+from pymappr.styles import (DEFAULT_PALETTE, POINT_EDGE_COLOR,
+                            POINT_EDGE_WIDTH, PointStyle, palette_for)
 from pymappr.updates import GITHUB_REPO
 
+LANGUAGES = ("Python", "R")
 CODE_EXTENSIONS = {"Python": ".py", "R": ".R"}
 
 # Home page for the attribution comment at the top of every script.
@@ -89,7 +87,7 @@ BASEMAP_RASTERS = {
 BASEMAP_SIZE = (5400, 2700)
 
 # PyMappr marker name -> R pch code. Shapes with a filled+outlined R
-# variant (21-25) get it, so filled markers carry the app's white edge;
+# variant (21-25) get it, so filled markers carry the app's outline;
 # open variants use the hollow codes. Shapes base R lacks fall back.
 _R_PCH = {
     "Circle": 21, "Circle (open)": 1,
@@ -119,6 +117,17 @@ _R_LINETYPES = {
     (0, (5, 3)): "longdash",
     (0, (6, 3)): "longdash",
 }
+
+
+# The pre-made functions pasted verbatim below every script's configuration
+# block. They replicate pymappr/renderer.py for a single static view, and live
+# in real .py/.R files so editors, linters and diffs treat them as code.
+TEMPLATE_DIR = Path(__file__).resolve().parent / "templates"
+
+
+@lru_cache(maxsize=None)
+def _template(name: str) -> str:
+    return (TEMPLATE_DIR / name).read_text(encoding="utf-8")
 
 
 # ----------------------------------------------------------- configuration
@@ -327,25 +336,6 @@ def _label_layers(m: dict, zoom: float) -> list[dict]:
     return labels
 
 
-def _display_labels(raw_labels: list[str], entry_name: str, multi: bool,
-                    attribute_mode: bool,
-                    used: set[str]) -> dict[str, str]:
-    """Raw group label -> legend label, disambiguated across datasets the
-    same way the app does it."""
-    mapping: dict[str, str] = {}
-    for label in raw_labels:
-        display = label
-        if multi and attribute_mode:
-            display = label
-        elif multi and label == "All points":
-            display = entry_name
-        elif multi and label in used:
-            display = f"{label} ({entry_name})"
-        used.add(display)
-        mapping[label] = display
-    return mapping
-
-
 def _dataset_filename(name: str, used: set[str]) -> str:
     """A filesystem-safe ``<name>.csv`` unique within *used*."""
     stem = re.sub(r"[^A-Za-z0-9._-]+", "_", str(name)).strip("._-")
@@ -370,37 +360,25 @@ def _style_dict(style: PointStyle | None) -> dict | None:
 
 
 def _dataset_configs(entries, data_mode: str = "inline",
-                     options: LegendOptions | None = None
+                     options: LegendOptions | None = None,
+                     palette: list[str] | None = None
                      ) -> tuple[list[dict], dict[str, PointStyle],
-                                dict[str, str], list | None]:
-    """Per-dataset script configs, the combined legend-label -> style map
-    (in render order), the point data to write as ``data/<name>.csv`` in
-    ``"files"`` mode, and the structured legend sections (None in plain
-    mode) - replicating the app's ``_push_points`` exactly.
+                                dict[str, str], list | None, list | None]:
+    """Per-dataset script configs, the legend-label -> style map (in render
+    order), the point data to write as ``data/<name>.csv`` in ``"files"``
+    mode, the sectioned legend (None in plain mode) and the plain legend's
+    row order (None when sectioned).
+
+    Everything about what is drawn comes from :func:`layout_points`, the
+    same function the app draws with, so the script matches the map.
     """
-    options = options or LegendOptions()
-    visible = [e for e in entries if e.visible and len(e.dataset)]
-    multi = len(visible) > 1
-    any_attr = False
-    for entry in visible:
-        key_by_label = dict(zip(entry.dataset.name_labels,
-                                entry.dataset.name_keys))
-        if key_by_label.get(entry.symbol_by) is not None:
-            any_attr = True
-    used: set[str] = set()
+    layout = layout_points(entries, options or LegendOptions(),
+                           palette or DEFAULT_PALETTE)
     used_files: set[str] = set()
-    styles: dict[str, PointStyle] = {}
     configs: list[dict] = []
     data_files: dict[str, str] = {}
-    sections: list = []
-    row_order: list[str] = []
-    palette_offset = 0
-    for entry in visible:
-        frame = entry.dataset.frame
-        key_by_label = dict(zip(entry.dataset.name_labels,
-                                entry.dataset.name_keys))
-        color_key = key_by_label.get(entry.color_by)
-        symbol_key = key_by_label.get(entry.symbol_by)
+    for dataset in layout.datasets:
+        entry = dataset.entry
         # Every dataset is normalized to CSV (labels + Longitude/Latitude)
         # so the script never depends on the original file's format.
         csv_text = _inline_csv(entry)
@@ -413,8 +391,10 @@ def _dataset_configs(entries, data_mode: str = "inline",
             "group_col": None,
             "color_col": None,
             "symbol_col": None,
-            "default_label": entry.name,
-            "label_map": {},
+            # The label an ungrouped dataset's points are keyed by, before
+            # label_map turns it into the legend text.
+            "default_label": "All points",
+            "label_map": dataset.label_map,
             # Original source path, for a provenance comment only (not read
             # by the generated loader).
             "source": entry.dataset.source_path or None,
@@ -425,108 +405,14 @@ def _dataset_configs(entries, data_mode: str = "inline",
             data_files[rel] = csv_text
         else:
             config["inline_data"] = csv_text
-        if symbol_key is not None:
-            # Two-attribute styling: one render group per (color, symbol)
-            # pair, and a sectioned legend keyed by the two columns.
+        if dataset.attribute:
             config["color_col"] = entry.color_by or None
             config["symbol_col"] = entry.symbol_by or None
-            color_map, symbol_map = attribute_style_maps(frame, color_key,
-                                                         symbol_key,
-                                                         options.hierarchy)
-            nested = resolve_nesting(frame, color_key, symbol_key,
-                                     options.hierarchy)
-            combos = style_by_attributes(frame, color_key, symbol_key,
-                                         color_map, symbol_map,
-                                         entry.legend_overrides, nested)
-            raw = [label for label, _style, _sub in combos]
-            display = _display_labels(raw, entry.name, multi, True, used)
-            for label, style, _sub in combos:
-                styles[display[label]] = style
-            prefix = (f"{entry.name}: "
-                      if (multi and options.dataset_prefix) else "")
-            # Same builder the app draws with, so an exported script's legend
-            # matches the map it was exported from.
-            sections += legend_sections(
-                frame, color_key, symbol_key, color_map, symbol_map,
-                entry.color_by, entry.symbol_by, prefix=prefix,
-                counts=legend_counts(frame, color_key, symbol_key)
-                if (options.counts or options.orders_by_count) else None,
-                options=options, overrides=entry.legend_overrides)
-        else:
-            group_key = key_by_label.get(entry.group_by)
-            groups = group_points(frame, group_key)
-            labels = [label for label, _sub in groups]
-            color_keys = None
-            if color_key is not None and color_key in frame.columns:
-                color_keys = [str(sub[color_key].iloc[0]) if len(sub) else ""
-                              for _label, sub in groups]
-            fresh = default_styles(labels, color_keys=color_keys,
-                                   vary_symbols=entry.vary_symbols,
-                                   palette_offset=palette_offset)
-            palette_offset += len(labels)
-            display = _display_labels(labels, entry.name, multi, False, used)
-            # A row the user named themselves keeps that name; the rest get
-            # the disambiguated one worked out above.
-            over = {label: entry.legend_overrides.get(row_key("group", label))
-                    for label in labels}
-            display = {label: override_label(over[label]) or text
-                       for label, text in display.items()}
-            # Counts ride on the display label, exactly as the app puts them
-            # on the point-group label, so the exported legend matches.
-            total = sum(len(sub) for _label, sub in groups)
-            sizes = {label: len(sub) for label, sub in groups}
-            if options.counts:
-                display = {label: _counted(text, sizes[label], total, options)
-                           for label, text in display.items()}
-            entry_styles = {}
-            for label in labels:
-                # entry.styles is the app's resolved style for the group, so
-                # it is the base here; an entry built without going through
-                # the app has only its defaults and the overrides.
-                style = apply_override(entry.styles.get(label, fresh[label]),
-                                       over[label])
-                styles[display[label]] = style
-                # Hidden rows keep their points but leave the legend.
-                if not is_hidden(over[label]):
-                    entry_styles[display[label]] = style
-            by_text = {display[label]: sizes[label] for label in labels}
-            place = {display[label]: manual_order(over[label])
-                     for label in labels}
-            ordered = _order_rows(list(entry_styles), options,
-                                  lambda t: by_text.get(t, 0), place)
-            row_order += ordered
-            if group_key is not None:
-                config["group_col"] = entry.group_by
-            if entry_styles:
-                title = entry.name if options.section_titles else ""
-                sections.append((title, [(t, entry_styles[t])
-                                         for t in ordered]))
-        config["label_map"] = display
+        elif column_key(entry, entry.group_by) is not None:
+            config["group_col"] = entry.group_by
         configs.append(config)
-    return (configs, styles, data_files, (sections if any_attr else None),
-            (None if any_attr else row_order))
-
-
-def _order_rows(labels: list, options: LegendOptions, count_of,
-                place: dict) -> list:
-    """Legend row order for group-by mode, manual ordering included."""
-    if options.order == "manual":
-        return sorted(labels, key=lambda t: (place.get(t, 1 << 30),
-                                             labels.index(t)))
-    return order_labels(labels, options.order, count_of)
-
-
-def _counted(label: str, n: int, total: int, options: LegendOptions) -> str:
-    """A plain-mode legend row's text with its count appended, matching
-    ``PyMapprApp._counted_label``."""
-    pct = (100.0 * n / total) if total else 0.0
-    if options.count_format == "n":
-        return f"{label} {n}"
-    if options.count_format == "(n, %)":
-        return f"{label} ({n}, {pct:.0f}%)"
-    if options.count_format == "%":
-        return f"{label} {pct:.0f}%"
-    return f"{label} ({n})"
+    styles = {label: style for label, style, _rows in layout.groups}
+    return configs, styles, data_files, layout.sections, layout.row_order
 
 
 def _inline_csv(entry) -> str:
@@ -576,11 +462,13 @@ def build_config(state: dict, entries, project_name: str = "map",
     layers, notes = _base_layers(m, zoom)
     label_layers = _label_layers(m, zoom)
     options = LegendOptions.from_dict(legend)
+    if not (options.title or "").strip():
+        options.title = None
+    options = with_default_title(entries, options)
     datasets, styles, data_files, sections, row_order = _dataset_configs(
-        entries, data_mode, options)
-    title = str(legend.get("title") or "").strip()
-    if not title and len(datasets) == 1 and datasets[0]["group_col"]:
-        title = datasets[0]["group_col"]
+        entries, data_mode, options, palette_for(m.get("palette")))
+    edge = dict(state.get("point_edge") or {})
+    title = (options.title or "").strip()
     clip_cap = None
     if is_globe(projection_name):
         clip_cap = (round(projection.lon_0, 6), round(projection.lat_0, 6),
@@ -625,6 +513,9 @@ def build_config(state: dict, entries, project_name: str = "map",
         "legend": {**options.to_dict(), "title": title,
                    "handle_text_pad": options.pad_for(sections is not None)},
         "point_alpha": _num(state.get("point_alpha", 1.0), 1.0),
+        "point_edge": {"color": str(edge.get("color") or POINT_EDGE_COLOR),
+                       "width": _num(edge.get("width", POINT_EDGE_WIDTH),
+                                     POINT_EDGE_WIDTH)},
         "dpi": int(_num(m.get("dpi", 200), 200.0)),
         "notes": notes,
     }
@@ -705,10 +596,11 @@ Generated by {config["generator"]} from pre-made function templates and
 the map's saved settings
 
 Just run it: open this file in an IDE (PyCharm, VS Code, ...) and click
-Run, or `python recreate_map.py` in a terminal. Any missing packages
-(pandas, geopandas, matplotlib) are installed automatically on first run,
-and the map data is downloaded from Natural Earth and cached in
-naturalearth_cache/ next to this script.
+Run, or `python recreate_map.py` in a terminal. If a package it needs
+(pandas, geopandas, matplotlib) is missing, it prints the pip command to
+install it - or run `python recreate_map.py --install-deps` to have it
+installed for you. The map data is downloaded from Natural Earth and cached
+in naturalearth_cache/ next to this script.
 
 Output:  map.png (also opens an interactive window).
 
@@ -773,6 +665,8 @@ def _py_config(config: dict) -> str:
     lines.append(f'COMPASS = {_py(compass)}')
     lines.append(f'SCALE_BAR = {_py(config["scale_bar"])}')
     lines.append(f'POINT_ALPHA = {_py(config["point_alpha"])}')
+    lines.append(f'POINT_EDGE = {_py(config["point_edge"])}'
+                 "  # outline around filled markers")
     lines.append(f'DPI = {_py(config["dpi"])}')
     lines.append('OUTPUT_FILE = "map.png"')
     lines.append("")
@@ -856,1048 +750,9 @@ def _py_config(config: dict) -> str:
     return "\n".join(lines) + "\n"
 
 
-# The pre-made functions pasted verbatim into every generated Python
-# script; only the configuration block above them changes. They replicate
-# pymappr/renderer.py for a single static view.
-_PY_FUNCTIONS = '''
-
-# ------------------- pre-made functions (identical for every export) -----
-
-import importlib
-import io
-import math
-import subprocess
-import sys
-import zipfile
-from pathlib import Path
-from urllib.request import urlretrieve
-
-
-def ensure_dependencies():
-    """Install any missing third-party packages into this interpreter, so
-    the script runs on a fresh Python with nothing set up - paste it into
-    an IDE and click Run. Installs with pip in the current environment."""
-    required = {"numpy": "numpy", "pandas": "pandas",
-                "geopandas": "geopandas", "matplotlib": "matplotlib"}
-    missing = []
-    for module, package in required.items():
-        try:
-            importlib.import_module(module)
-        except ImportError:
-            missing.append(package)
-    if not missing:
-        return
-    print("Installing missing packages: " + ", ".join(missing) + " ...")
-    try:
-        subprocess.check_call([sys.executable, "-m", "pip", "install",
-                               *missing])
-    except Exception as exc:  # no pip, offline, no permission, ...
-        raise SystemExit(
-            "Could not auto-install " + ", ".join(missing) + " (" + str(exc)
-            + ").\\nInstall them yourself, then rerun:\\n    "
-            + sys.executable + " -m pip install " + " ".join(missing))
-    importlib.invalidate_caches()
-
-
-ensure_dependencies()
-
-import matplotlib.patheffects as patheffects
-import matplotlib.pyplot as plt
-import matplotlib.transforms as mtransforms
-import numpy as np
-import pandas as pd
-import geopandas as gpd
-from matplotlib.collections import LineCollection
-from matplotlib.lines import Line2D
-from matplotlib.patches import Polygon, Rectangle
-from matplotlib.ticker import FuncFormatter, MultipleLocator
-
-# Resolve the cache and any data/ files next to this script, so it runs
-# the same no matter which directory it is launched from.
-SCRIPT_DIR = (Path(__file__).resolve().parent
-              if "__file__" in globals() else Path.cwd())
-
-LON_HINTS = ("lon", "lng", "long", "longitude", "x")
-LAT_HINTS = ("lat", "latitude", "y")
-FALLBACK_STYLE = {"color": "#7f7f7f", "marker": "o", "size": 30.0,
-                  "open": False}
-LABEL_HALO = [patheffects.withStroke(linewidth=2.2, foreground="white",
-                                     alpha=0.85)]
-Z_GRID, Z_POINTS, Z_LABELS, Z_COMPASS = 1.8, 2.6, 3.0, 4.0
-Z_SCALE_BAR = 4.0
-BASEMAP_ARCHIVES = {
-    "relief": (("50m", "raster", "NE1_50M_SR_W"), "ne1_world.jpg"),
-    "relief_alt": (("50m", "raster", "NE2_50M_SR_W"), "ne2_world.jpg"),
-    "relief_grey": (("50m", "raster", "GRAY_50M_SR_W"), "gray_world.jpg"),
-    "blue_marble": (("50m", "raster", "HYP_50M_SR_W"), "hyp_world.jpg"),
-}
-BASEMAP_IMG_SIZE = (5400, 2700)
-WARP_GRID = (1600, 800)
-
-
-def download_archive(scale, category, name):
-    """Download a Natural Earth zip (cached next to this script)."""
-    cache = SCRIPT_DIR / "naturalearth_cache"
-    cache.mkdir(exist_ok=True)
-    stem = name if category == "raster" else f"ne_{scale}_{name}"
-    zip_path = cache / f"{stem}.zip"
-    if not zip_path.exists():
-        url = (f"https://naturalearth.s3.amazonaws.com/"
-               f"{scale}_{category}/{stem}.zip")
-        print(f"Downloading {url}")
-        urlretrieve(url, zip_path)
-    return zip_path
-
-
-def load_natural_earth(name, category, scale, member=None):
-    """Load a Natural Earth vector layer, downloading it if needed."""
-    zip_path = download_archive(scale, category, name)
-    stem = f"ne_{scale}_{name}"
-    folder = zip_path.parent / stem
-    if not folder.exists():
-        folder.mkdir()
-        with zipfile.ZipFile(zip_path) as archive:
-            for entry in archive.namelist():
-                base = Path(entry).name
-                if base and not entry.endswith("/"):
-                    (folder / base).write_bytes(archive.read(entry))
-    shp = folder / f"{member or stem}.shp"
-    gdf = gpd.read_file(shp)
-    gdf.columns = [c.lower() for c in gdf.columns]
-    return gdf
-
-
-def filter_layer(gdf, spec):
-    """Keep (or drop) features matching (column, values, keep)."""
-    if not spec:
-        return gdf
-    column, values, keep = spec
-
-    def norm(value):
-        text = str(value).strip().lower()
-        try:
-            return str(float(text))
-        except ValueError:
-            return text
-
-    match = next((c for c in gdf.columns
-                  if c.lower() == str(column).lower()), None)
-    if match is None:
-        print(f"  note: column {column!r} not found; keeping every feature")
-        return gdf
-    mask = gdf[match].map(norm).isin({norm(v) for v in values})
-    return gdf[mask] if keep else gdf[~mask]
-
-
-def feature_min_zoom(gdf):
-    """Per-feature zoom rank: min_zoom, else scalerank, else 5."""
-    if "min_zoom" in gdf.columns:
-        ranks = pd.to_numeric(gdf["min_zoom"], errors="coerce")
-    elif "scalerank" in gdf.columns:
-        ranks = pd.to_numeric(gdf["scalerank"], errors="coerce")
-    else:
-        ranks = pd.Series(0.0, index=gdf.index)
-    return ranks.fillna(5.0)
-
-
-# ------------------------------------------------------------- projection
-
-def _transformer():
-    from pyproj import Transformer
-
-    return Transformer.from_crs("EPSG:4326", MAP_CRS, always_xy=True)
-
-
-def proj_forward(lons, lats):
-    """Project lon/lat arrays into map coordinates, like the app: clip to
-    the projection's usable band, NaN out the globe's far hemisphere."""
-    lons = np.asarray(lons, dtype=float)
-    lats = np.asarray(lats, dtype=float)
-    if MAP_CRS is None:
-        return lons, lats
-    lats = np.clip(lats, PROJ["min_lat"], PROJ["max_lat"])
-    if PROJ["lon_halfspan"] < 180.0:
-        lons = np.clip(lons, PROJ["lon_0"] - PROJ["lon_halfspan"],
-                       PROJ["lon_0"] + PROJ["lon_halfspan"])
-    xs, ys = _transformer().transform(lons, lats)
-    xs, ys = np.asarray(xs, dtype=float), np.asarray(ys, dtype=float)
-    if PROJ["hemisphere"]:
-        bad = ~(np.isfinite(xs) & np.isfinite(ys))
-        if bad.any():
-            xs = np.where(bad, np.nan, xs)
-            ys = np.where(bad, np.nan, ys)
-    return xs, ys
-
-
-def cap_polygon(lon0, lat0, radius):
-    """The visible spherical cap (a lon/lat polygon) for clipping to an
-    orthographic globe's near hemisphere, with +/-360 copies so a cap
-    crossing the antimeridian still covers data stored in [-180, 180]."""
-    from shapely import affinity
-    from shapely.geometry import Polygon
-    from shapely.ops import unary_union
-
-    az = np.linspace(0.0, 2.0 * np.pi, 181)
-    phi0, r = np.radians(lat0), np.radians(radius)
-    lat = np.arcsin(np.sin(phi0) * np.cos(r)
-                    + np.cos(phi0) * np.sin(r) * np.cos(az))
-    dlon = np.arctan2(np.sin(az) * np.sin(r) * np.cos(phi0),
-                      np.cos(r) - np.sin(phi0) * np.sin(lat))
-    lon, lat = lon0 + np.degrees(dlon), np.degrees(lat)
-    if lat0 + radius >= 90.0:      # cap encloses the north pole
-        order = np.argsort(lon)
-        shell = list(zip(lon[order], lat[order]))
-        shell += [(lon0 + 180.0, 90.0), (lon0 - 180.0, 90.0)]
-    elif lat0 - radius <= -90.0:   # ... or the south pole
-        order = np.argsort(lon)
-        shell = list(zip(lon[order], lat[order]))
-        shell += [(lon0 + 180.0, -90.0), (lon0 - 180.0, -90.0)]
-    else:
-        shell = list(zip(lon, lat))
-    cap = Polygon(shell).buffer(0)
-    return unary_union([affinity.translate(cap, xoff=off)
-                        for off in (-360.0, 0.0, 360.0)])
-
-
-def to_map_crs(gdf):
-    """Reproject a GeoDataFrame into the map projection exactly like the
-    app: clip to the visible cap / latitude band first, and leave the
-    data untouched on the plain lon/lat projection."""
-    if MAP_CRS is None:
-        return gdf
-    from shapely.geometry import box
-
-    if CLIP_CAP is not None:
-        gdf = gdf.clip(cap_polygon(*CLIP_CAP))
-    elif PROJ["max_lat"] < 90.0 or PROJ["min_lat"] > -90.0:
-        gdf = gdf.clip(box(-180, PROJ["min_lat"], 180, PROJ["max_lat"]))
-    return gdf.to_crs(MAP_CRS)
-
-
-def wrap_offsets():
-    """Horizontal world copies needed to cover the view (the app draws
-    wrapped copies when the view crosses a world edge)."""
-    if PROJ["hemisphere"]:
-        return (0.0,)
-    wx0, wx1 = PROJ["bounds"][0], PROJ["bounds"][1]
-    world_w = wx1 - wx0
-    offsets = [0.0]
-    if min(VIEW[0], VIEW[1]) < wx0:
-        offsets.append(-world_w)
-    if max(VIEW[0], VIEW[1]) > wx1:
-        offsets.append(world_w)
-    return tuple(offsets)
-
-
-# ---------------------------------------------------------------- basemap
-
-def basemap_image():
-    """The raster basemap, prepared exactly like PyMappr does it:
-    the Natural Earth raster resampled to a JPEG-compressed world image."""
-    from PIL import Image
-
-    if BASEMAP not in BASEMAP_ARCHIVES:
-        return None
-    archive_args, jpg_name = BASEMAP_ARCHIVES[BASEMAP]
-    cache = SCRIPT_DIR / "naturalearth_cache"
-    jpg = cache / jpg_name
-    if not jpg.exists():
-        zip_path = download_archive(*archive_args)
-        print("Preparing the basemap raster (one-time)...")
-        with zipfile.ZipFile(zip_path) as archive:
-            tif_name = next(m for m in archive.namelist()
-                            if m.lower().endswith(".tif"))
-            with archive.open(tif_name) as handle:
-                img = Image.open(io.BytesIO(handle.read()))
-                img.load()
-        img = img.convert("RGB").resize(BASEMAP_IMG_SIZE, Image.LANCZOS)
-        img.save(jpg, "JPEG", quality=85)
-    with Image.open(jpg) as img:
-        return np.asarray(img.convert("RGB"))
-
-
-def warped_basemap():
-    """The basemap image in the map projection, plus its extent."""
-    img = basemap_image()
-    if img is None:
-        return None
-    if MAP_CRS is None:
-        return img, (-180, 180, -90, 90)
-    wx0, wx1, wy0, wy1 = PROJ["bounds"]
-    nx, ny = WARP_GRID
-    xs = np.linspace(wx0, wx1, nx)
-    ys = np.linspace(wy1, wy0, ny)  # top row first (origin="upper")
-    gx, gy = np.meshgrid(xs, ys)
-    with np.errstate(all="ignore"):
-        lons, lats = _transformer().transform(gx.ravel(), gy.ravel(),
-                                              direction="INVERSE")
-    lons = np.asarray(lons, float).reshape(gy.shape)
-    lats = np.asarray(lats, float).reshape(gy.shape)
-    valid = (np.isfinite(lons) & np.isfinite(lats)
-             & (np.abs(lons) <= 180.001) & (np.abs(lats) <= 90.001))
-    h, w = img.shape[:2]
-    lons = np.clip(np.nan_to_num(lons, nan=0.0, posinf=0.0, neginf=0.0),
-                   -360.0, 360.0)
-    lats = np.clip(np.nan_to_num(lats, nan=0.0, posinf=0.0, neginf=0.0),
-                   -90.0, 90.0)
-    cols = np.clip(((lons + 180) / 360 * w).astype(int), 0, w - 1)
-    rows = np.clip(((90 - lats) / 180 * h).astype(int), 0, h - 1)
-    warped = np.zeros((ny, nx, 4), dtype=np.uint8)
-    warped[..., :3] = img[rows, cols]
-    warped[..., 3] = np.where(valid, 255, 0)
-    return warped, (wx0, wx1, wy0, wy1)
-
-
-def draw_basemap_raster(ax):
-    if BASEMAP == "simple":
-        return
-    result = warped_basemap()
-    if result is None:
-        return
-    img, extent = result
-    x0, x1, y0, y1 = extent
-    for off in wrap_offsets():
-        ax.imshow(img, extent=(x0 + off, x1 + off, y0, y1),
-                  origin="upper", interpolation="bilinear", zorder=0.1)
-
-
-# ------------------------------------------------------------ base layers
-
-def plot_wrapped(ax, gdf, zorder, **plot_kwargs):
-    """Plot a GeoDataFrame plus wrapped world copies where the view needs
-    them (aspect=None keeps the app's canvas-driven geometry)."""
-    for off in wrap_offsets():
-        shifted = gdf if not off else gdf.set_geometry(
-            gdf.geometry.translate(xoff=off))
-        shifted.plot(ax=ax, zorder=zorder, aspect=None, **plot_kwargs)
-
-
-def add_base_layers(ax):
-    """Draw every configured Natural Earth layer with the renderer's true
-    draw order, colors, and styling."""
-    for layer in LAYERS:
-        print(f"Layer: {layer['name']} ({layer['scale']})")
-        gdf = load_natural_earth(layer["name"], layer["category"],
-                                 layer["scale"], layer.get("member"))
-        gdf = filter_layer(gdf, layer.get("filter"))
-        if layer["kind"] == "continents":
-            gdf = (gdf[["continent", "geometry"]]
-                   .dissolve(by="continent").reset_index())
-        if layer["kind"] == "point":
-            threshold = layer.get("min_zoom_max")
-            if threshold is not None:
-                gdf = gdf[feature_min_zoom(gdf) <= threshold]
-            xs, ys = proj_forward(gdf.geometry.x.to_numpy(),
-                                  gdf.geometry.y.to_numpy())
-            offsets = wrap_offsets()
-            px = np.concatenate([xs + off for off in offsets])
-            py = np.tile(ys, len(offsets))
-            ax.scatter(px, py, s=layer["size"], c=layer["color"],
-                       marker=layer["marker"],
-                       edgecolors=layer["edgecolor"], linewidths=0.5,
-                       zorder=layer["z"])
-            continue
-        gdf = to_map_crs(gdf)
-        if layer["kind"] == "fill":
-            plot_wrapped(ax, gdf, layer["z"], facecolor=layer["color"],
-                         edgecolor=layer["edgecolor"],
-                         linewidth=layer["width"], alpha=layer["alpha"])
-        else:  # line / continents outline
-            plot_wrapped(ax, gdf, layer["z"], facecolor="none",
-                         edgecolor=layer["color"],
-                         linewidth=layer["width"],
-                         linestyle=layer["linestyle"])
-
-
-# -------------------------------------------------------------- graticule
-
-def _norm_lon(value):
-    return (value + 180.0) % 360.0 - 180.0
-
-
-def format_lon(value, _pos=None):
-    value = _norm_lon(value)
-    if value in (0, 180, -180):
-        return f"{abs(value):g}\\N{DEGREE SIGN}"
-    return f"{abs(value):g}\\N{DEGREE SIGN}{'W' if value < 0 else 'E'}"
-
-
-def format_lat(value, _pos=None):
-    if value == 0:
-        return "0\\N{DEGREE SIGN}"
-    return f"{abs(value):g}\\N{DEGREE SIGN}{'S' if value < 0 else 'N'}"
-
-
-def draw_graticule(ax):
-    """The lon/lat grid exactly like the app: labelled axis ticks on the
-    plain projection, projected polylines on curved ones."""
-    interval = GRATICULE["interval"]
-    labels_on = bool(interval) and GRATICULE["labels"] and MAP_CRS is None
-    if interval and MAP_CRS is None:
-        ax.xaxis.set_major_locator(MultipleLocator(interval))
-        ax.yaxis.set_major_locator(MultipleLocator(interval))
-        ax.grid(True, color="#787878", linewidth=0.4, alpha=0.7)
-        for line in (*ax.get_xgridlines(), *ax.get_ygridlines()):
-            line.set_zorder(Z_GRID)
-    elif interval:
-        max_lat = PROJ["max_lat"]
-        segments = []
-        for lon in np.arange(-180, 180 + interval / 2, interval):
-            lats = np.linspace(-max_lat, max_lat, 91)
-            xs, ys = proj_forward(np.full_like(lats, lon), lats)
-            segments.append(np.column_stack([xs, ys]))
-        for lat in np.arange(-90, 90 + interval / 2, interval):
-            if abs(lat) > max_lat:
-                continue
-            lons = np.linspace(-180, 180, 181)
-            xs, ys = proj_forward(lons, np.full_like(lons, lat))
-            segments.append(np.column_stack([xs, ys]))
-        for off in wrap_offsets():
-            col = LineCollection(segments, colors="#787878",
-                                 linewidths=0.4, alpha=0.7, zorder=Z_GRID)
-            if off:
-                col.set_transform(mtransforms.Affine2D().translate(off, 0)
-                                  + ax.transData)
-            ax.add_collection(col)
-    ax.tick_params(labelbottom=labels_on, labelleft=labels_on,
-                   bottom=labels_on, left=labels_on)
-    if PROJ["hemisphere"]:  # the globe's horizon circle
-        az = np.linspace(0.0, 2.0 * np.pi, 361)
-        phi0 = np.radians(CLIP_CAP[1])
-        r = np.radians(89.9)
-        lat = np.arcsin(np.sin(phi0) * np.cos(r)
-                        + np.cos(phi0) * np.sin(r) * np.cos(az))
-        dlon = np.arctan2(np.sin(az) * np.sin(r) * np.cos(phi0),
-                          np.cos(r) - np.sin(phi0) * np.sin(lat))
-        lons = CLIP_CAP[0] + np.degrees(dlon)
-        xs, ys = proj_forward(lons, np.degrees(lat))
-        ax.plot(xs, ys, color="#787878", linewidth=0.8, zorder=Z_GRID)
-
-
-# ----------------------------------------------------------------- labels
-
-def label_anchors(spec):
-    """Label anchor points for a layer: x, y (lon/lat), text, min_label -
-    like the app's label store."""
-    gdf = load_natural_earth(spec["name"], spec["category"], spec["scale"],
-                             spec.get("member"))
-    gdf = filter_layer(gdf, spec.get("filter"))
-    column = spec["column"]
-    if column not in gdf.columns:
-        return pd.DataFrame(columns=["x", "y", "text", "min_label"])
-    gdf = gdf[gdf[column].notna() & (gdf[column] != "")].copy()
-    if spec["min_label_from_min_zoom"] or "min_label" not in gdf.columns:
-        if "min_zoom" in gdf.columns:
-            gdf["min_label"] = pd.to_numeric(gdf["min_zoom"],
-                                             errors="coerce")
-        elif "scalerank" in gdf.columns:
-            gdf["min_label"] = pd.to_numeric(gdf["scalerank"],
-                                             errors="coerce")
-        else:
-            gdf["min_label"] = 5.0
-    import warnings
-
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
-        if spec["dedupe_longest"]:
-            gdf["_len"] = gdf.geometry.length
-            gdf = (gdf.sort_values("_len", ascending=False)
-                      .drop_duplicates(subset=column))
-        if spec["geometry"] == "point":
-            pts = gdf.geometry
-        elif spec["geometry"] == "line":
-            pts = gdf.geometry.interpolate(0.5, normalized=True)
-        else:
-            pts = gdf.geometry.representative_point()
-    return pd.DataFrame({
-        "x": pts.x.to_numpy(), "y": pts.y.to_numpy(),
-        "text": gdf[column].astype(str).to_numpy(),
-        "min_label": pd.to_numeric(gdf["min_label"],
-                                   errors="coerce").fillna(5.0).to_numpy(),
-    })
-
-
-def estimate_rect(to_pixels, x, y, text, fontsize_px):
-    sx, sy = to_pixels.transform((x, y))
-    half_w = (len(text) * 0.31 + 0.3) * fontsize_px
-    half_h = 0.72 * fontsize_px
-    return (sx - half_w, sy - half_h, sx + half_w, sy + half_h)
-
-
-def overlaps_any(rect, rects):
-    ax0, ay0, ax1, ay1 = rect
-    for bx0, by0, bx1, by1 in rects:
-        if ax0 < bx1 and ax1 > bx0 and ay0 < by1 and ay1 > by0:
-            return True
-    return False
-
-
-def draw_labels(ax, fig):
-    """Map labels with the app's font scaling and overlap culling."""
-    if not LABEL_LAYERS:
-        return
-    x0, x1 = sorted(VIEW[:2])
-    y0, y1 = sorted(VIEW[2:])
-    font_scale = float(np.clip(0.78 + 0.06 * ZOOM, 0.78, 1.15))
-    placed = []
-    to_pixels = ax.transData
-    px_per_pt = fig.dpi / 72.0
-    for spec in LABEL_LAYERS:
-        points = label_anchors(spec)
-        xs, ys = proj_forward(points["x"].to_numpy(),
-                              points["y"].to_numpy())
-        font = dict(spec["font"])
-        font["fontsize"] = font["fontsize"] * font_scale
-        candidates = []
-        for off in wrap_offsets():
-            in_view = ((xs + off >= x0) & (xs + off <= x1)
-                       & (ys >= y0) & (ys <= y1)
-                       & np.isfinite(xs) & np.isfinite(ys))
-            sub = points[in_view].copy()
-            sub["px"] = xs[in_view] + off
-            sub["py"] = ys[in_view]
-            candidates.append(sub)
-        eligible = pd.concat(candidates)
-        if spec["feature_bias"] is not None:
-            eligible = eligible[eligible["min_label"]
-                                <= ZOOM + spec["feature_bias"]]
-        eligible = eligible.nsmallest(spec["cap"], "min_label")
-        va = "bottom" if spec["point_layer"] else "center"
-        for row in eligible.itertuples():
-            rect = estimate_rect(to_pixels, row.px, row.py, row.text,
-                                 font["fontsize"] * px_per_pt)
-            if overlaps_any(rect, placed):
-                continue
-            placed.append(rect)
-            ax.text(row.px, row.py, row.text, ha="center", va=va,
-                    zorder=Z_LABELS, clip_on=True,
-                    path_effects=LABEL_HALO, **font)
-
-
-# ------------------------------------------------- compass and scale bar
-
-METRES_PER_MILE = 1609.344
-_NICE = (1.0, 2.0, 3.0, 5.0)
-
-
-def _geod():
-    from pyproj import Geod
-
-    return Geod(ellps="WGS84")
-
-
-def proj_inverse(xs, ys):
-    """Map coordinates back to lon/lat (non-finite where undefined)."""
-    xs = np.asarray(xs, dtype=float)
-    ys = np.asarray(ys, dtype=float)
-    if MAP_CRS is None:
-        return xs, ys
-    with np.errstate(all="ignore"):
-        return _transformer().transform(xs, ys, direction="INVERSE")
-
-
-def ground_distance(x0, y0, x1, y1):
-    """Metres on the WGS84 ellipsoid between two points in map coordinates.
-
-    Axis units are degrees on the plain lon/lat projection and metres on a
-    projected CRS, and a projected metre is not a ground metre anyway - so
-    this measures from lon/lat, which is right for every projection.
-    """
-    lons, lats = proj_inverse(np.array([x0, x1]), np.array([y0, y1]))
-    lons = np.asarray(lons, dtype=float)
-    lats = np.asarray(lats, dtype=float)
-    if not np.isfinite(lons).all() or not np.isfinite(lats).all():
-        return float("nan")
-    _, _, metres = _geod().inv(lons[0], lats[0], lons[1], lats[1])
-    return abs(float(metres))
-
-
-def unit_metres(units):
-    return METRES_PER_MILE if units == "mi" else 1000.0
-
-
-def nice_length(metres, units):
-    """A round bar length, in metres, at or just below *metres*."""
-    per_unit = unit_metres(units)
-    value = metres / per_unit
-    if not math.isfinite(value) or value <= 0:
-        return 0.0
-    decade = 10.0 ** math.floor(math.log10(value))
-    for candidate in reversed(_NICE):
-        if candidate * decade <= value:
-            return candidate * decade * per_unit
-    return _NICE[-1] * decade / 10.0 * per_unit
-
-
-def format_length(metres, units):
-    """A bar's label. A metric bar under a kilometre is labelled in metres."""
-    if units != "mi" and metres < 1000.0:
-        return "%g m" % metres
-    value = metres / unit_metres(units)
-    text = ("%g" % value) if value >= 1 else ("%.3g" % value)
-    return text + (" mi" if units == "mi" else " km")
-
-
-def corner_anchor(corner, pad=0.03):
-    vertical, horizontal = (corner or "lower left").split()
-    x = pad if horizontal == "left" else 1.0 - pad
-    y = pad if vertical == "lower" else 1.0 - pad
-    return x, y
-
-
-def axes_to_data(ax, fx, fy):
-    x0, x1 = ax.get_xlim()
-    y0, y1 = ax.get_ylim()
-    return x0 + (x1 - x0) * fx, y0 + (y1 - y0) * fy
-
-
-def span_metres(ax, fx0, fx1, fy):
-    ax0, ay = axes_to_data(ax, fx0, fy)
-    ax1, _ = axes_to_data(ax, fx1, fy)
-    return ground_distance(ax0, ay, ax1, ay)
-
-
-def scale_reference_row(ax, fy):
-    """An axes row where the scale can actually be measured: a corner of a
-    Robinson or orthographic map lies outside the map itself."""
-    for step in (0.0, 0.25, 0.5, 0.75, 1.0):
-        row = fy + (0.5 - fy) * step
-        if np.isfinite(span_metres(ax, 0.45, 0.55, row)):
-            return row
-    return 0.5
-
-
-def estimate_scale(ax, fx, fy):
-    """Ground metres per unit of axes x-fraction near *fx* - a first guess,
-    refined against the bar's real endpoints below."""
-    left = float(np.clip(fx - 0.05, 0.0, 0.9))
-    metres = span_metres(ax, left, left + 0.1, fy)
-    if not np.isfinite(metres) or metres <= 0:
-        metres = span_metres(ax, 0.45, 0.55, fy)
-    if not np.isfinite(metres) or metres <= 0:
-        return float("nan")
-    return metres / 0.1
-
-
-def draw_compass(ax):
-    if not COMPASS["show"]:
-        return
-    x, y = corner_anchor(COMPASS["position"], pad=0.025)
-    size = max(float(COMPASS["size"]), 0.1)
-    color = COMPASS["color"]
-    reach = 0.07 * size
-    tail_y = y - reach if y > 0.5 else y + reach
-    if COMPASS["style"] == "triangle":
-        half = 0.016 * size
-        up = y > tail_y
-        base = tail_y + (0.02 * size if up else -0.02 * size)
-        ax.add_patch(Polygon(
-            [(x, y), (x - half, base), (x + half, base)], closed=True,
-            transform=ax.transAxes, facecolor=color, edgecolor="white",
-            linewidth=0.8 * size, zorder=Z_COMPASS, clip_on=False))
-        ax.text(x, tail_y, "N", transform=ax.transAxes, ha="center",
-                va="center", fontsize=10 * size, fontweight="bold",
-                color=color, path_effects=LABEL_HALO, zorder=Z_COMPASS,
-                clip_on=False)
-        return
-    ax.annotate(
-        "N", xy=(x, y), xytext=(x, tail_y),
-        xycoords="axes fraction", textcoords="axes fraction",
-        ha="center", va="center", fontsize=11 * size, fontweight="bold",
-        color=color, path_effects=LABEL_HALO, zorder=Z_COMPASS,
-        annotation_clip=False,
-        arrowprops=dict(arrowstyle="-|>,head_width=0.28,head_length=0.55",
-                        color=color, linewidth=1.4 * size,
-                        shrinkA=6 * size, shrinkB=0))
-
-
-BAR_HEIGHT = 0.011
-BAR_GAP = 0.005
-LABEL_GAP = 0.012
-LABEL_ROOM = 0.030
-
-
-def fit_bar_width(ax, metres, x, row, right_anchored):
-    """The axes-fraction width a bar of *metres* needs, or None when no
-    honest bar of that length fits.
-
-    The first guess is a short local sample, but a scale bar is long and the
-    map scale varies across it, so the width is refined against the bar's own
-    endpoints until the drawing really is the length its label claims.
-    """
-    per_fraction = estimate_scale(ax, x, row)
-    if not np.isfinite(per_fraction) or per_fraction <= 0:
-        return None
-    width = metres / per_fraction
-    for _ in range(6):
-        if not np.isfinite(width) or width <= 0 or width > 0.95:
-            return None
-        x0 = x - width if right_anchored else x
-        actual = span_metres(ax, x0, x0 + width, row)
-        if not np.isfinite(actual) or actual <= 0:
-            # The bar's own span is off the map - a corner of an orthographic
-            # globe, or outside a Robinson ellipse. Refine against the same
-            # width centred on the reference row instead.
-            actual = span_metres(ax, 0.5 - width / 2, 0.5 + width / 2, row)
-        if not np.isfinite(actual) or actual <= 0:
-            break
-        adjust = metres / actual
-        if abs(adjust - 1.0) < 0.001:
-            break
-        width *= adjust
-    if not np.isfinite(width) or width <= 0 or width > 0.95:
-        return None
-    return width
-
-
-def draw_scale_bar(ax):
-    """A geodesically measured scale bar, drawn in axes-fraction coordinates
-    so it keeps its place at any figure size."""
-    opts = SCALE_BAR
-    if not opts["show"]:
-        return
-    units = ["km", "mi"] if opts["units"] == "both" else [opts["units"]]
-    dragged = opts["anchor_x"] is not None and opts["anchor_y"] is not None
-    if dragged:
-        x, y = opts["anchor_x"], opts["anchor_y"]
-    else:
-        x, y = corner_anchor(opts["position"])
-    right_anchored = x > 0.5 and not dragged
-    top_anchored = y > 0.5 and not dragged
-
-    n = len(units)
-    stack = n * BAR_HEIGHT + (n - 1) * BAR_GAP
-    base_y = y - stack if top_anchored else y
-    # A second unit is labelled underneath, so lift the stack off the frame.
-    if n > 1 and not top_anchored and not dragged:
-        base_y += LABEL_ROOM
-
-    # Each unit gets its own round length, so "3000 km" is never paired with
-    # an unreadable "1864 mi" - two bars, each honest in its own unit, each
-    # measured on the row it is actually drawn on.
-    bars = []
-    for i, unit in enumerate(units):
-        y0 = base_y + (n - 1 - i) * (BAR_HEIGHT + BAR_GAP)
-        row = scale_reference_row(ax, y0 + BAR_HEIGHT / 2)
-        if i == 0 and opts["length_mode"] == "fixed" and opts["fixed_length"]:
-            metres = float(opts["fixed_length"]) * unit_metres(opts["units"])
-        else:
-            estimate = estimate_scale(ax, x, row)
-            if not np.isfinite(estimate) or estimate <= 0:
-                print("Scale bar: the map scale cannot be measured at "
-                      "this view.")
-                return
-            metres = nice_length(estimate * opts["width"], unit)
-        if metres <= 0:
-            return
-        width = fit_bar_width(ax, metres, x, row, right_anchored)
-        if width is None:
-            print("Scale bar: scale varies too much across this view to "
-                  "draw an accurate bar.")
-            return
-        bars.append((unit, metres, width, y0))
-
-    for i, (unit, metres, width, y0) in enumerate(bars):
-        x0 = x - width if right_anchored else x
-        if opts["style"] == "segmented":
-            segments = max(int(opts["segments"]), 1)
-        else:
-            segments = 1
-        for seg in range(segments):
-            ax.add_patch(Rectangle(
-                (x0 + width * seg / segments, y0), width / segments,
-                BAR_HEIGHT, transform=ax.transAxes,
-                facecolor=opts["color"] if seg % 2 == 0 else "white",
-                edgecolor=opts["color"], linewidth=0.8,
-                zorder=Z_SCALE_BAR, clip_on=False))
-        above = i == 0
-        ax.text(x0 + width / 2,
-                y0 + BAR_HEIGHT + LABEL_GAP if above else y0 - LABEL_GAP,
-                format_length(metres, unit), transform=ax.transAxes,
-                ha="center", va="bottom" if above else "top",
-                fontsize=opts["fontsize"], color=opts["color"],
-                path_effects=LABEL_HALO, zorder=Z_SCALE_BAR, clip_on=False)
-
-
-# ------------------------------------------------------------- point data
-
-def find_column(df, wanted, hints, what):
-    """Resolve a column by configured name, else by common-name hints."""
-    if wanted:
-        for column in df.columns:
-            if str(column).strip().lower() == str(wanted).strip().lower():
-                return column
-        raise SystemExit(f"Column {wanted!r} not found for {what}; "
-                         f"available: {list(df.columns)}")
-    names = {str(c).strip().lower(): c for c in df.columns}
-    for hint in hints:
-        if hint in names:
-            return names[hint]
-    for lowered, column in names.items():
-        if hints and lowered.startswith(hints[0]):
-            return column
-    raise SystemExit(f"Could not auto-detect the {what} column; set "
-                     f"lon_col/lat_col in DATASETS. "
-                     f"Available: {list(df.columns)}")
-
-
-def load_points(spec):
-    """Read one dataset (file or embedded CSV) with numeric lon/lat."""
-    if spec["inline_data"] is not None:
-        df = pd.read_csv(io.StringIO(spec["inline_data"]))
-    else:
-        path = Path(spec["path"])
-        if not path.is_absolute():
-            path = SCRIPT_DIR / path
-        suffix = path.suffix.lower()
-        if suffix in (".xlsx", ".xlsm", ".xltx", ".xltm", ".xls", ".ods"):
-            df = pd.read_excel(path)
-        elif suffix in (".tsv", ".txt"):
-            df = pd.read_csv(path, sep="\\t")
-        else:
-            df = pd.read_csv(path)
-    lon = find_column(df, spec["lon_col"], LON_HINTS, "longitude")
-    lat = find_column(df, spec["lat_col"], LAT_HINTS, "latitude")
-    df["_lon"] = pd.to_numeric(df[lon], errors="coerce")
-    df["_lat"] = pd.to_numeric(df[lat], errors="coerce")
-    bad = df["_lon"].isna() | df["_lat"].isna()
-    if bad.any():
-        print(f"  {spec['name']}: skipped {int(bad.sum())} row(s) without "
-              "numeric coordinates")
-    return df[~bad].copy()
-
-
-def point_labels(df, spec):
-    """The legend label for every row, like PyMappr's grouping rules."""
-    blank = pd.Series([""] * len(df), index=df.index)
-
-    def column_values(name):
-        if not name:
-            return blank
-        column = find_column(df, name, (), name)
-        return df[column].fillna("").astype(str)
-
-    if spec["color_col"] or spec["symbol_col"]:
-        cvals = column_values(spec["color_col"])
-        svals = column_values(spec["symbol_col"])
-        raw = pd.Series(
-            [" / ".join(p for p in pair if p) or "All points"
-             for pair in zip(cvals, svals)], index=df.index)
-    elif spec["group_col"]:
-        raw = column_values(spec["group_col"])
-        raw = raw.where(raw != "", "(blank)")
-    else:
-        raw = pd.Series([spec["default_label"]] * len(df), index=df.index)
-    return raw.map(lambda value: spec["label_map"].get(value, value))
-
-
-def plot_dataset(ax, spec):
-    """Scatter one dataset group by group with the app's marker styling:
-    filled markers get a white edge, open markers draw outline-only."""
-    df = load_points(spec)
-    labels = point_labels(df, spec)
-    xs, ys = proj_forward(df["_lon"].to_numpy(), df["_lat"].to_numpy())
-    offsets = wrap_offsets()
-    order = list(dict.fromkeys(list(STYLES) + sorted(set(labels))))
-    for label in order:
-        mask = (labels == label).to_numpy()
-        if not mask.any():
-            continue
-        style = STYLES.get(label, FALLBACK_STYLE)
-        px = np.concatenate([xs[mask] + off for off in offsets])
-        py = np.tile(ys[mask], len(offsets))
-        if style["open"]:
-            face, edge, lw = "none", style["color"], 1.2
-        else:
-            face, edge, lw = style["color"], "white", 0.5
-        ax.scatter(px, py, s=style["size"], c=face,
-                   marker=style["marker"], zorder=Z_POINTS,
-                   edgecolors=edge, linewidths=lw, alpha=POINT_ALPHA)
-
-
-# ----------------------------------------------------------------- legend
-
-def legend_handle(style, size=None):
-    # A None style is a row that takes no swatch.
-    if style is None:
-        return Line2D([], [], linestyle="", marker="")
-    area = style["size"] if size is None else size
-    if style["open"]:
-        face, edge, edge_w = "none", style["color"], 1.2
-    else:
-        face, edge, edge_w = style["color"], "white", 0.5
-    return Line2D([], [], linestyle="", marker=style["marker"],
-                  markersize=max(np.sqrt(area), 2),
-                  markerfacecolor=face, color=style["color"],
-                  markeredgecolor=edge, markeredgewidth=edge_w)
-
-
-def legend_kwargs():
-    """The legend keywords shared by both draw paths, from LEGEND."""
-    return dict(
-        loc=LEGEND["location"], title=LEGEND["title"] or None,
-        fontsize=LEGEND["fontsize"], title_fontsize=LEGEND["title_fontsize"],
-        ncols=LEGEND["columns"], markerscale=LEGEND["marker_scale"],
-        labelspacing=LEGEND["label_spacing"],
-        columnspacing=LEGEND["column_spacing"],
-        handletextpad=LEGEND["handle_text_pad"],
-        handlelength=LEGEND["handle_length"],
-        borderpad=LEGEND["border_pad"],
-        frameon=LEGEND["frame"], framealpha=LEGEND["frame_alpha"],
-        facecolor=LEGEND["frame_color"], edgecolor=LEGEND["frame_edge_color"],
-        fancybox=LEGEND["rounded"], shadow=LEGEND["shadow"],
-        alignment=LEGEND["title_align"])
-
-
-def style_legend(fig, leg, header_rows):
-    """Apply the LEGEND bold/italic/underline formatting to a legend.
-
-    Entry labels use the label_* flags; the title and section headers use
-    the title_* flags (so headers stay bold by default). Underlining is
-    drawn under each flagged text on every draw, since matplotlib Text has
-    no underline property; it fires on savefig too."""
-    if leg is None:
-        return
-    frame = leg.get_frame()
-    if frame is not None:
-        frame.set_linewidth(LEGEND["frame_width"])
-    underline = []
-
-    def apply(text, role):
-        text.set_fontweight("bold" if LEGEND[role + "_bold"] else "normal")
-        text.set_fontstyle("italic" if LEGEND[role + "_italic"] else "normal")
-        text.set_color(LEGEND[role + "_color"])
-        if LEGEND["font_family"]:
-            text.set_fontfamily(LEGEND["font_family"])
-        if LEGEND[role + "_underline"] and text.get_text().strip():
-            underline.append(text)
-
-    title = leg.get_title()
-    if title is not None and title.get_text():
-        apply(title, "title")
-    for i, text in enumerate(leg.get_texts()):
-        apply(text, "title" if i in header_rows else "label")
-    if not underline:
-        return
-
-    def _draw_underlines(event):
-        renderer = getattr(event, "renderer", None)
-        if renderer is None:
-            return
-        for text in underline:
-            if not text.get_visible() or not text.get_text().strip():
-                continue
-            try:
-                bbox = text.get_window_extent(renderer)
-            except Exception:
-                continue
-            y = bbox.y0 - max(bbox.height * 0.1, 1.0)
-            line = Line2D([bbox.x0, bbox.x1], [y, y],
-                          transform=mtransforms.IdentityTransform(),
-                          color=text.get_color(),
-                          linewidth=max(text.get_fontsize() / 11.0, 0.6),
-                          solid_capstyle="butt")
-            line.set_figure(fig)
-            line.draw(renderer)
-
-    fig.canvas.mpl_connect("draw_event", _draw_underlines)
-
-
-def add_legend(ax):
-    """The app's legend: one row per group, or titled sections when the
-    map is styled by two attribute columns."""
-    if not LEGEND["show"] or not STYLES:
-        return
-    if LEGEND_SECTIONS is None:
-        rows = list(STYLES)
-        if LEGEND_ROWS is not None:
-            # LEGEND_ROWS is the whole legend, in order: a group left out of
-            # it keeps its points but loses its row. Empty means every row
-            # was hidden, which is not the same as "no ordering given".
-            rank = {label: i for i, label in enumerate(LEGEND_ROWS)}
-            rows = sorted((r for r in rows if r in rank),
-                          key=lambda label: rank[label])
-        if not rows:
-            return
-        handles = [legend_handle(STYLES[label]) for label in rows]
-        for handle, label in zip(handles, rows):
-            handle.set_label(label)
-        leg = ax.legend(handles=handles, **legend_kwargs())
-        style_legend(ax.figure, leg, set())
-        return
-    handles, labels, header_rows = [], [], []
-    indent = " " * LEGEND["indent"]
-
-    def blank():
-        return Line2D([], [], linestyle="", marker="")
-
-    def spacer():
-        header_rows.append(len(labels))
-        handles.append(blank())
-        labels.append(" ")
-
-    for section_title, entries in LEGEND_SECTIONS:
-        if handles:  # spacer between sections
-            spacer()
-        if section_title:  # section titles can be turned off entirely
-            header_rows.append(len(labels))
-            handles.append(blank())
-            labels.append(section_title)
-        # In a nested key the depth-0 rows head a block of children, so they
-        # take the header formatting (bold by default) on top of their
-        # swatch - indentation alone reads too weakly when every swatch sits
-        # in the same column.
-        nested = any(len(entry) > 2 and entry[2] for entry in entries)
-        for index, entry in enumerate(entries):
-            label, style, *rest = entry
-            depth = rest[0] if rest else 0
-            if nested and depth == 0:
-                if index and LEGEND["group_spacer"]:
-                    spacer()  # separate this block from the one before
-                if LEGEND["bold_groups"]:
-                    header_rows.append(len(labels))
-            handles.append(legend_handle(style, size=45))
-            labels.append(indent * (depth + 1) + label)
-    leg = ax.legend(handles, labels, **legend_kwargs())
-    style_legend(ax.figure, leg, set(header_rows))
-
-
-# ------------------------------------------------------------------- main
-
-def main():
-    fig = plt.figure(figsize=FIGSIZE, dpi=100, facecolor="white")
-    left, bottom, right, top = MARGINS
-    ax = fig.add_axes([left, bottom, right - left, top - bottom])
-    ax.set_autoscale_on(False)
-    ax.xaxis.set_major_formatter(FuncFormatter(format_lon))
-    ax.yaxis.set_major_formatter(FuncFormatter(format_lat))
-    ax.tick_params(labelsize=7, length=2.5, direction="out")
-    ax.set_xlim(VIEW[0], VIEW[1])
-    ax.set_ylim(VIEW[2], VIEW[3])
-    draw_basemap_raster(ax)
-    add_base_layers(ax)
-    draw_graticule(ax)
-    for spec in DATASETS:
-        plot_dataset(ax, spec)
-    draw_labels(ax, fig)
-    draw_compass(ax)
-    draw_scale_bar(ax)
-    ax.set_xlim(VIEW[0], VIEW[1])
-    ax.set_ylim(VIEW[2], VIEW[3])
-    add_legend(ax)
-    output = SCRIPT_DIR / OUTPUT_FILE
-    fig.savefig(output, dpi=DPI, facecolor="white")
-    print(f"Saved {output}")
-    plt.show()
-
-
-if __name__ == "__main__":
-    main()
-'''
-
-
 def _python_script(config: dict) -> str:
-    return _py_header(config) + _py_config(config) + _PY_FUNCTIONS
+    return (_py_header(config) + _py_config(config)
+            + _template("recreate_map.py"))
 
 
 # -------------------------------------------------------------- R template
@@ -1964,10 +819,11 @@ def _r_header(config: dict) -> str:
 # and styling mirror PyMappr's renderer as closely as sf + ggplot2 allow.
 #
 # Just run it: open this file in RStudio and click Source, or run
-# `Rscript recreate_map.R` in a terminal. Missing packages (sf, ggplot2)
-# are installed automatically on first run, and the map data is
-# downloaded from Natural Earth and cached in naturalearth_cache/ next to
-# this script.
+# `Rscript recreate_map.R` in a terminal. If sf or ggplot2 is missing it
+# stops with the install.packages() line to run - or run
+# `Rscript recreate_map.R --install-deps` to have them installed for you.
+# The map data is downloaded from Natural Earth and cached in
+# naturalearth_cache/ next to this script.
 #
 # Output: map.png
 #
@@ -1981,11 +837,18 @@ def _r_header(config: dict) -> str:
 ensure_packages <- function(pkgs) {{
   missing <- pkgs[!vapply(pkgs, requireNamespace, logical(1),
                           quietly = TRUE)]
-  if (length(missing) > 0) {{
-    message("Installing missing packages: ",
-            paste(missing, collapse = ", "))
-    install.packages(missing, repos = "https://cloud.r-project.org")
+  if (length(missing) == 0) return(invisible())
+  command <- sprintf(
+    'install.packages(c(%s), repos = "https://cloud.r-project.org")',
+    paste0('"', missing, '"', collapse = ", "))
+  if (!("--install-deps" %in% commandArgs(trailingOnly = TRUE))) {{
+    stop("This script needs ", paste(missing, collapse = ", "),
+         ". Install with:\n    ", command,
+         "\nor run it with Rscript ... --install-deps to install them ",
+         "automatically.", call. = FALSE)
   }}
+  message("Installing missing packages: ", paste(missing, collapse = ", "))
+  install.packages(missing, repos = "https://cloud.r-project.org")
 }}
 ensure_packages(c("sf", "ggplot2"))
 
@@ -2065,6 +928,8 @@ def _r_config(config: dict) -> str:
                  "  # graticule spacing in degrees (NULL = off)")
     lines.append(f'GRID_LABELS <- {_r(grat["labels"])}')
     lines.append(f'POINT_ALPHA <- {_r(config["point_alpha"])}')
+    lines.append(f'POINT_STROKE <- {_r(config["point_edge"]["width"])}'
+                 "  # outline width of filled markers")
     compass = dict(config["compass_options"])
     compass["show"] = config["compass"]
     lines.append("COMPASS <- list(" + _r_named(
@@ -2106,15 +971,16 @@ def _r_config(config: dict) -> str:
     lines.append("")
     lines.append("# Legend label -> style, in render order. Fillable "
                  "shapes (21-25) carry the")
-    lines.append("# app's white marker edge; sizes approximate PyMappr's "
+    lines.append("# app's marker outline; sizes approximate PyMappr's "
                  "marker areas.")
     styles = config["styles"]
+    edge = config["point_edge"]["color"]
     shapes, colors, fills, sizes = [], [], [], []
     for label, style in styles.items():
         pch = _R_PCH.get(style.marker, 21)
         shapes.append((label, _r(pch)))
         if pch in _R_FILLABLE_PCH:
-            colors.append((label, _r("white")))
+            colors.append((label, _r(edge)))
             fills.append((label, _r(style.color)))
         else:
             colors.append((label, _r(style.color)))
@@ -2133,622 +999,9 @@ def _r_config(config: dict) -> str:
     return "\n".join(lines) + "\n"
 
 
-# The pre-made functions pasted verbatim into every generated R script;
-# only the configuration block above them changes.
-_R_FUNCTIONS = '''
-
-# ------------------- pre-made functions (identical for every export) -----
-
-# Run from this script's own folder, so the cache and any data/ files
-# resolve the same no matter where the script is launched from.
-local({
-  args <- commandArgs(trailingOnly = FALSE)
-  file_arg <- grep("^--file=", args, value = TRUE)
-  path <- if (length(file_arg) > 0) {
-    sub("^--file=", "", file_arg[1])
-  } else if (requireNamespace("rstudioapi", quietly = TRUE) &&
-             rstudioapi::isAvailable()) {
-    rstudioapi::getSourceEditorContext()$path
-  } else {
-    ""
-  }
-  if (nzchar(path)) setwd(dirname(normalizePath(path)))
-})
-
-LON_HINTS <- c("lon", "lng", "long", "longitude", "x")
-LAT_HINTS <- c("lat", "latitude", "y")
-
-download_archive <- function(scale, category, name) {
-  # Download a Natural Earth zip (cached in ./naturalearth_cache).
-  dir.create("naturalearth_cache", showWarnings = FALSE)
-  stem <- if (category == "raster") name else
-    sprintf("ne_%s_%s", scale, name)
-  zip_path <- file.path("naturalearth_cache", paste0(stem, ".zip"))
-  if (!file.exists(zip_path)) {
-    url <- sprintf("https://naturalearth.s3.amazonaws.com/%s_%s/%s.zip",
-                   scale, category, stem)
-    message("Downloading ", url)
-    download.file(url, zip_path, mode = "wb", quiet = TRUE)
-  }
-  zip_path
-}
-
-load_natural_earth <- function(name, category, scale, member = NULL) {
-  # Load a Natural Earth vector layer, downloading it if needed.
-  zip_path <- download_archive(scale, category, name)
-  stem <- sprintf("ne_%s_%s", scale, name)
-  folder <- file.path("naturalearth_cache", stem)
-  if (!dir.exists(folder)) unzip(zip_path, exdir = folder, junkpaths = TRUE)
-  shp <- if (is.null(member)) paste0(stem, ".shp") else paste0(member, ".shp")
-  data <- sf::read_sf(file.path(folder, shp))
-  names(data) <- tolower(names(data))
-  data
-}
-
-normalize_values <- function(x) {
-  # "1", "1.0", and 1 compare equal; everything else lower-cased text.
-  x <- tolower(trimws(as.character(x)))
-  numbers <- suppressWarnings(as.numeric(x))
-  ifelse(is.na(numbers), x, as.character(numbers))
-}
-
-filter_layer <- function(data, column, values, keep = TRUE) {
-  # Keep (or drop) features whose column matches one of the values.
-  if (is.null(column)) return(data)
-  match <- names(data)[tolower(names(data)) == tolower(column)]
-  if (length(match) == 0) {
-    message("  note: column ", column, " not found; keeping every feature")
-    return(data)
-  }
-  mask <- normalize_values(data[[match[1]]]) %in% normalize_values(values)
-  if (keep) data[mask, ] else data[!mask, ]
-}
-
-zoom_filter <- function(data, threshold) {
-  # Per-feature zoom culling like the app: min_zoom (or scalerank)
-  # must be <= threshold for a marker to show.
-  if (is.null(threshold)) return(data)
-  ranks <- if ("min_zoom" %in% names(data)) {
-    suppressWarnings(as.numeric(data$min_zoom))
-  } else if ("scalerank" %in% names(data)) {
-    suppressWarnings(as.numeric(data$scalerank))
-  } else {
-    rep(0, nrow(data))
-  }
-  ranks[is.na(ranks)] <- 5
-  data[ranks <= threshold, ]
-}
-
-find_column <- function(df, wanted, hints, what) {
-  # Resolve a column by configured name, else by common-name hints.
-  lowered <- tolower(trimws(names(df)))
-  if (!is.null(wanted)) {
-    hit <- which(lowered == tolower(trimws(wanted)))
-    if (length(hit) > 0) return(names(df)[hit[1]])
-    stop(sprintf("Column '%s' not found for %s; available: %s", wanted,
-                 what, paste(names(df), collapse = ", ")))
-  }
-  for (hint in hints) {
-    hit <- which(lowered == hint)
-    if (length(hit) > 0) return(names(df)[hit[1]])
-  }
-  stop(sprintf("Could not auto-detect the %s column; available: %s",
-               what, paste(names(df), collapse = ", ")))
-}
-
-load_points <- function(spec) {
-  # Read one dataset (file or embedded CSV) with numeric lon/lat.
-  if (!is.null(spec$inline_data)) {
-    df <- read.csv(text = spec$inline_data, check.names = FALSE)
-  } else if (grepl("\\\\.(tsv|txt)$", tolower(spec$path))) {
-    df <- read.delim(spec$path, check.names = FALSE)
-  } else {
-    # Excel files need readxl: df <- readxl::read_excel(spec$path)
-    df <- read.csv(spec$path, check.names = FALSE)
-  }
-  lon <- find_column(df, spec$lon_col, LON_HINTS, "longitude")
-  lat <- find_column(df, spec$lat_col, LAT_HINTS, "latitude")
-  df$`_lon` <- suppressWarnings(as.numeric(df[[lon]]))
-  df$`_lat` <- suppressWarnings(as.numeric(df[[lat]]))
-  bad <- is.na(df$`_lon`) | is.na(df$`_lat`)
-  if (any(bad)) {
-    message("  ", spec$name, ": skipped ", sum(bad),
-            " row(s) without numeric coordinates")
-  }
-  df[!bad, , drop = FALSE]
-}
-
-point_labels <- function(df, spec) {
-  # The legend label for every row, like PyMappr's grouping rules.
-  column_values <- function(name) {
-    if (is.null(name)) return(rep("", nrow(df)))
-    column <- find_column(df, name, c(), name)
-    values <- as.character(df[[column]])
-    ifelse(is.na(values), "", values)
-  }
-  if (!is.null(spec$color_col) || !is.null(spec$symbol_col)) {
-    cvals <- column_values(spec$color_col)
-    svals <- column_values(spec$symbol_col)
-    raw <- ifelse(cvals == "" & svals == "", "All points",
-                  ifelse(cvals == "", svals,
-                         ifelse(svals == "", cvals,
-                                paste(cvals, svals, sep = " / "))))
-  } else if (!is.null(spec$group_col)) {
-    raw <- column_values(spec$group_col)
-    raw <- ifelse(raw == "", "(blank)", raw)
-  } else {
-    raw <- rep(spec$default_label, nrow(df))
-  }
-  if (length(spec$label_map) == 0) return(raw)
-  mapped <- unname(spec$label_map[raw])
-  ifelse(is.na(mapped), raw, mapped)
-}
-
-load_all_points <- function() {
-  # Every dataset as one sf object with a legend `label` column.
-  frames <- lapply(DATASETS, function(spec) {
-    df <- load_points(spec)
-    data.frame(lon = df$`_lon`, lat = df$`_lat`,
-               label = point_labels(df, spec))
-  })
-  merged <- do.call(rbind, frames)
-  merged$label <- factor(merged$label,
-                         levels = unique(c(names(STYLE_COLORS),
-                                           merged$label)))
-  sf::st_as_sf(merged, coords = c("lon", "lat"), crs = "EPSG:4326")
-}
-
-cap_polygon <- function(lon0, lat0, radius) {
-  # The visible spherical cap (a lon/lat polygon) for clipping to an
-  # orthographic globe's near hemisphere, with +/-360 copies so a cap
-  # crossing the antimeridian still covers data stored in [-180, 180].
-  az <- seq(0, 2 * pi, length.out = 181)
-  phi0 <- lat0 * pi / 180
-  r <- radius * pi / 180
-  lat <- asin(sin(phi0) * cos(r) + cos(phi0) * sin(r) * cos(az))
-  dlon <- atan2(sin(az) * sin(r) * cos(phi0),
-                cos(r) - sin(phi0) * sin(lat))
-  lon <- lon0 + dlon * 180 / pi
-  lat <- lat * 180 / pi
-  if (lat0 + radius >= 90) {          # cap encloses the north pole
-    ord <- order(lon)
-    coords <- rbind(cbind(lon[ord], lat[ord]),
-                    c(lon0 + 180, 90), c(lon0 - 180, 90),
-                    c(lon[ord][1], lat[ord][1]))
-  } else if (lat0 - radius <= -90) {  # ... or the south pole
-    ord <- order(lon)
-    coords <- rbind(cbind(lon[ord], lat[ord]),
-                    c(lon0 + 180, -90), c(lon0 - 180, -90),
-                    c(lon[ord][1], lat[ord][1]))
-  } else {
-    coords <- cbind(lon, lat)         # az 0..2pi already closes the ring
-  }
-  base <- sf::st_polygon(list(coords))
-  parts <- lapply(c(-360, 0, 360), function(off) base + c(off, 0))
-  sf::st_make_valid(sf::st_union(sf::st_sfc(parts, crs = "EPSG:4326")))
-}
-
-to_map_crs <- function(data) {
-  # Reproject into the map projection like the app: clip to the visible
-  # cap / latitude band first; leave plain lon/lat data untouched.
-  if (GEOGRAPHIC) return(data)
-  if (!is.null(CLIP_CAP)) {
-    cap <- cap_polygon(CLIP_CAP[1], CLIP_CAP[2], CLIP_CAP[3])
-    data <- suppressWarnings(sf::st_intersection(data, cap))
-  } else if (MAX_LAT < 90 || MIN_LAT > -90) {
-    band <- sf::st_as_sfc(sf::st_bbox(
-      c(xmin = -180, ymin = MIN_LAT, xmax = 180, ymax = MAX_LAT),
-      crs = sf::st_crs("EPSG:4326")))
-    data <- suppressWarnings(sf::st_intersection(data, band))
-  }
-  sf::st_transform(data, MAP_CRS)
-}
-
-base_layer_geom <- function(layer) {
-  # One ggplot2 geom_sf for a configured Natural Earth layer.
-  data <- load_natural_earth(layer$name, layer$category, layer$scale,
-                             layer$member)
-  data <- filter_layer(data, layer$filter_column, layer$filter_values,
-                       layer$filter_keep)
-  if (layer$kind == "continents") {
-    parts <- split(data, data$continent)
-    data <- do.call(rbind, lapply(parts, function(part) {
-      sf::st_sf(geometry = sf::st_union(sf::st_geometry(part)))
-    }))
-  }
-  data <- zoom_filter(data, layer$min_zoom_max)
-  data <- to_map_crs(data)
-  if (layer$kind == "fill") {
-    geom_sf(data = data, fill = layer$fill,
-            color = if (is.null(layer$edgecolor)) NA else layer$edgecolor,
-            linewidth = layer$linewidth, alpha = layer$alpha)
-  } else if (layer$kind %in% c("line", "continents")) {
-    geom_sf(data = data, fill = NA, color = layer$color,
-            linewidth = layer$linewidth, linetype = layer$linetype)
-  } else if (layer$shape %in% 21:25) {
-    # Filled marker with the app's white edge.
-    geom_sf(data = data, fill = layer$color, color = layer$edgecolor,
-            size = layer$size, shape = layer$shape, stroke = 0.3)
-  } else {
-    geom_sf(data = data, color = layer$color, size = layer$size,
-            shape = layer$shape, stroke = 0.3)
-  }
-}
-
-basemap_archives <- list(
-  relief     = list(scale = "50m", cat = "raster", name = "NE1_50M_SR_W"),
-  relief_alt = list(scale = "50m", cat = "raster", name = "NE2_50M_SR_W"),
-  relief_grey = list(scale = "50m", cat = "raster", name = "GRAY_50M_SR_W"),
-  blue_marble = list(scale = "50m", cat = "raster", name = "HYP_50M_SR_W")
-)
-
-basemap_geom <- function() {
-  # The raster basemap via terra + tidyterra (best effort: the
-  # vector map still draws if these packages cannot be installed).
-  if (BASEMAP == "simple" || is.null(basemap_archives[[BASEMAP]])) return(NULL)
-  ok <- tryCatch({
-    ensure_packages(c("terra", "tidyterra"))
-    TRUE
-  }, error = function(e) FALSE)
-  if (!ok || !requireNamespace("terra", quietly = TRUE) ||
-      !requireNamespace("tidyterra", quietly = TRUE)) {
-    message("note: terra/tidyterra unavailable; skipping the basemap raster")
-    return(NULL)
-  }
-  info <- basemap_archives[[BASEMAP]]
-  zip_path <- download_archive(info$scale, info$cat, info$name)
-  folder <- file.path("naturalearth_cache", info$name)
-  if (!dir.exists(folder)) unzip(zip_path, exdir = folder)
-  tif <- list.files(folder, pattern = "\\\\.tif$", full.names = TRUE,
-                    recursive = TRUE)[1]
-  tidyterra::geom_spatraster_rgb(data = terra::rast(tif))
-}
-
-lon_label <- function(value) {
-  value <- ((value + 180) %% 360) - 180
-  ifelse(value %in% c(0, 180, -180), sprintf("%g\\u00b0", abs(value)),
-         sprintf("%g\\u00b0%s", abs(value),
-                 ifelse(value < 0, "W", "E")))
-}
-
-lat_label <- function(value) {
-  ifelse(value == 0, "0\\u00b0",
-         sprintf("%g\\u00b0%s", abs(value), ifelse(value < 0, "S", "N")))
-}
-
-build_map <- function() {
-  p <- ggplot()
-  if (BASEMAP != "simple") {
-    raster_layer <- basemap_geom()
-    if (!is.null(raster_layer)) p <- p + raster_layer
-  }
-  for (layer in NE_LAYERS) p <- p + base_layer_geom(layer)
-  if (length(DATASETS) > 0) {
-    points <- to_map_crs(load_all_points())
-    title <- if (LEGEND$title == "") NULL else LEGEND$title
-    # Legend key marker sizes = the mapped point sizes scaled by
-    # marker_scale, matching matplotlib's markerscale.
-    key_sizes <- unname(STYLE_SIZES) * LEGEND$marker_scale
-    p <- p +
-      geom_sf(data = points,
-              aes(color = label, fill = label, shape = label,
-                  size = label),
-              alpha = POINT_ALPHA, stroke = 0.5) +
-      scale_color_manual(values = STYLE_COLORS, name = title) +
-      scale_fill_manual(values = STYLE_FILLS, name = title) +
-      scale_shape_manual(values = STYLE_SHAPES, name = title) +
-      scale_size_manual(values = STYLE_SIZES, name = title,
-                        guide = "none") +
-      guides(
-        color = guide_legend(ncol = LEGEND$columns,
-                             override.aes = list(size = key_sizes)),
-        fill = guide_legend(ncol = LEGEND$columns),
-        shape = guide_legend(ncol = LEGEND$columns))
-  }
-  datum <- if (!is.null(GRID_INTERVAL)) sf::st_crs("EPSG:4326") else NULL
-  p <- p + coord_sf(crs = MAP_CRS, xlim = VIEW[1:2], ylim = VIEW[3:4],
-                    expand = FALSE, datum = datum)
-  if (!is.null(GRID_INTERVAL)) {
-    p <- p +
-      scale_x_continuous(breaks = seq(-180, 180, by = GRID_INTERVAL),
-                         labels = lon_label) +
-      scale_y_continuous(breaks = seq(-90, 90, by = GRID_INTERVAL),
-                         labels = lat_label)
-  }
-  grid_line <- if (!is.null(GRID_INTERVAL)) {
-    element_line(color = grDevices::adjustcolor("#787878", 0.7),
-                 linewidth = 0.19)
-  } else {
-    element_blank()
-  }
-  axis_text <- if (!is.null(GRID_INTERVAL) && GRID_LABELS) {
-    element_text(size = 7)
-  } else {
-    element_blank()
-  }
-  p <- p + scale_bar_layers() + compass_layers()
-  p <- p + theme_void() + theme(
-    panel.background = element_rect(fill = "white", color = NA),
-    plot.background = element_rect(fill = "white", color = NA),
-    panel.grid.major = grid_line,
-    axis.text = axis_text,
-    axis.ticks = element_blank(),
-    legend.text = element_text(size = LEGEND$fontsize,
-                               face = text_face(LEGEND$label_bold,
-                                                LEGEND$label_italic)),
-    legend.title = element_text(size = LEGEND$title_fontsize,
-                                face = text_face(LEGEND$title_bold,
-                                                 LEGEND$title_italic)),
-    # Approximates matplotlib's labelspacing (vertical gap per entry).
-    legend.key.height = grid::unit(1 + LEGEND$label_spacing, "lines"),
-    legend.position = if (LEGEND$show) legend_position(LEGEND$location)
-                      else "none",
-    legend.background = if (LEGEND$frame)
-      element_rect(fill = grDevices::adjustcolor("white", 0.85),
-                   color = "#999999") else element_blank())
-  p
-}
-
-# --------------------------------------------- compass and scale bar
-
-METRES_PER_MILE <- 1609.344
-BAR_HEIGHT <- 0.011
-BAR_GAP <- 0.005
-LABEL_GAP <- 0.012
-LABEL_ROOM <- 0.030
-
-view_crs <- function() {
-  if (is.null(MAP_CRS)) sf::st_crs("EPSG:4326") else sf::st_crs(MAP_CRS)
-}
-
-axes_to_data <- function(fx, fy) {
-  # coord_sf() is given VIEW with expand = FALSE, so a fraction of VIEW is
-  # exactly a fraction of the drawn panel.
-  c(VIEW[1] + (VIEW[2] - VIEW[1]) * fx,
-    VIEW[3] + (VIEW[4] - VIEW[3]) * fy)
-}
-
-span_metres <- function(fx0, fx1, fy) {
-  # Ground metres between two panel-fraction x positions on row fy.
-  # Measured from lon/lat: a projected metre is not a ground metre, and the
-  # plain lon/lat projection is in degrees anyway. NA where the row is off
-  # the map, as a corner of a Robinson or orthographic view is.
-  a <- axes_to_data(fx0, fy)
-  b <- axes_to_data(fx1, fy)
-  pts <- try(sf::st_sfc(sf::st_point(a), sf::st_point(b), crs = view_crs()),
-             silent = TRUE)
-  if (inherits(pts, "try-error")) return(NA_real_)
-  geo <- try(sf::st_transform(pts, 4326), silent = TRUE)
-  if (inherits(geo, "try-error")) return(NA_real_)
-  coords <- sf::st_coordinates(geo)
-  if (any(!is.finite(coords))) return(NA_real_)
-  d <- try(as.numeric(sf::st_distance(geo)[1, 2]), silent = TRUE)
-  if (inherits(d, "try-error") || !is.finite(d)) return(NA_real_)
-  d
-}
-
-scale_reference_row <- function(fy) {
-  # A row where the scale can actually be measured; the bar's own row is
-  # preferred, because a bar should describe the scale where it stands.
-  for (step in c(0, 0.25, 0.5, 0.75, 1)) {
-    row <- fy + (0.5 - fy) * step
-    if (is.finite(span_metres(0.45, 0.55, row))) return(row)
-  }
-  0.5
-}
-
-estimate_scale <- function(fx, fy) {
-  # Ground metres per unit of panel x-fraction: a first guess, refined
-  # against the bar's real endpoints in fit_bar_width().
-  left <- max(0, min(0.9, fx - 0.05))
-  m <- span_metres(left, left + 0.1, fy)
-  if (!is.finite(m) || m <= 0) m <- span_metres(0.45, 0.55, fy)
-  if (!is.finite(m) || m <= 0) return(NA_real_)
-  m / 0.1
-}
-
-unit_metres <- function(units) {
-  if (identical(units, "mi")) METRES_PER_MILE else 1000
-}
-
-nice_length <- function(metres, units) {
-  # A round bar length at or just below `metres`, so a long label can never
-  # run off the map.
-  per <- unit_metres(units)
-  value <- metres / per
-  if (!is.finite(value) || value <= 0) return(0)
-  decade <- 10 ^ floor(log10(value))
-  for (cand in c(5, 3, 2, 1)) {
-    if (cand * decade <= value) return(cand * decade * per)
-  }
-  decade / 10 * per
-}
-
-format_length <- function(metres, units) {
-  if (!identical(units, "mi") && metres < 1000) {
-    return(paste0(format(metres, trim = TRUE, scientific = FALSE), " m"))
-  }
-  value <- metres / unit_metres(units)
-  suffix <- if (identical(units, "mi")) " mi" else " km"
-  paste0(format(value, trim = TRUE, scientific = FALSE), suffix)
-}
-
-corner_anchor <- function(corner, pad = 0.03) {
-  corner <- if (is.null(corner)) "lower left" else corner
-  parts <- strsplit(corner, " ")[[1]]
-  x <- if (identical(parts[2], "left")) pad else 1 - pad
-  y <- if (identical(parts[1], "lower")) pad else 1 - pad
-  c(x, y)
-}
-
-fit_bar_width <- function(metres, x, row, right_anchored) {
-  # The estimate is local, but a scale bar is long and the map scale varies
-  # across it, so refine the width against the bar's own endpoints until the
-  # drawing really is the length its label claims.
-  per <- estimate_scale(x, row)
-  if (!is.finite(per) || per <= 0) return(NA_real_)
-  width <- metres / per
-  for (i in 1:6) {
-    if (!is.finite(width) || width <= 0 || width > 0.95) return(NA_real_)
-    x0 <- if (right_anchored) x - width else x
-    actual <- span_metres(x0, x0 + width, row)
-    if (!is.finite(actual) || actual <= 0) {
-      # The bar's own span is off the map: refine against the same width
-      # centred on the reference row instead.
-      actual <- span_metres(0.5 - width / 2, 0.5 + width / 2, row)
-    }
-    if (!is.finite(actual) || actual <= 0) break
-    adjust <- metres / actual
-    if (abs(adjust - 1) < 0.001) break
-    width <- width * adjust
-  }
-  if (!is.finite(width) || width <= 0 || width > 0.95) return(NA_real_)
-  width
-}
-
-scale_bar_layers <- function() {
-  if (!isTRUE(SCALE_BAR$show)) return(list())
-  units_shown <- if (identical(SCALE_BAR$units, "both")) {
-    c("km", "mi")
-  } else {
-    SCALE_BAR$units
-  }
-  dragged <- !is.null(SCALE_BAR$anchor_x) && !is.null(SCALE_BAR$anchor_y)
-  anchor <- if (dragged) {
-    c(SCALE_BAR$anchor_x, SCALE_BAR$anchor_y)
-  } else {
-    corner_anchor(SCALE_BAR$position)
-  }
-  x <- anchor[1]
-  y <- anchor[2]
-  right_anchored <- x > 0.5 && !dragged
-  top_anchored <- y > 0.5 && !dragged
-  n <- length(units_shown)
-  stack <- n * BAR_HEIGHT + (n - 1) * BAR_GAP
-  base_y <- if (top_anchored) y - stack else y
-  # A second unit is labelled underneath, so lift the stack off the frame.
-  if (n > 1 && !top_anchored && !dragged) base_y <- base_y + LABEL_ROOM
-
-  layers <- list()
-  for (i in seq_along(units_shown)) {
-    unit <- units_shown[i]
-    y0 <- base_y + (n - i) * (BAR_HEIGHT + BAR_GAP)
-    row <- scale_reference_row(y0 + BAR_HEIGHT / 2)
-    fixed <- (i == 1 && identical(SCALE_BAR$length_mode, "fixed")
-              && !is.null(SCALE_BAR$fixed_length))
-    if (fixed) {
-      metres <- SCALE_BAR$fixed_length * unit_metres(SCALE_BAR$units)
-    } else {
-      est <- estimate_scale(x, row)
-      if (!is.finite(est) || est <= 0) {
-        message("Scale bar: the map scale cannot be measured at this view.")
-        return(list())
-      }
-      # Each unit gets its own round length, so "3000 km" is never paired
-      # with an unreadable "1864 mi".
-      metres <- nice_length(est * SCALE_BAR$width, unit)
-    }
-    if (metres <= 0) return(list())
-    width <- fit_bar_width(metres, x, row, right_anchored)
-    if (!is.finite(width)) {
-      message("Scale bar: scale varies too much across this view to draw ",
-              "an accurate bar.")
-      return(list())
-    }
-    x0 <- if (right_anchored) x - width else x
-    segments <- if (identical(SCALE_BAR$style, "segmented")) {
-      max(as.integer(SCALE_BAR$segments), 1L)
-    } else {
-      1L
-    }
-    for (seg in seq_len(segments)) {
-      lo <- axes_to_data(x0 + width * (seg - 1) / segments, y0)
-      hi <- axes_to_data(x0 + width * seg / segments, y0 + BAR_HEIGHT)
-      layers <- c(layers, list(annotate(
-        "rect", xmin = lo[1], xmax = hi[1], ymin = lo[2], ymax = hi[2],
-        fill = if (seg %% 2 == 1) SCALE_BAR$color else "white",
-        color = SCALE_BAR$color, linewidth = 0.28)))
-    }
-    above <- i == 1
-    lab <- axes_to_data(
-      x0 + width / 2,
-      if (above) y0 + BAR_HEIGHT + LABEL_GAP else y0 - LABEL_GAP)
-    layers <- c(layers, list(annotate(
-      "text", x = lab[1], y = lab[2], label = format_length(metres, unit),
-      size = SCALE_BAR$fontsize / 2.845, colour = SCALE_BAR$color,
-      hjust = 0.5, vjust = if (above) 0 else 1)))
-  }
-  layers
-}
-
-compass_layers <- function() {
-  if (!isTRUE(COMPASS$show)) return(list())
-  anchor <- corner_anchor(COMPASS$position, pad = 0.025)
-  x <- anchor[1]
-  y <- anchor[2]
-  size <- max(COMPASS$size, 0.1)
-  reach <- 0.07 * size
-  # The arrow runs downwards from the anchor at the top of the map and
-  # upwards at the bottom, so it never points off the panel.
-  tail_y <- if (y > 0.5) y - reach else y + reach
-  tip <- axes_to_data(x, y)
-  tail <- axes_to_data(x, tail_y)
-  if (identical(COMPASS$style, "triangle")) {
-    half <- 0.016 * size
-    up <- y > tail_y
-    base_y <- tail_y + (if (up) 0.02 * size else -0.02 * size)
-    b1 <- axes_to_data(x - half, base_y)
-    b2 <- axes_to_data(x + half, base_y)
-    return(list(
-      annotate("polygon", x = c(tip[1], b1[1], b2[1]),
-               y = c(tip[2], b1[2], b2[2]), fill = COMPASS$color,
-               colour = "white", linewidth = 0.28 * size),
-      annotate("text", x = tail[1], y = tail[2], label = "N",
-               fontface = "bold", size = 10 * size / 2.845,
-               colour = COMPASS$color)))
-  }
-  # Start the shaft clear of the "N", the way the app's shrinkA does.
-  shrink <- 0.014 * size
-  start_y <- tail_y + sign(y - tail_y) * shrink
-  start <- axes_to_data(x, start_y)
-  list(
-    annotate("segment", x = start[1], y = start[2],
-             xend = tip[1], yend = tip[2],
-             arrow = grid::arrow(length = grid::unit(0.16 * size, "cm"),
-                                 type = "closed"),
-             colour = COMPASS$color, linewidth = 0.5 * size),
-    annotate("text", x = tail[1], y = tail[2], label = "N",
-             fontface = "bold", size = 11 * size / 2.845,
-             colour = COMPASS$color))
-}
-
-
-legend_position <- function(location) {
-  # PyMappr legend locations approximated by ggplot2 sides.
-  if (location %in% c("upper left", "lower left")) "left" else "right"
-}
-
-text_face <- function(bold, italic) {
-  # ggplot2 element_text face: bold/italic combinations (no underline).
-  if (isTRUE(bold) && isTRUE(italic)) "bold.italic"
-  else if (isTRUE(bold)) "bold"
-  else if (isTRUE(italic)) "italic"
-  else "plain"
-}
-
-main <- function() {
-  p <- build_map()
-  ggsave(OUTPUT_FILE, plot = p, width = FIGSIZE[1], height = FIGSIZE[2],
-         dpi = DPI, bg = "white", limitsize = FALSE)
-  message("Saved ", OUTPUT_FILE)
-}
-
-main()
-'''
-
-
 def _r_script(config: dict) -> str:
-    return _r_header(config) + _r_config(config) + _R_FUNCTIONS
+    return (_r_header(config) + _r_config(config)
+            + _template("recreate_map.R"))
 
 
 # -------------------------------------------------- working directory export
@@ -2796,10 +1049,12 @@ Open this folder in your IDE (PyCharm, VS Code, ...) and run
 
     python recreate_map.py
 
-The script installs any missing packages on first run - or set up the
-environment yourself with:
+If a package is missing the script tells you; set up the environment
+with:
 
     pip install -r requirements.txt
+
+(or run `python recreate_map.py --install-deps` to let it install them).
 
 It downloads its map data from Natural Earth into
 `naturalearth_cache/` and reads your point data from the CSV files in
@@ -2820,8 +1075,7 @@ Or, from a terminal in this folder:
 
     Rscript recreate_map.R
 
-The script installs sf and ggplot2 if they are missing - or install them
-yourself with:
+If sf or ggplot2 is missing the script tells you; install them with:
 
     Rscript install.R
 
@@ -2875,9 +1129,9 @@ def generate_code(state: dict, entries, language: str,
                   figure_size: tuple[float, float] | None = None) -> str:
     """The complete Python or R script recreating the given map state.
 
-    The script is self-contained: point data is embedded inline and
-    missing packages install themselves on first run, so it can be pasted
-    into an IDE and run as-is. The Python script replicates PyMappr's
+    The script is self-contained: point data is embedded inline, and a
+    missing package stops it with the command that installs it (or is
+    installed for you with ``--install-deps``). The Python script replicates PyMappr's
     renderer; pass *figure_size* (the app canvas in inches) so the
     exported geometry matches the canvas exactly. Use
     :func:`generate_working_directory` for a folder-based export with the
