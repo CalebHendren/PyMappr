@@ -16,7 +16,8 @@ Python as an offline desktop application.
 - Group/color/symbol styling by any name column, including two-attribute
   styling (e.g. color by Family, symbol by Genus) with a compact legend.
 - Legend customization: position, columns, marker scale, spacing, and
-  bold / italic / underline for the labels and title.
+  bold / italic / underline for the labels and title. Customize legend
+  renames, hides, reorders and restyles individual rows.
 - ~30 toggleable Natural Earth layers (borders, cities, water, physical
   features, infrastructure) with automatic 110m/50m/10m detail by zoom.
 - Six map projections plus a Globe (orthographic) view and regional
@@ -35,10 +36,27 @@ Python as an offline desktop application.
   shapes, a plain boxed legend with italic names, and 600 DPI export.
 - Projects (`.pymappr` files) with autosave/restore, and export/import for
   sharing.
-- Export the current map as PNG, or as a self-contained Python
-  (matplotlib) or R (ggplot2) script that reproduces it outside PyMappr.
+- Save the map as PNG, JPEG, TIFF, PDF, SVG or WebP at the DPI you choose,
+  or export it as a self-contained Python (matplotlib) or R (ggplot2) script
+  that reproduces it outside PyMappr. Run the script with `--install-deps`
+  to have it install what it needs.
+
+## Publication-ready figures
+
+![Beetle localities in the publication style: black and white markers and one italic "Genus species" per legend line](docs/images/publication_style.png)
+
+1. **Data tab > Combine columns...** joins Genus and Species into one name
+   column and groups by it, so each legend line reads *Eleusis chapadensis*.
+   The source file is left as it is.
+2. **Map tab > Apply publication style** switches to black & white points
+   with black outlines and varied shapes, a plain boxed legend with italic
+   names, and 600 DPI export. Rows you restyled with Customize legend keep
+   their styling.
+3. **File > Save map as...** and pick TIFF or PDF.
 
 ## Screenshots
+
+![The app after Combine columns and Apply publication style](docs/images/app_publication.png)
 
 ![Landscape and portrait orientation](docs/images/app_portrait.png)
 
@@ -61,6 +79,11 @@ you confirm the mapping on import:
 |-------------|---------------|-------------|-------------|
 | Eleusis     | chapadensis   | -68.4349    | -12.3541    |
 | Xanthopygus | orinocensis   | 67°33'37"W  | 10°18'29"N  |
+
+With Genus and Species in separate columns like this, **Combine columns...**
+on the Data tab puts both on one legend line without editing the file:
+
+![Combine columns dialog joining Genus and Species](docs/images/combine_columns.png)
 
 Sample datasets in [`sample_data/`](sample_data) for beetles, seabirds, and
 orchids.
@@ -97,8 +120,9 @@ python -m pymappr
 
 ```bash
 python -m pytest tests/            # the test suite (a few tests need the map data)
-python scripts/make_screenshots.py # regenerate the README images
+python scripts/make_screenshots.py # regenerate the README map images
 python scripts/make_screenshots.py --out preview --all  # render check, more layers
+python scripts/make_app_screenshot.py  # the app screenshots (needs a display)
 ```
 
 Project layout:
@@ -108,7 +132,9 @@ Project layout:
 - `pymappr/projects.py` - project files, settings, session autosave
 - `pymappr/layers.py` - Natural Earth layer store and on-disk frame cache
 - `pymappr/projections.py` - map projections (pyproj)
-- `pymappr/renderer.py` - matplotlib map rendering
+- `pymappr/renderer/` - matplotlib map rendering, one module per concern
+  (view, layers, overlays, labels, points and legend, mouse), plus the
+  layer style tables shared with code export
 - `pymappr/styles.py` - point styles and group/color-by styling
 - `pymappr/legend.py` - legend options and legend rows
 - `pymappr/layout.py` - what every dataset draws (shared by the app and code

@@ -13,7 +13,7 @@ __all__ = ["PointStyle", "MARKERS", "OPEN_SUFFIX", "DEFAULT_PALETTE",
            "attribute_style_maps", "style_by_attributes",
            "LEGIBLE_MARKER_LIMIT", "nests_within", "resolve_nesting",
            "owner_map", "marker_load", "apply_override", "ROW_SEP",
-           "row_key"]
+           "row_key", "PUBLICATION_POINT_EDGE"]
 
 # How many distinct shapes stay tellable apart at map point sizes. MARKER_CYCLE
 # runs much longer, but past roughly this many the tail (triangle down, thin
@@ -86,6 +86,10 @@ DEFAULT_PALETTE_NAME = "Default"
 # colour instead). White keeps overlapping points apart on a light map.
 POINT_EDGE_COLOR = "#ffffff"
 POINT_EDGE_WIDTH = 0.5
+# The point half of the "Publication style" preset: a thin black outline, so
+# the white points of the black & white palette still show (the legend half
+# is pymappr.legend.PUBLICATION_LEGEND).
+PUBLICATION_POINT_EDGE = ("#000000", 0.6)
 
 
 def palette_for(name: str | None) -> list[str]:

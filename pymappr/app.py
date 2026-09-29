@@ -37,7 +37,8 @@ from pymappr.projects import PROJECT_EXTENSION, DatasetEntry  # noqa: E402
 from pymappr.renderer import MapRenderer  # noqa: E402
 from pymappr.styles import (BLACK_AND_WHITE_NAME,  # noqa: E402
                             DEFAULT_PALETTE_NAME, LEGIBLE_MARKER_LIMIT,
-                            POINT_EDGE_COLOR, POINT_EDGE_WIDTH, PointStyle,
+                            POINT_EDGE_COLOR, POINT_EDGE_WIDTH,
+                            PUBLICATION_POINT_EDGE, PointStyle,
                             apply_override, marker_load, resolve_nesting,
                             row_key)
 from pymappr.ui.column_mapper import ColumnMapperDialog  # noqa: E402
@@ -50,9 +51,9 @@ from pymappr.ui.projects_dialog import ProjectsDialog  # noqa: E402
 
 MAX_SKIPPED_SHOWN = 12
 UNTITLED = "Untitled"
-# The point and export half of the "Publication style" preset (the legend
-# half is pymappr.legend.PUBLICATION_LEGEND).
-PUBLICATION_POINT_EDGE = ("#000000", 0.6)
+# The export DPI of the "Publication style" preset (the point and legend
+# halves are pymappr.styles.PUBLICATION_POINT_EDGE and
+# pymappr.legend.PUBLICATION_LEGEND).
 PUBLICATION_DPI = "600"
 PROJECT_FILETYPES = [("PyMappr project", "*" + PROJECT_EXTENSION),
                      ("All files", "*.*")]

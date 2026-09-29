@@ -23,14 +23,15 @@ from matplotlib.figure import Figure  # noqa: E402
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
-from pymappr.data_loader import load_csv  # noqa: E402
+from pymappr.data_loader import combine_name_columns, load_csv  # noqa: E402
 from pymappr.decorations import CompassOptions  # noqa: E402
 from pymappr.layers import LayerStore  # noqa: E402
 from pymappr.layout import layout_points, with_default_title  # noqa: E402
-from pymappr.legend import LegendOptions  # noqa: E402
+from pymappr.legend import PUBLICATION_LEGEND, LegendOptions  # noqa: E402
 from pymappr.projects import DatasetEntry  # noqa: E402
 from pymappr.renderer import MapRenderer  # noqa: E402
-from pymappr.styles import DEFAULT_PALETTE  # noqa: E402
+from pymappr.styles import (BLACK_AND_WHITE, DEFAULT_PALETTE,  # noqa: E402
+                            PUBLICATION_POINT_EDGE)
 
 DPI = 110
 SAMPLES = REPO_ROOT / "sample_data"
@@ -46,10 +47,10 @@ def sample(name: str, **styling) -> DatasetEntry:
 
 
 def show_points(renderer: MapRenderer, entry: DatasetEntry,
-                **legend) -> None:
+                palette: list[str] = DEFAULT_PALETTE, **legend) -> None:
     """Draw a dataset and its legend the way the app does."""
     options = with_default_title([entry], LegendOptions(**legend))
-    layout = layout_points([entry], options, DEFAULT_PALETTE)
+    layout = layout_points([entry], options, palette)
     renderer.set_points(
         [(label, style, rows["lon"].to_numpy(), rows["lat"].to_numpy())
          for label, style, rows in layout.groups],
@@ -81,6 +82,21 @@ def readme_scenes(store: LayerStore) -> dict:
     r.set_extent("South America")
     show_points(r, beetles, location="upper right", fontsize=7)
     scenes["beetles_landscape.png"] = (r, False)
+
+    # The publication style: Genus and Species combined into one legend
+    # line, black & white outlined markers in varied shapes, and a plain
+    # boxed legend with italic names.
+    dataset, label = combine_name_columns(beetles.dataset,
+                                          ["Genus", "Species"])
+    r = new_renderer(store)
+    r.set_layer("countries", True)
+    r.set_extent("South America")
+    r.set_orientation("portrait")
+    r.set_point_edge(*PUBLICATION_POINT_EDGE)
+    show_points(r, DatasetEntry(dataset=dataset, name=beetles.name,
+                                group_by=label, vary_symbols=True),
+                BLACK_AND_WHITE, location="lower right", **PUBLICATION_LEGEND)
+    scenes["publication_style.png"] = (r, True)
 
     # Seabirds grouped by family on Mollweide, with a plain legend.
     r = new_renderer(store)
