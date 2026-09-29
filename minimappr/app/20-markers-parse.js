@@ -8,9 +8,8 @@ const OKABE_ITO = ["#0072b2","#d55e00","#009e73","#cc79a7","#e69f00",
   "#56b4e9","#f0e442","#000000"];
 const PALETTES = {"Default": DEFAULT_PALETTE,
   "Colourblind safe (Okabe-Ito)": OKABE_ITO};
-// The palette in use is a map-wide setting, not a per-dataset one.
-let PALETTE_NAME = "Default";
-function palette(){ return PALETTES[PALETTE_NAME] || DEFAULT_PALETTE; }
+// The palette in use is a map-wide setting (opts.palette), not a per-dataset one.
+function palette(){ return PALETTES[opts.palette] || DEFAULT_PALETTE; }
 const BASE_MARKERS = ["Circle","Square","Triangle","Triangle down","Triangle left",
   "Triangle right","Diamond","Thin diamond","Star","Plus","X","Pentagon","Hexagon","Octagon","Dot"];
 const OPEN_SUFFIX = " (open)";

@@ -227,7 +227,7 @@ const opts = {
   extent:"World", projection:"Equirectangular", centerLon:0, centerLat:0,
   orientation:"landscape", showLand:true, landColor:"#ffffff", showBorders:true,
   showCoast:true, ocean:"blue", graticule:0, title:"", compass:false, labels:false,
-  matColor:"#ffffff", lineWidth:1,
+  matColor:"#ffffff", lineWidth:1, palette:"Default",
 };
 for(const [id,,value] of LEGEND_CONTROLS) opts[id]=value;
 let currentProjection=null;     // the d3 projection from the last render()

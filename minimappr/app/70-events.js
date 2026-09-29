@@ -226,7 +226,7 @@ $("#varySymbols").addEventListener("change",e=>{ const ds=selectedDataset(); ds.
   ds.overrides={}; render(); });
 // The palette is map-wide: clearing every dataset's overrides would throw
 // away colours the user pinned, so only the auto-assigned styles change.
-$("#paletteSel").addEventListener("change",e=>{ PALETTE_NAME=e.target.value; render(); });
+$("#paletteSel").addEventListener("change",e=>{ opts.palette=e.target.value; render(); });
 $("#baseMarker").addEventListener("change",e=>{ const ds=selectedDataset(); ds.base.marker=e.target.value; render(); });
 $("#baseColor").addEventListener("input",e=>{ const ds=selectedDataset(); ds.base.color=e.target.value; render(); });
 $("#sizeRange").addEventListener("input",e=>{ const ds=selectedDataset(); ds.base.size=+e.target.value;

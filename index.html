@@ -708,9 +708,8 @@ const OKABE_ITO = ["#0072b2","#d55e00","#009e73","#cc79a7","#e69f00",
   "#56b4e9","#f0e442","#000000"];
 const PALETTES = {"Default": DEFAULT_PALETTE,
   "Colourblind safe (Okabe-Ito)": OKABE_ITO};
-// The palette in use is a map-wide setting, not a per-dataset one.
-let PALETTE_NAME = "Default";
-function palette(){ return PALETTES[PALETTE_NAME] || DEFAULT_PALETTE; }
+// The palette in use is a map-wide setting (opts.palette), not a per-dataset one.
+function palette(){ return PALETTES[opts.palette] || DEFAULT_PALETTE; }
 const BASE_MARKERS = ["Circle","Square","Triangle","Triangle down","Triangle left",
   "Triangle right","Diamond","Thin diamond","Star","Plus","X","Pentagon","Hexagon","Octagon","Dot"];
 const OPEN_SUFFIX = " (open)";
@@ -1057,7 +1056,7 @@ const opts = {
   extent:"World", projection:"Equirectangular", centerLon:0, centerLat:0,
   orientation:"landscape", showLand:true, landColor:"#ffffff", showBorders:true,
   showCoast:true, ocean:"blue", graticule:0, title:"", compass:false, labels:false,
-  matColor:"#ffffff", lineWidth:1,
+  matColor:"#ffffff", lineWidth:1, palette:"Default",
 };
 for(const [id,,value] of LEGEND_CONTROLS) opts[id]=value;
 let currentProjection=null;     // the d3 projection from the last render()
@@ -2228,7 +2227,7 @@ $("#varySymbols").addEventListener("change",e=>{ const ds=selectedDataset(); ds.
   ds.overrides={}; render(); });
 // The palette is map-wide: clearing every dataset's overrides would throw
 // away colours the user pinned, so only the auto-assigned styles change.
-$("#paletteSel").addEventListener("change",e=>{ PALETTE_NAME=e.target.value; render(); });
+$("#paletteSel").addEventListener("change",e=>{ opts.palette=e.target.value; render(); });
 $("#baseMarker").addEventListener("change",e=>{ const ds=selectedDataset(); ds.base.marker=e.target.value; render(); });
 $("#baseColor").addEventListener("input",e=>{ const ds=selectedDataset(); ds.base.color=e.target.value; render(); });
 $("#sizeRange").addEventListener("input",e=>{ const ds=selectedDataset(); ds.base.size=+e.target.value;
@@ -2372,24 +2371,70 @@ svg.addEventListener("dblclick",()=>{ view={k:1,x:0,y:0}; render(); }); // reset
 
 /* persistence (localStorage) */
 const STORE_KEY="minimappr.state.v1";
-let saveTimer=null;
+let saveTimer=null, saveWarned=false;
 function scheduleSave(){ clearTimeout(saveTimer); saveTimer=setTimeout(saveState,400); }
+// An imported dataset's points are derived from its raw table (_import), so
+// only the table is stored and the points are rebuilt on load; storing both
+// doubled the size and ran a larger export into the storage quota.
+function storedDataset(ds){
+  const rebuildable=ds.source!=="manual" && ds._import && Array.isArray(ds._import.rows) && ds._import.mapping;
+  return rebuildable ? {...ds, rows:undefined} : ds;
+}
 function saveState(){
   try{
     localStorage.setItem(STORE_KEY, JSON.stringify({
-      theme:$("#themeSelect").value, datasets, selId, nextId, opts, view, legendDrag
+      theme:$("#themeSelect").value, datasets:datasets.map(storedDataset), selId, nextId, opts, view, legendDrag
     }));
-  }catch(e){ /* private mode or over quota: keep working, just don't persist */ }
+  }catch(e){
+    // Private mode or over quota: keep working, but say once that a reload
+    // will not bring this map back.
+    if(!saveWarned){ saveWarned=true;
+      flashStage("Autosave is off: browser storage is full or blocked. Export to keep this map."); }
+  }
+}
+// Fill in whatever an older or partial save lacks, so restoring never hands
+// the renderer a dataset it cannot draw. Returns null for one past saving.
+function normalizeDataset(d){
+  if(!d || typeof d!=="object") return null;
+  const ds={...d};
+  ds.name = ds.name!=null ? String(ds.name) : "Dataset";
+  ds.source = ds.source==="manual" ? "manual" : "csv";
+  ds.columns = Array.isArray(ds.columns) ? ds.columns : [];
+  ds.base = {color:"#d62728", marker:"Circle", size:30, ...(ds.base||{})};
+  ds.overrides = ds.overrides && typeof ds.overrides==="object" ? ds.overrides : {};
+  ds.opacity = typeof ds.opacity==="number" && isFinite(ds.opacity) ? ds.opacity : 1;
+  ds.visible = ds.visible!==false;
+  ds.varySymbols = !!ds.varySymbols;
+  for(const k of ["groupBy","colorBy","symbolBy"])
+    if(ds[k]!=null && !ds.columns.includes(ds[k])) ds[k]=null;
+  if(!Array.isArray(ds.rows) && ds._import && Array.isArray(ds._import.rows) && ds._import.mapping)
+    ds.rows = pointsFromMapping(ds._import, ds._import.mapping).points;
+  if(!Array.isArray(ds.rows)) return null;
+  ds.rows = ds.rows.filter(r=>r && isFinite(r.lon) && isFinite(r.lat))
+                   .map(r=>r._attr ? r : {...r, _attr:{}});
+  if(ds.source==="manual" && !ds._manual){
+    ds._manual={legend:ds.name, order:"latlon", base:ds.base,
+      text:ds.rows.map(r=>`${r.lat.toFixed(5)}, ${r.lon.toFixed(5)}`+(r.label?", "+r.label:"")).join("\n")};
+  }
+  if(typeof ds.id!=="number") ds.id=null;   // numbered by loadState
+  return ds;
 }
 function loadState(){
   let d; try{ d=JSON.parse(localStorage.getItem(STORE_KEY)); }catch(e){ return false; }
-  if(!d) return false;
+  if(!d || typeof d!=="object") return false;
   if(d.theme) $("#themeSelect").value=d.theme;
-  if(Array.isArray(d.datasets)) datasets=d.datasets;
-  if(d.selId!=null) selId=d.selId;
+  if(Array.isArray(d.datasets)) datasets=d.datasets.map(normalizeDataset).filter(Boolean);
   if(typeof d.nextId==="number") nextId=d.nextId;
-  if(d.opts) Object.assign(opts, d.opts);
-  if(d.view) view=d.view;
+  for(const ds of datasets){ if(ds.id==null) ds.id=nextId++; nextId=Math.max(nextId, ds.id+1); }
+  selId = datasets.some(ds=>ds.id===d.selId) ? d.selId : null;
+  if(d.opts && typeof d.opts==="object") Object.assign(opts, d.opts);
+  // A setting from a build that named things differently falls back rather
+  // than leaving the map without a projection or region.
+  if(!PROJ_DEFS[opts.projection]) opts.projection="Equirectangular";
+  if(!CONTINENT_EXTENTS[opts.extent]) opts.extent="World";
+  if(!PALETTES[opts.palette]) opts.palette="Default";
+  const v=d.view;
+  if(v && [v.k,v.x,v.y].every(n=>typeof n==="number" && isFinite(n))) view={k:v.k,x:v.x,y:v.y};
   legendDrag=d.legendDrag||null;
   return true;
 }
@@ -2403,7 +2448,7 @@ function syncMapControls(){
   $("#showLand").checked=opts.showLand; $("#landColor").value=opts.landColor;
   $("#showBorders").checked=opts.showBorders; $("#showCoast").checked=opts.showCoast;
   $("#mapTitle").value=opts.title; $("#showCompass").checked=opts.compass; $("#showLabels").checked=opts.labels;
-  $("#matColor").value=opts.matColor;
+  $("#matColor").value=opts.matColor; $("#paletteSel").value=opts.palette;
   $("#lineWidth").value=opts.lineWidth; $("#lwVal").textContent=Number(opts.lineWidth).toFixed(2);
   // Legend controls come back from the same table that defines them, so a
   // new setting cannot end up rendering from a restored value while its
