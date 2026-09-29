@@ -259,17 +259,6 @@ def test_the_compass_defaults_reproduce_the_original_arrow():
     assert annotation.xy == (0.975, 0.975)
 
 
-def test_a_bare_bool_still_toggles_the_compass():
-    """Older callers, and projects that stored only a flag."""
-    r = _renderer()
-    r.set_compass(True)
-    r.fig.canvas.draw()
-    assert r._artists.get("compass")
-    r.set_compass(False)
-    r.fig.canvas.draw()
-    assert not r._artists.get("compass")
-
-
 @pytest.mark.parametrize("position", ["lower left", "lower right",
                                       "upper left", "upper right"])
 def test_the_compass_arrow_always_points_into_the_map(position):

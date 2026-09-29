@@ -7,7 +7,7 @@ import pandas as pd
 
 from pymappr.coords import CoordinateError, parse_latitude, parse_longitude
 
-__all__ = ["ColumnMapping", "PointDataset", "read_csv", "read_table",
+__all__ = ["ColumnMapping", "PointDataset", "read_table",
            "list_sheets", "headers_look_like_data", "guess_mapping",
            "build_dataset", "load_csv", "build_manual_dataset",
            "combine_name_columns", "SPREADSHEET_EXTENSIONS",
@@ -46,14 +46,6 @@ class ColumnMapping:
     names: list[str] = field(default_factory=list)
     use_headers: bool = True
 
-    @property
-    def name1(self) -> str | None:
-        return self.names[0] if len(self.names) > 0 else None
-
-    @property
-    def name2(self) -> str | None:
-        return self.names[1] if len(self.names) > 1 else None
-
 
 @dataclass
 class PointDataset:
@@ -75,21 +67,6 @@ class PointDataset:
     def name_keys(self) -> list[str]:
         """Frame column key for each name column: name1, name2, ..."""
         return [f"name{i + 1}" for i in range(len(self.name_labels))]
-
-    @property
-    def name1_label(self) -> str:
-        labels = self.name_labels
-        return labels[0] if labels else "Name 1"
-
-    @property
-    def name2_label(self) -> str:
-        labels = self.name_labels
-        return labels[1] if len(labels) > 1 else "Name 2"
-
-
-def read_csv(path: str) -> pd.DataFrame:
-    """Read a CSV keeping every value as text (coordinates parsed later)."""
-    return read_table(path, headers=True)
 
 
 def read_table(path: str, headers: bool = True,
@@ -259,7 +236,7 @@ def combine_name_columns(dataset: PointDataset, labels: list[str],
 
 def load_csv(path: str, mapping: ColumnMapping | None = None) -> PointDataset:
     """Convenience wrapper: read, guess mapping if not given, build dataset."""
-    frame = read_csv(path)
+    frame = read_table(path)
     if mapping is None:
         mapping = guess_mapping(frame)
     return build_dataset(frame, mapping, source_path=path)

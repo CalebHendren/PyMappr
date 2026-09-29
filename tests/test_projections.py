@@ -6,8 +6,7 @@ import numpy as np
 
 from pymappr.projections import (GLOBE, LAMBERT_PROJECTIONS, PROJECTIONS,
                                  default_origin, get_projection,
-                                 has_custom_origin, is_globe, is_lambert,
-                                 lambert_default_origin)
+                                 has_custom_origin, is_globe, is_lambert)
 
 
 def test_world_and_lambert_projections_listed():
@@ -39,10 +38,10 @@ def test_lambert_projections_are_regional_and_clip():
     for name in LAMBERT_PROJECTIONS:
         proj = get_projection(name)
         assert proj.is_regional
-        clip = proj.clip_box()
+        clip = proj.clip_shape()
         assert clip is not None
-        _lon0, _lon1, lat0, lat1 = clip
-        assert lat0 < lat1
+        _lon0, lat0, _lon1, lat1 = clip.bounds
+        assert (lat0, lat1) == (proj.min_lat, proj.max_lat)
         # Forward-projecting inside the region stays finite.
         lat_mid = (proj.min_lat + proj.max_lat) / 2
         xs, ys = proj.forward([proj.lon_0, proj.lon_0 + 5.0],
@@ -52,7 +51,7 @@ def test_lambert_projections_are_regional_and_clip():
 
 def test_custom_origin_changes_crs_and_cache_key():
     name = "Lambert: N. America"
-    default_lon, default_lat = lambert_default_origin(name)
+    default_lon, default_lat = default_origin(name)
     base = get_projection(name)
     assert base.lon_0 == default_lon
     shifted = get_projection(name, default_lon - 20.0, default_lat + 5.0)

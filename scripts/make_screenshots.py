@@ -13,6 +13,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
 from pymappr.data_loader import load_csv  # noqa: E402
+from pymappr.decorations import CompassOptions  # noqa: E402
 from pymappr.layers import LayerStore  # noqa: E402
 from pymappr.renderer import MapRenderer  # noqa: E402
 from pymappr.styles import (NEUTRAL_MARKER_COLOR,  # noqa: E402
@@ -181,7 +182,7 @@ def main() -> int:
     for key in ("land", "glaciers", "ice_shelves", "deserts", "playas"):
         r.set_fill_layer(key, True)
     r.set_layer("reefs", True)
-    r.set_compass(True)
+    r.set_compass(CompassOptions(show=True))
     save(r, "physical_world.png")
 
     # 10. Cities, airports, and ports over Europe: markers and labels are

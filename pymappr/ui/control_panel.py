@@ -34,7 +34,6 @@ SCALE_UNIT_LABELS = {"Kilometres": "km", "Miles": "mi", "Both": "both"}
 SCALE_STYLE_LABELS = {"Segmented": "segmented", "Plain bar": "plain"}
 SCALE_LENGTH_LABELS = {"Automatic": "auto", "Fixed": "fixed"}
 COMPASS_STYLE_LABELS = {"Arrow with N": "arrow", "Filled triangle": "triangle"}
-KOFI_URL = "https://ko-fi.com/calebhendren"
 
 # Layer toggles, grouped by panel section. Each row is (key, text, kind)
 # where kind picks the renderer call: "line" (vector outlines), "fill"
@@ -90,6 +89,15 @@ LABEL_ROWS = [
     ("regions", "Geographic regions"),
     ("timezones", "Time zones"),
 ]
+
+
+def name_for(names: dict, value) -> str:
+    """The display name a ``{name: stored value}`` mapping shows for
+    *value*, falling back to the first name."""
+    for name, stored in names.items():
+        if stored == value:
+            return name
+    return next(iter(names))
 
 
 class ControlPanel(ttk.Frame):
@@ -420,7 +428,7 @@ class ControlPanel(ttk.Frame):
         sec = self._collapsible(tab, "Rows and order", expanded=True)
 
         self.legend_hierarchy_var = tk.StringVar(
-            value=self._name_for(HIERARCHY_MODES, defaults.hierarchy))
+            value=name_for(HIERARCHY_MODES, defaults.hierarchy))
         self._named_combo(sec, "Hierarchy:", self.legend_hierarchy_var,
                           HIERARCHY_MODES, rebuild)
         ttk.Label(sec, text="Nesting also lets shapes repeat across colour "
@@ -429,7 +437,7 @@ class ControlPanel(ttk.Frame):
                   foreground="#666666").pack(anchor="w")
 
         self.legend_order_var = tk.StringVar(
-            value=self._name_for(ENTRY_ORDERS, defaults.order))
+            value=name_for(ENTRY_ORDERS, defaults.order))
         self._named_combo(sec, "Order:", self.legend_order_var,
                           ENTRY_ORDERS, rebuild)
 
@@ -439,7 +447,7 @@ class ControlPanel(ttk.Frame):
         self._check(sec, "Show point counts", self.legend_counts_var, rebuild)
 
         self.legend_count_format_var = tk.StringVar(
-            value=self._name_for(COUNT_FORMATS, defaults.count_format))
+            value=name_for(COUNT_FORMATS, defaults.count_format))
         self._named_combo(sec, "Counts look like:",
                           self.legend_count_format_var, COUNT_FORMATS,
                           rebuild, width=12)
@@ -486,7 +494,7 @@ class ControlPanel(ttk.Frame):
                     self.legend_group_spacer_var, restyle)
 
         self.legend_group_swatch_var = tk.StringVar(
-            value=self._name_for(GROUP_SWATCHES, defaults.group_swatch))
+            value=name_for(GROUP_SWATCHES, defaults.group_swatch))
         self._named_combo(sec, "Group swatch:", self.legend_group_swatch_var,
                           GROUP_SWATCHES, rebuild)
 
@@ -581,12 +589,12 @@ class ControlPanel(ttk.Frame):
                        self.legend_title_fontsize_var, 4, 40, 1, restyle)
 
         self.legend_font_family_var = tk.StringVar(
-            value=self._name_for(FONT_FAMILIES, defaults.font_family))
+            value=name_for(FONT_FAMILIES, defaults.font_family))
         self._named_combo(sec, "Font:", self.legend_font_family_var,
                           FONT_FAMILIES, restyle, width=12)
 
         self.legend_title_align_var = tk.StringVar(
-            value=self._name_for(TITLE_ALIGNMENTS, defaults.title_align))
+            value=name_for(TITLE_ALIGNMENTS, defaults.title_align))
         self._named_combo(sec, "Title align:", self.legend_title_align_var,
                           TITLE_ALIGNMENTS, restyle, width=12)
 
@@ -629,19 +637,6 @@ class ControlPanel(ttk.Frame):
 
         ttk.Button(sec, text="Customize legend\N{HORIZONTAL ELLIPSIS}",
                    command=self.app.on_edit_styles).pack(fill="x", pady=2)
-
-    @staticmethod
-    def _name_for(names: dict, value) -> str:
-        """The display name for a stored value, for seeding a combo box."""
-        for name, stored in names.items():
-            if stored == value:
-                return name
-        return next(iter(names))
-
-    def _open_kofi(self) -> None:
-        import webbrowser
-
-        webbrowser.open(KOFI_URL)
 
     # ------------------------------------------------------------- map tab
 
@@ -910,7 +905,7 @@ class ControlPanel(ttk.Frame):
         bar = ttk.Frame(self)
         bar.pack(side="bottom", fill="x", padx=6, pady=(2, 4))
         ttk.Button(bar, text="\N{BLACK HEART SUIT} Support on Ko-fi",
-                   command=self._open_kofi).pack(fill="x", pady=(2, 0))
+                   command=self.app.on_open_kofi).pack(fill="x", pady=(2, 0))
         ttk.Button(bar, text="Check for updates\N{HORIZONTAL ELLIPSIS}",
                    command=self.app.on_check_updates).pack(fill="x",
                                                            pady=(2, 0))
@@ -1026,6 +1021,28 @@ class ControlPanel(ttk.Frame):
             style=COMPASS_STYLE_LABELS.get(self.compass_style_var.get(),
                                            "arrow"),
             size=self._number(self.compass_size_var, 0.5, 3.0, 1.0))
+
+    def set_compass_options(self, options: CompassOptions) -> None:
+        self.compass_var.set(options.show)
+        self.compass_position_var.set(options.position)
+        self.compass_style_var.set(name_for(COMPASS_STYLE_LABELS,
+                                            options.style))
+        self.compass_size_var.set(f"{options.size:g}")
+
+    def set_scale_bar_options(self, options: ScaleBarOptions) -> None:
+        """Show stored scale bar options; the dragged anchor is the
+        renderer's to keep."""
+        self.scale_bar_var.set(options.show)
+        self.scale_units_var.set(name_for(SCALE_UNIT_LABELS, options.units))
+        self.scale_position_var.set(options.position)
+        self.scale_style_var.set(name_for(SCALE_STYLE_LABELS, options.style))
+        self.scale_length_mode_var.set(name_for(SCALE_LENGTH_LABELS,
+                                                options.length_mode))
+        self.scale_fixed_length_var.set(
+            "" if options.fixed_length is None
+            else f"{options.fixed_length:g}")
+        self.scale_draggable_var.set(options.draggable)
+        self.update_scale_length_state()
 
     def scale_bar_options(self, anchor=None) -> ScaleBarOptions:
         """The scale bar as configured. *anchor* keeps a dragged position,
@@ -1148,11 +1165,11 @@ class ControlPanel(ttk.Frame):
         self.legend_title_var.set(options.title or "")
         self.legend_loc_var.set(options.location)
         self.legend_hierarchy_var.set(
-            self._name_for(HIERARCHY_MODES, options.hierarchy))
-        self.legend_order_var.set(self._name_for(ENTRY_ORDERS, options.order))
+            name_for(HIERARCHY_MODES, options.hierarchy))
+        self.legend_order_var.set(name_for(ENTRY_ORDERS, options.order))
         self.legend_counts_var.set(options.counts)
         self.legend_count_format_var.set(
-            self._name_for(COUNT_FORMATS, options.count_format))
+            name_for(COUNT_FORMATS, options.count_format))
         self.legend_blank_label_var.set(options.blank_label)
         self.legend_section_titles_var.set(options.section_titles)
         self.legend_title_separator_var.set(options.title_separator)
@@ -1162,7 +1179,7 @@ class ControlPanel(ttk.Frame):
         self.legend_bold_groups_var.set(options.bold_groups)
         self.legend_group_spacer_var.set(options.group_spacer)
         self.legend_group_swatch_var.set(
-            self._name_for(GROUP_SWATCHES, options.group_swatch))
+            name_for(GROUP_SWATCHES, options.group_swatch))
         self.legend_columns_var.set(str(options.columns))
         self.legend_label_spacing_var.set(f"{options.label_spacing:g}")
         self.legend_column_spacing_var.set(f"{options.column_spacing:g}")
@@ -1180,7 +1197,7 @@ class ControlPanel(ttk.Frame):
         self.legend_fontsize_var.set(f"{options.fontsize:g}")
         self.legend_title_fontsize_var.set(f"{options.title_fontsize:g}")
         self.legend_font_family_var.set(
-            self._name_for(FONT_FAMILIES, options.font_family))
+            name_for(FONT_FAMILIES, options.font_family))
         self.legend_label_bold_var.set(options.label_bold)
         self.legend_label_italic_var.set(options.label_italic)
         self.legend_label_underline_var.set(options.label_underline)
@@ -1188,7 +1205,7 @@ class ControlPanel(ttk.Frame):
         self.legend_title_italic_var.set(options.title_italic)
         self.legend_title_underline_var.set(options.title_underline)
         self.legend_title_align_var.set(
-            self._name_for(TITLE_ALIGNMENTS, options.title_align))
+            name_for(TITLE_ALIGNMENTS, options.title_align))
         # Colours last: the swatch buttons have to be repainted, not just set.
         for var, value in ((self.legend_symbol_color_var,
                             options.symbol_swatch_color),

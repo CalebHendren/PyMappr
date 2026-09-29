@@ -1072,14 +1072,8 @@ class MapRenderer:
 
     # ------------------------------------------------ compass and scale bar
 
-    def set_compass(self, options) -> None:
-        """Set the north arrow's options. A bare bool is still accepted so
-        older callers (and projects that stored just a flag) keep working."""
-        if isinstance(options, bool):
-            options = CompassOptions(show=options,
-                                     position=self._compass.position,
-                                     style=self._compass.style,
-                                     size=self._compass.size)
+    def set_compass(self, options: CompassOptions) -> None:
+        """Set the north arrow's options."""
         self._compass = options
         self._apply_compass()
 
@@ -1455,8 +1449,8 @@ class MapRenderer:
     def set_label_dragging(self, enabled: bool) -> None:
         self._label_dragging_enabled = enabled
 
-    def _clamp_label_offset(self, bx: float, by: float,
-                            dx: float, dy: float) -> tuple[float, float]:
+    def _clamp_label_offset(self, dx: float,
+                            dy: float) -> tuple[float, float]:
         """Limit *dx, dy* so the label stays within 1% of the current
         view extent from its original position."""
         x0, x1 = self.ax.get_xlim()
@@ -1658,7 +1652,7 @@ class MapRenderer:
         bx, by = text._pym_base
         raw_dx = event.xdata + gx - bx
         raw_dy = event.ydata + gy - by
-        dx, dy = self._clamp_label_offset(bx, by, raw_dx, raw_dy)
+        dx, dy = self._clamp_label_offset(raw_dx, raw_dy)
         text.set_position((bx + dx, by + dy))
         self.redraw()
 
@@ -1689,7 +1683,7 @@ class MapRenderer:
         self._label_drag = None
         tx, ty = text.get_position()
         bx, by = text._pym_base
-        dx, dy = self._clamp_label_offset(bx, by, tx - bx, ty - by)
+        dx, dy = self._clamp_label_offset(tx - bx, ty - by)
         self._label_offsets[text._pym_key] = (dx, dy)
 
     # ------------------------------------------------------------ graticule

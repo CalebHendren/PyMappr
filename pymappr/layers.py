@@ -36,7 +36,6 @@ class LayerSpec:
     # Resolution steps as (min zoom, directory), ascending by zoom. Empty =
     # single resolution. Zoom 0 shows the whole world; +1 per 2x magnification.
     resolutions: tuple[tuple[float, str], ...] = ()
-    label_directory: str | None = None  # resolution used for label anchors
     label_column: str = "name"
 
     def directory_for_zoom(self, zoom: float | None) -> str:
@@ -424,9 +423,6 @@ class LayerStore:
             # frame() without a zoom returns the default resolution, so
             # label anchors stay stable while the drawn resolution switches.
             gdf = self.frame(key)
-            if spec.label_directory is not None:
-                gdf = self._frame_for_directory(spec.label_directory,
-                                                spec.shapefile)
             label_col = spec.label_column
             df = gdf[gdf[label_col].notna() & (gdf[label_col] != "")].copy()
             if key in ("cities", "capitals"):

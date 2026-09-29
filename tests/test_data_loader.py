@@ -5,7 +5,7 @@ import pytest
 from pymappr.data_loader import (ColumnMapping, build_dataset,
                                 build_manual_dataset, combine_name_columns,
                                 guess_mapping, headers_look_like_data,
-                                list_sheets, load_csv, read_csv, read_table)
+                                list_sheets, load_csv, read_table)
 
 
 def write(tmp_path, text, name="points.csv"):
@@ -25,8 +25,7 @@ def test_documented_layout(tmp_path):
     ds = load_csv(path)
     assert len(ds) == 3
     assert ds.skipped == []
-    assert ds.name1_label == "County"
-    assert ds.name2_label == "City"
+    assert ds.name_labels[:2] == ["County", "City"]
     row = ds.frame.iloc[1]
     assert row["name1"] == "King"
     assert row["lon"] == pytest.approx(-(122 + 19 / 60 + 59 / 3600))
@@ -38,11 +37,11 @@ def test_header_guessing_out_of_order(tmp_path):
         lat,lng,place
         30.5,-97.1,Somewhere
     """)
-    frame = read_csv(path)
+    frame = read_table(path)
     mapping = guess_mapping(frame)
     assert mapping.longitude == "lng"
     assert mapping.latitude == "lat"
-    assert mapping.name1 == "place"
+    assert mapping.names[0] == "place"
     ds = build_dataset(frame, mapping)
     assert ds.frame.iloc[0]["lon"] == pytest.approx(-97.1)
 
@@ -52,9 +51,9 @@ def test_positional_fallback_without_hints(tmp_path):
         A,B,C,D
         Travis,Austin,-97.7431,30.2672
     """)
-    mapping = guess_mapping(read_csv(path))
+    mapping = guess_mapping(read_table(path))
     assert mapping.names == ["A", "B"]
-    assert (mapping.name1, mapping.name2) == ("A", "B")
+    assert mapping.names[:2] == ["A", "B"]
     assert (mapping.longitude, mapping.latitude) == ("C", "D")
 
 
@@ -82,12 +81,12 @@ def test_generic_name_labels_option(tmp_path):
         Country,State,County,City,Longitude,Latitude
         United States,Wyoming,Campbell,Gillette,-105.5022,44.2911
     """)
-    frame = read_csv(path)
+    frame = read_table(path)
     mapping = guess_mapping(frame)
     mapping.use_headers = False
     ds = build_dataset(frame, mapping)
     assert ds.name_labels == ["Name 1", "Name 2", "Name 3", "Name 4"]
-    assert ds.name1_label == "Name 1"
+    assert ds.name_labels[0] == "Name 1"
 
 
 def test_bad_rows_skipped_and_reported(tmp_path):
@@ -111,7 +110,7 @@ def test_explicit_mapping_overrides_guess(tmp_path):
         junk,-97.1,30.5
     """)
     mapping = ColumnMapping(longitude="x", latitude="y", names=["ignored"])
-    ds = build_dataset(read_csv(path), mapping)
+    ds = build_dataset(read_table(path), mapping)
     assert len(ds) == 1
     assert ds.frame.iloc[0]["name1"] == "junk"
 
@@ -122,7 +121,7 @@ def test_too_few_columns(tmp_path):
         1.0
     """)
     with pytest.raises(ValueError):
-        guess_mapping(read_csv(path))
+        guess_mapping(read_table(path))
 
 
 # ------------------------------------------------- first row is data, not headers

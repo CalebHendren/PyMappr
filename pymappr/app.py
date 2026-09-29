@@ -32,22 +32,19 @@ from pymappr.layers import LayerStore  # noqa: E402
 from pymappr.projects import PROJECT_EXTENSION, DatasetEntry  # noqa: E402
 from pymappr.renderer import MapRenderer  # noqa: E402
 from pymappr.legend import (ENTRY_ORDERS, PUBLICATION_LEGEND,  # noqa: E402
-                            LegendOptions, apply_override, is_hidden,
+                            LegendOptions, format_count, is_hidden,
                             legend_counts, legend_sections, manual_order,
                             order_labels, override_label, row_key)
 from pymappr.styles import (BLACK_AND_WHITE_NAME,  # noqa: E402
                             DEFAULT_PALETTE_NAME, LEGIBLE_MARKER_LIMIT,
                             POINT_EDGE_COLOR, POINT_EDGE_WIDTH, PointStyle,
-                            attribute_style_maps, default_styles,
+                            apply_override, attribute_style_maps,
+                            default_styles,
                             group_points, marker_load, owner_map,
                             resolve_nesting, style_by_attributes)
 from pymappr.ui.column_mapper import ColumnMapperDialog  # noqa: E402
 from pymappr.ui.combine_columns import CombineColumnsDialog  # noqa: E402
-from pymappr.ui.control_panel import (COMPASS_STYLE_LABELS,  # noqa: E402
-                                      SCALE_LENGTH_LABELS,
-                                      SCALE_STYLE_LABELS,
-                                      SCALE_UNIT_LABELS,
-                                      ControlPanel)
+from pymappr.ui.control_panel import ControlPanel, name_for  # noqa: E402
 from pymappr.ui.filter_bar import FilterBar  # noqa: E402
 from pymappr.ui.legend_editor import LegendEditorDialog  # noqa: E402
 from pymappr.ui.manual_entry import ManualEntryDialog  # noqa: E402
@@ -61,14 +58,6 @@ PUBLICATION_POINT_EDGE = ("#000000", 0.6)
 PUBLICATION_DPI = "600"
 PROJECT_FILETYPES = [("PyMappr project", "*" + PROJECT_EXTENSION),
                      ("All files", "*.*")]
-
-
-def _label_for(labels: dict, value: str, fallback: str) -> str:
-    """The display label a ``{label: value}`` mapping stores *value* under."""
-    for label, stored in labels.items():
-        if stored == value:
-            return label
-    return fallback
 
 
 class PyMapprApp:
@@ -218,7 +207,7 @@ class PyMapprApp:
                               command=self.on_check_updates)
         help_menu.add_separator()
         help_menu.add_command(label="Support me on Ko-fi",
-                              command=self._open_kofi)
+                              command=self.on_open_kofi)
         menubar.add_cascade(label="Help", menu=help_menu)
         self.root.config(menu=menubar)
         self.root.bind("<Control-n>", lambda _e: self.on_new_project())
@@ -299,9 +288,8 @@ class PyMapprApp:
             "naturalearthdata.com",
             parent=self.root)
 
-    def _open_kofi(self) -> None:
-        from pymappr.ui.control_panel import KOFI_URL
-        webbrowser.open(KOFI_URL)
+    def on_open_kofi(self) -> None:
+        webbrowser.open(updates.KOFI_URL)
 
     # -------------------------------------------------------------- updates
 
@@ -622,25 +610,10 @@ class PyMapprApp:
         # "compass" is the original bare flag; the options dict arrived
         # later, so an older project has only the flag and defaults the rest.
         compass = CompassOptions.from_dict(m.get("compass_options"))
-        p.compass_var.set(m.get("compass", compass.show))
-        p.compass_position_var.set(compass.position)
-        p.compass_style_var.set(_label_for(COMPASS_STYLE_LABELS,
-                                           compass.style, "Arrow with N"))
-        p.compass_size_var.set(f"{compass.size:g}")
-
+        compass.show = bool(m.get("compass", compass.show))
+        p.set_compass_options(compass)
         bar = ScaleBarOptions.from_dict(m.get("scale_bar"))
-        p.scale_bar_var.set(bar.show)
-        p.scale_units_var.set(_label_for(SCALE_UNIT_LABELS, bar.units,
-                                         "Kilometres"))
-        p.scale_position_var.set(bar.position)
-        p.scale_style_var.set(_label_for(SCALE_STYLE_LABELS, bar.style,
-                                         "Segmented"))
-        p.scale_length_mode_var.set(_label_for(SCALE_LENGTH_LABELS,
-                                               bar.length_mode, "Automatic"))
-        p.scale_fixed_length_var.set(
-            "" if bar.fixed_length is None else f"{bar.fixed_length:g}")
-        p.scale_draggable_var.set(bar.draggable)
-        p.update_scale_length_state()
+        p.set_scale_bar_options(bar)
         self._scale_bar_corner = bar.position
         self._scale_bar_anchor = bar.anchor
         p.palette_var.set(m.get("palette", DEFAULT_PALETTE_NAME))
@@ -684,12 +657,11 @@ class PyMapprApp:
             renderer.set_basemap(p.basemap_var.get())
             renderer.set_orientation(p.orientation())
             renderer.set_extent(p.continent_var.get())
-            for key, var in p.layer_vars.items():
-                self._restore_layer(renderer.set_layer, key, var)
-            for key, var in p.fill_vars.items():
-                self._restore_layer(renderer.set_fill_layer, key, var)
-            for key, var in p.point_vars.items():
-                self._restore_layer(renderer.set_point_layer, key, var)
+            for setter, vars_ in ((renderer.set_layer, p.layer_vars),
+                                  (renderer.set_fill_layer, p.fill_vars),
+                                  (renderer.set_point_layer, p.point_vars)):
+                for key, var in vars_.items():
+                    self._apply_layer(setter, key, var.get(), var)
             renderer.set_bathymetry(p.bathymetry_var.get())
             renderer.set_capitals_only(p.capitals_only_var.get())
             renderer.set_ocean(p.ocean_var.get())
@@ -720,23 +692,28 @@ class PyMapprApp:
 
     # ----------------------------------------------------------------- data
 
-    def _restore_layer(self, setter, key: str,
-                       var: tk.BooleanVar) -> None:
-        """Apply one layer toggle while restoring state, tolerating optional
-        layers whose data was never downloaded (untick them silently instead
-        of aborting the whole restore)."""
-        want = var.get()
-        if want and not self.store.has_layer_data(key):
+    def _apply_layer(self, setter, key: str, visible: bool,
+                     var: tk.BooleanVar):
+        """Show or hide one layer, unticking *var* when it cannot be drawn.
+
+        Optional external layers (biodiversity, ecoregions) may not be
+        downloaded, and any layer's data could be missing or corrupt. Returns
+        None when it worked, ``"missing"`` when the data is not downloaded,
+        or the exception that stopped it - the caller decides whether to
+        say so (a toggle does, a project restore stays quiet)."""
+        if visible and not self.store.has_layer_data(key):
             var.set(False)
-            return
+            return "missing"
         try:
-            setter(key, want)
-        except Exception:  # noqa: BLE001 - a bad layer must not block restore
+            setter(key, visible)
+        except Exception as exc:  # noqa: BLE001 - a bad layer must not crash
             var.set(False)
             try:
-                setter(key, False)
+                setter(key, False)  # drop any half-built artists
             except Exception:  # noqa: BLE001
                 pass
+            return exc
+        return None
 
     def _active_entry(self) -> DatasetEntry | None:
         if self.active is None or not (0 <= self.active < len(self.entries)):
@@ -1089,7 +1066,9 @@ class PyMapprApp:
             # The plain legend labels its rows from the point groups, so the
             # count has to go on here rather than only on the legend copy -
             # otherwise "Show point counts" does nothing in group-by mode.
-            display = self._counted_label(display, len(sub), total, options)
+            if options.counts:
+                display = format_count(display, len(sub), total,
+                                       options.count_format)
             render.append((display, style, sub["lon"].to_numpy(),
                            sub["lat"].to_numpy()))
             # Hidden rows keep their points on the map but leave the legend,
@@ -1107,23 +1086,6 @@ class PyMapprApp:
         rank = {label: i for i, label in enumerate(order)}
         legend_entries.sort(key=lambda row: rank.get(row[0], len(rank)))
         return render, legend_entries, palette_offset + len(labels)
-
-    @staticmethod
-    def _counted_label(label: str, n: int, total: int,
-                       options: LegendOptions) -> str:
-        """A plain-mode legend row's text with its count appended. The
-        sectioned path gets this from pymappr.legend; group-by mode counts
-        whole groups, so it is a row count rather than a tagged lookup."""
-        if not options.counts:
-            return label
-        pct = (100.0 * n / total) if total else 0.0
-        if options.count_format == "n":
-            return f"{label} {n}"
-        if options.count_format == "(n, %)":
-            return f"{label} ({n}, {pct:.0f}%)"
-        if options.count_format == "%":
-            return f"{label} {pct:.0f}%"
-        return f"{label} ({n})"
 
     def _attribute_groups(self, entry: DatasetEntry, multi: bool,
                           options: LegendOptions):
@@ -1385,7 +1347,7 @@ class PyMapprApp:
         user to work out why nothing moved.
         """
         self.panel.legend_order_var.set(
-            self.panel._name_for(ENTRY_ORDERS, "manual"))
+            name_for(ENTRY_ORDERS, "manual"))
         self._push_points()
 
     def _legend_rows(self, entry: DatasetEntry) -> list:
@@ -1528,39 +1490,25 @@ class PyMapprApp:
         self.renderer.redraw()
 
     def _toggle_layer(self, key: str, visible: bool, setter,
-                      var: tk.BooleanVar | None = None) -> None:
-        """Shared busy-cursor plumbing for every kind of layer toggle.
-
-        Optional external layers (biodiversity, ecoregions) may not be
-        downloaded, and any layer's data could be missing or corrupt; rather
-        than crash, revert the checkbox and explain."""
-        if visible and not self.store.has_layer_data(key):
-            if var is not None:
-                var.set(False)
-            self._optional_layer_missing(key)
-            return
+                      var: tk.BooleanVar) -> None:
+        """A layer checkbox changed: draw it with a busy cursor, and explain
+        (and untick) when it cannot be drawn."""
         if visible:
             self.set_status(f"Loading {key.replace('_', ' ')} layer"
                             f"\N{HORIZONTAL ELLIPSIS}")
             self._busy(True)
         try:
-            setter(key, visible)
-        except Exception as exc:  # noqa: BLE001 - a bad layer must not crash
+            problem = self._apply_layer(setter, key, visible, var)
+        finally:
             if visible:
                 self._busy(False)
                 self.set_status("Ready.")
-                if var is not None:
-                    var.set(False)
-                try:
-                    setter(key, False)  # drop any half-built artists
-                except Exception:  # noqa: BLE001
-                    pass
-            self._layer_load_error(key, exc)
-            return
-        if visible:
-            self._busy(False)
-            self.set_status("Ready.")
-        self.renderer.redraw()
+        if problem == "missing":
+            self._optional_layer_missing(key)
+        elif problem is not None:
+            self._layer_load_error(key, problem)
+        else:
+            self.renderer.redraw()
 
     def _optional_layer_missing(self, key: str) -> None:
         label = key.replace("_", " ")

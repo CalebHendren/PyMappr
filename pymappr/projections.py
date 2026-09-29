@@ -8,7 +8,7 @@ import numpy as np
 __all__ = [
     "CAP_CLIP_RADIUS", "GLOBE", "PROJECTIONS", "LAMBERT_PROJECTIONS",
     "Projection", "default_origin", "get_projection", "has_custom_origin",
-    "is_globe", "is_lambert", "lambert_default_origin", "proj4_string",
+    "is_globe", "is_lambert", "proj4_string",
 ]
 
 # Display name -> (proj4 string or None for plain lon/lat, max usable latitude).
@@ -92,18 +92,13 @@ def has_custom_origin(name: str) -> bool:
     return is_lambert(name) or is_globe(name)
 
 
-def lambert_default_origin(name: str) -> tuple[float, float]:
-    """The preset's default (lon_0, lat_0) point of natural origin."""
-    d = LAMBERT_DEFS[name]
-    return d.lon_0, d.lat_0
-
-
 def default_origin(name: str) -> tuple[float, float]:
     """The default (lon_0, lat_0) centre for any origin-customizable
     projection (Lambert presets and the Globe)."""
     if is_globe(name):
         return 0.0, 0.0
-    return lambert_default_origin(name)
+    d = LAMBERT_DEFS[name]
+    return d.lon_0, d.lat_0
 
 
 def proj4_string(name: str, lon_0: float | None = None,
@@ -111,9 +106,7 @@ def proj4_string(name: str, lon_0: float | None = None,
     """The proj4 CRS string for a projection name (None = plain lon/lat).
 
     For Lambert presets and the Globe, *lon_0*/*lat_0* override the
-    default point of natural origin, exactly as in :func:`get_projection`
-    - but no transformer or bounds are built, so callers that only need
-    the CRS text (the code export) stay cheap.
+    default point of natural origin, exactly as in :func:`get_projection`.
     """
     if name == GLOBE:
         lon0 = 0.0 if lon_0 is None else float(lon_0)
@@ -165,29 +158,20 @@ class Projection:
     def world_width(self) -> float:
         return self.bounds[1] - self.bounds[0]
 
-    def clip_box(self) -> tuple[float, float, float, float] | None:
-        """Lon/lat box vector layers are clipped to before reprojection, or
-        None to leave them whole. Regional projections clip to their latitude
-        band so the singular pole never reaches the reprojected geometry."""
-        if self.is_regional:
-            return (-180.0, 180.0, self.min_lat, self.max_lat)
-        return None
-
     def clip_shape(self):
         """Lon/lat geometry vector layers are clipped to before
         reprojection (a shapely geometry), or None to leave them whole.
 
         The Globe clips to its visible spherical cap - the far hemisphere
         projects to infinity - and regional (Lambert) projections to their
-        latitude band, matching :meth:`clip_box`."""
+        latitude band, so the singular pole never reaches the reprojected
+        geometry."""
         if self.hemisphere:
             return _cap_clip(self.lon_0, self.lat_0)
-        box = self.clip_box()
-        if box is not None:
-            from shapely.geometry import box as shapely_box
+        if self.is_regional:
+            from shapely.geometry import box
 
-            lon0, lon1, lat0, lat1 = box
-            return shapely_box(lon0, lat0, lon1, lat1)
+            return box(-180.0, self.min_lat, 180.0, self.max_lat)
         return None
 
     def horizon_xy(self) -> tuple[np.ndarray, np.ndarray]:

@@ -7,7 +7,8 @@ from pymappr import __version__
 from pymappr.codecheck import LANGUAGES
 from pymappr.layers import (BATHYMETRY_STEPS, CONTINENT_EXTENTS,
                             LAYER_SPECS)
-from pymappr.legend import (LegendOptions, is_hidden, legend_counts,
+from pymappr.legend import (LegendOptions, format_count, is_hidden,
+                            legend_counts,
                             legend_sections, manual_order, order_labels,
                             override_label, row_key)
 from pymappr.projections import CAP_CLIP_RADIUS, get_projection, is_globe
@@ -15,9 +16,7 @@ from pymappr.renderer import (BATHYMETRY_COLORS, FILL_COLORS, FILL_LAYERS,
                               LABEL_STYLES, LINE_LAYERS, MARGINS_PLAIN,
                               MARGINS_WITH_TICKS, POINT_LAYERS, Z_BATHYMETRY,
                               Z_LAKE_FILL, Z_OCEAN, Z_POINT_LAYERS)
-from pymappr.decorations import (CompassOptions, ScaleBarOptions,
-                                 corner_anchor, format_length,
-                                 nice_length, unit_metres)
+from pymappr.decorations import CompassOptions, ScaleBarOptions
 from pymappr.styles import (POINT_EDGE_COLOR, POINT_EDGE_WIDTH, PointStyle,
                             apply_override, attribute_style_maps,
                             default_styles, group_points, palette_for,
@@ -337,7 +336,7 @@ def _display_labels(raw_labels: list[str], entry_name: str, multi: bool,
     for label in raw_labels:
         display = label
         if multi and attribute_mode:
-            display = label
+            pass  # attribute rows are value names; sections carry the dataset
         elif multi and label == "All points":
             display = entry_name
         elif multi and label in used:
@@ -482,7 +481,8 @@ def _dataset_configs(entries, data_mode: str = "inline",
             total = sum(len(sub) for _label, sub in groups)
             sizes = {label: len(sub) for label, sub in groups}
             if options.counts:
-                display = {label: _counted(text, sizes[label], total, options)
+                display = {label: format_count(text, sizes[label], total,
+                                               options.count_format)
                            for label, text in display.items()}
             entry_styles = {}
             for label in labels:
@@ -520,19 +520,6 @@ def _order_rows(labels: list, options: LegendOptions, count_of,
         return sorted(labels, key=lambda t: (place.get(t, 1 << 30),
                                              labels.index(t)))
     return order_labels(labels, options.order, count_of)
-
-
-def _counted(label: str, n: int, total: int, options: LegendOptions) -> str:
-    """A plain-mode legend row's text with its count appended, matching
-    ``PyMapprApp._counted_label``."""
-    pct = (100.0 * n / total) if total else 0.0
-    if options.count_format == "n":
-        return f"{label} {n}"
-    if options.count_format == "(n, %)":
-        return f"{label} ({n}, {pct:.0f}%)"
-    if options.count_format == "%":
-        return f"{label} {pct:.0f}%"
-    return f"{label} ({n})"
 
 
 def _inline_csv(entry) -> str:
