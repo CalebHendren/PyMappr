@@ -37,7 +37,8 @@ from pymappr.projects import PROJECT_EXTENSION, DatasetEntry  # noqa: E402
 from pymappr.renderer import MapRenderer  # noqa: E402
 from pymappr.styles import (BLACK_AND_WHITE_NAME,  # noqa: E402
                             DEFAULT_PALETTE_NAME, LEGIBLE_MARKER_LIMIT,
-                            POINT_EDGE_COLOR, POINT_EDGE_WIDTH, PointStyle,
+                            POINT_EDGE_COLOR, POINT_EDGE_WIDTH,
+                            PUBLICATION_POINT_EDGE, PointStyle,
                             apply_override, marker_load, resolve_nesting,
                             row_key)
 from pymappr.ui.column_mapper import ColumnMapperDialog  # noqa: E402
@@ -50,9 +51,9 @@ from pymappr.ui.projects_dialog import ProjectsDialog  # noqa: E402
 
 MAX_SKIPPED_SHOWN = 12
 UNTITLED = "Untitled"
-# The point and export half of the "Publication style" preset (the legend
-# half is pymappr.legend.PUBLICATION_LEGEND).
-PUBLICATION_POINT_EDGE = ("#000000", 0.6)
+# The export DPI of the "Publication style" preset (the point and legend
+# halves are pymappr.styles.PUBLICATION_POINT_EDGE and
+# pymappr.legend.PUBLICATION_LEGEND).
 PUBLICATION_DPI = "600"
 PROJECT_FILETYPES = [("PyMappr project", "*" + PROJECT_EXTENSION),
                      ("All files", "*.*")]
@@ -104,12 +105,10 @@ class PyMapprApp:
         self.toolbar = NavigationToolbar2Tk(self.canvas, toolbar_row,
                                             pack_toolbar=False)
         self.toolbar.update()
-        self.toolbar.pack(side="left", fill="x", expand=True)
+        # The zoom buttons are packed first so they keep their room; the
+        # toolbar, which stretches, gets whatever width is left.
         self._add_zoom_buttons(toolbar_row)
-        self.canvas.get_tk_widget().pack(side="top", fill="both", expand=True)
-
-        # Scroll wheel zooms the map about the cursor.
-        self.canvas.mpl_connect("scroll_event", self._on_scroll_zoom)
+        self.toolbar.pack(side="left", fill="x", expand=True)
 
         self.status = ttk.Label(map_frame, text="Ready. Add a data file or "
                                 "enter points manually to plot them, or "
@@ -122,6 +121,12 @@ class PyMapprApp:
 
         self.filter_bar = FilterBar(map_frame, self.on_filter)
         self.filter_bar.pack(side="bottom", fill="x")
+        # The map is packed last, so it takes the room between the toolbar
+        # and the bars below it rather than squeezing them.
+        self.canvas.get_tk_widget().pack(side="top", fill="both", expand=True)
+
+        # Scroll wheel zooms the map about the cursor.
+        self.canvas.mpl_connect("scroll_event", self._on_scroll_zoom)
 
         # Defaults: simple basemap with country borders.
         self.renderer.set_layer("countries", True)
@@ -230,14 +235,16 @@ class PyMapprApp:
     # ----------------------------------------------------------------- zoom
 
     def _add_zoom_buttons(self, parent) -> None:
-        """Big, obvious zoom buttons next to the matplotlib toolbar."""
-        ttk.Separator(parent, orient="vertical").pack(
-            side="left", fill="y", padx=6, pady=2)
-        ttk.Button(parent, text="\N{HEAVY MINUS SIGN} Zoom out",
-                   command=lambda: self.zoom_step(1 / 1.5)).pack(side="left")
+        """Big, obvious zoom buttons at the right end of the toolbar row.
+
+        Packed from the right, so the rightmost widget comes first."""
         ttk.Button(parent, text="\N{HEAVY PLUS SIGN} Zoom in",
-                   command=lambda: self.zoom_step(1.5)).pack(side="left",
-                                                             padx=(2, 0))
+                   command=lambda: self.zoom_step(1.5)).pack(side="right",
+                                                             padx=(2, 4))
+        ttk.Button(parent, text="\N{HEAVY MINUS SIGN} Zoom out",
+                   command=lambda: self.zoom_step(1 / 1.5)).pack(side="right")
+        ttk.Separator(parent, orient="vertical").pack(
+            side="right", fill="y", padx=6, pady=2)
 
     def zoom_step(self, factor: float) -> None:
         """Zoom about the view center (buttons, Ctrl+= / Ctrl+-)."""

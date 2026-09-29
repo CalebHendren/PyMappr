@@ -11,10 +11,11 @@ from pymappr.layers import (BATHYMETRY_STEPS, CONTINENT_EXTENTS,
 from pymappr.layout import column_key, layout_points, with_default_title
 from pymappr.legend import LegendOptions
 from pymappr.projections import CAP_CLIP_RADIUS, get_projection, is_globe
-from pymappr.renderer import (BATHYMETRY_COLORS, FILL_COLORS, FILL_LAYERS,
-                              LABEL_STYLES, LINE_LAYERS, MARGINS_PLAIN,
-                              MARGINS_WITH_TICKS, POINT_LAYERS, Z_BATHYMETRY,
-                              Z_LAKE_FILL, Z_OCEAN, Z_POINT_LAYERS)
+from pymappr.renderer.tables import (BATHYMETRY_COLORS, FILL_COLORS,
+                                     FILL_LAYERS, LABEL_STYLES, LINE_LAYERS,
+                                     MARGINS_PLAIN, MARGINS_WITH_TICKS,
+                                     POINT_LAYERS, Z_BATHYMETRY, Z_LAKE_FILL,
+                                     Z_OCEAN, Z_POINT_LAYERS)
 from pymappr.decorations import CompassOptions, ScaleBarOptions
 from pymappr.styles import (DEFAULT_PALETTE, POINT_EDGE_COLOR,
                             POINT_EDGE_WIDTH, PointStyle, palette_for)
@@ -120,7 +121,7 @@ _R_LINETYPES = {
 
 
 # The pre-made functions pasted verbatim below every script's configuration
-# block. They replicate pymappr/renderer.py for a single static view, and live
+# block. They replicate pymappr/renderer/ for a single static view, and live
 # in real .py/.R files so editors, linters and diffs treat them as code.
 TEMPLATE_DIR = Path(__file__).resolve().parent / "templates"
 

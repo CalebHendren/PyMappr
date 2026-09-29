@@ -1,3 +1,14 @@
+"""Screenshot the running app for the README.
+
+Needs a display. On Linux, run it under Xvfb with a screen bigger than the
+app's 1280x800 window:
+
+    xvfb-run -a -s "-screen 0 1600x1000x24" python scripts/make_app_screenshot.py
+
+Use a Python whose Tk draws text through Xft (distribution and python.org
+builds do); without it, symbols such as the heart come out as ``\\u2665``.
+"""
+
 from __future__ import annotations
 
 import sys
@@ -8,11 +19,21 @@ sys.path.insert(0, str(REPO_ROOT))
 
 import tkinter as tk  # noqa: E402
 
+import sv_ttk  # noqa: E402
+
 from pymappr.app import PyMapprApp  # noqa: E402
 from pymappr.data_loader import load_csv  # noqa: E402
 from pymappr.layers import LayerStore  # noqa: E402
 
 OUT_DIR = REPO_ROOT / "docs" / "images"
+
+
+def new_root(geometry: str) -> tk.Tk:
+    """A Tk root in the app's light theme, as ``pymappr.app.main`` sets up."""
+    root = tk.Tk()
+    root.geometry(geometry)
+    sv_ttk.set_theme("light")
+    return root
 
 
 def load_sample(app: PyMapprApp, name: str, group_by: str | None = None) -> None:
@@ -63,8 +84,7 @@ def grab_widget(widget, path: Path) -> None:
 
 
 def shot_main_and_layers(store: LayerStore) -> None:
-    root = tk.Tk()
-    root.geometry("1500x950+0+0")
+    root = new_root("1500x950+0+0")
     app = PyMapprApp(root, store, restore_session=False)
     root.update()
 
@@ -111,17 +131,45 @@ def shot_main_and_layers(store: LayerStore) -> None:
     root.destroy()
 
 
+def shot_publication(store: LayerStore) -> None:
+    """Genus and Species joined into one legend line, in the publication
+    style: the Combine columns dialog, then the map it gives."""
+    root = new_root("1500x950+0+0")
+    app = PyMapprApp(root, store, restore_session=False)
+    root.update()
+
+    load_sample(app, "south_america_beetles.csv", group_by="Genus")
+    app.panel.continent_var.set("South America")
+    app.on_continent()
+    app.panel.orientation_var.set("Portrait")
+    app.on_orientation()
+    app.panel.basemap_var.set("relief")
+    app.on_basemap()
+
+    def grab_and_accept() -> None:
+        dialog = next(w for w in root.winfo_children()
+                      if isinstance(w, tk.Toplevel))
+        grab_widget(dialog, OUT_DIR / "combine_columns.png")
+        dialog._accept()
+
+    # The real Data-tab handler: it waits on the dialog, which is grabbed
+    # and accepted with its defaults (the last two columns, space-joined).
+    root.after(500, grab_and_accept)
+    app.on_combine_columns()
+    app.on_publication_style()
+    select_tab(app.panel, "Data")
+    app.canvas.draw()
+    grab_window(root, OUT_DIR / "app_publication.png")
+    root.destroy()
+
+
 def shot_column_mapper() -> None:
     """The column-mapping dialog shown on every import."""
     from pymappr.data_loader import guess_mapping, read_table
     from pymappr.ui.column_mapper import ColumnMapperDialog
 
     csv = str(REPO_ROOT / "sample_data" / "south_america_beetles.csv")
-    root = tk.Tk()
-    root.geometry("900x650+0+0")
-    import sv_ttk
-
-    sv_ttk.set_theme("light")
+    root = new_root("900x650+0+0")
     root.update()
     frame = read_table(csv, headers=True)
     dialog = ColumnMapperDialog(
@@ -141,6 +189,7 @@ def main() -> int:
         print(err)
         return 1
     shot_main_and_layers(store)
+    shot_publication(store)
     shot_column_mapper()
     return 0
 
