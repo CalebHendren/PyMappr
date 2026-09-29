@@ -96,7 +96,7 @@ def shot_main_and_layers(store: LayerStore) -> None:
     app.on_basemap()
     app.panel.layer_vars["states"].set(False)
     app.on_layer("states")
-    app.panel.legend_show_var.set(False)
+    app.panel.legend_vars["show"].set(False)
     app.on_legend_options()
     app.panel.bathymetry_var.set(True)
     app.on_bathymetry()

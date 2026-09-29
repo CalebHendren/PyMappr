@@ -82,9 +82,9 @@ def test_every_option_round_trips_through_the_widgets(panel):
 
 
 def test_a_blank_swatch_gap_means_automatic(panel):
-    panel.legend_handle_pad_var.set("")
+    panel.legend_vars["handle_text_pad"].set("")
     assert panel.legend_options().handle_text_pad is None
-    panel.legend_handle_pad_var.set("1.5")
+    panel.legend_vars["handle_text_pad"].set("1.5")
     assert panel.legend_options().handle_text_pad == pytest.approx(1.5)
 
 
@@ -92,23 +92,23 @@ def test_half_typed_numbers_fall_back_instead_of_raising(panel):
     # Spinboxes report on every keystroke, so "" and "-" are ordinary
     # states the panel has to survive rather than error on.
     for partial in ("", "-", ".", "abc"):
-        panel.legend_fontsize_var.set(partial)
-        panel.legend_columns_var.set(partial)
+        panel.legend_vars["fontsize"].set(partial)
+        panel.legend_vars["columns"].set(partial)
         options = panel.legend_options()
         assert options.fontsize == LegendOptions().fontsize
         assert options.columns == LegendOptions().columns
 
 
 def test_numbers_are_clamped_to_their_range(panel):
-    panel.legend_fontsize_var.set("999")
+    panel.legend_vars["fontsize"].set("999")
     assert panel.legend_options().fontsize == 32.0
-    panel.legend_columns_var.set("0")
+    panel.legend_vars["columns"].set("0")
     assert panel.legend_options().columns == 1
 
 
 def test_colour_swatches_repaint_when_options_are_restored(panel):
     panel.set_legend_options(LegendOptions(frame_color="#abcdef"))
-    button = panel._color_buttons[str(panel.legend_frame_color_var)]
+    button = panel._color_buttons[str(panel.legend_vars["frame_color"])]
     assert button.cget("bg") == "#abcdef"
 
 

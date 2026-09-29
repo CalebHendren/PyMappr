@@ -1151,13 +1151,8 @@ class PyMapprApp:
                         f"({PUBLICATION_DPI} DPI).")
 
     def on_legend_options(self) -> None:
-        """A look-only change: restyle the legend that is already there."""
-        self._apply_legend()
-
-    def on_legend_content(self) -> None:
-        """A change to the rows themselves - counts, order, nesting, the
-        text of a label. Those are baked into the rows when the groups are
-        built, so this has to rebuild rather than restyle."""
+        """Any legend setting changed. Rebuilding is one legend build, so
+        there is no separate restyle-only path to keep in step with it."""
         self._push_points()
 
     def on_legend_position(self) -> None:
@@ -1202,8 +1197,7 @@ class PyMapprApp:
         the reorder buttons flip the Order setting rather than leaving the
         user to work out why nothing moved.
         """
-        self.panel.legend_order_var.set(
-            name_for(ENTRY_ORDERS, "manual"))
+        self.panel.legend_vars["order"].set(name_for(ENTRY_ORDERS, "manual"))
         self._push_points()
 
     def on_basemap(self) -> None:

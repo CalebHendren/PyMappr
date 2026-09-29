@@ -91,6 +91,101 @@ LABEL_ROWS = [
 ]
 
 
+# Every legend setting, grouped as the Legend tab shows it: (section title,
+# expanded, rows), where expanded is None for an always-open section and
+# otherwise whether the foldable section starts open. A row is
+# (LegendOptions field, kind, label, extra):
+#   check  - a tick box
+#   combo  - a drop-down of stored values (extra: the values)
+#   choice - a drop-down of display names (extra: {name: stored value})
+#   text   - a text box (extra: its width); blank means the default
+#   number - a spin box (extra: (low, high, step)), clamped when read
+#   color  - a colour swatch
+#   style  - Bold / Italic / Underline toggles for <field>_bold and so on
+#   note   - grey help text (label is the text; no field)
+# Building the widgets, reading them and restoring them all walk this one
+# table, so a new setting is one row here plus its LegendOptions field.
+LEGEND_ROWS = [
+    ("Legend", None, [
+        ("show", "check", "Show legend", None),
+        ("location", "combo", "Position:", LEGEND_LOCATIONS),
+        ("title", "text", "Title:", 18),
+        (None, "note", "(blank = use the Group by column name)", None),
+    ]),
+    ("Rows and order", True, [
+        ("hierarchy", "choice", "Hierarchy:", HIERARCHY_MODES),
+        (None, "note", "Nesting also lets shapes repeat across colour "
+                       "groups, so a hierarchy needs fewer of them.", None),
+        ("order", "choice", "Order:", ENTRY_ORDERS),
+        ("counts", "check", "Show point counts", None),
+        ("count_format", "choice", "Counts look like:", COUNT_FORMATS),
+        ("blank_label", "text", "Blank values:", 12),
+        ("section_titles", "check", "Show section titles", None),
+        ("title_separator", "text", "Title separator:", 8),
+        ("dataset_prefix", "check",
+         "Prefix sections with the dataset name", None),
+        ("empty_groups", "check", "Keep groups with no visible rows", None),
+    ]),
+    ("Nested keys", False, [
+        ("indent", "number", "Indent (spaces):", (0, 12, 1)),
+        ("bold_groups", "check", "Bold the group rows", None),
+        ("group_spacer", "check", "Blank row between groups", None),
+        ("group_swatch", "choice", "Group swatch:", GROUP_SWATCHES),
+        ("symbol_swatch_color", "color", "Crossed symbol colour:", None),
+        (None, "note", "Used only when the columns cross, where a shape "
+                       "appears in every colour.", None),
+    ]),
+    ("Layout", False, [
+        ("columns", "number", "Columns:", (1, 6, 1)),
+        ("label_spacing", "number", "Row spacing:", (0.0, 4.0, 0.1)),
+        ("column_spacing", "number", "Column spacing:", (0.0, 8.0, 0.5)),
+        # Scales the sample symbols in the legend, not the map's points.
+        ("marker_scale", "number", "Marker size:", (0.1, 6.0, 0.25)),
+        ("handle_text_pad", "number", "Swatch gap:", (0.0, 4.0, 0.1)),
+        (None, "note", "(blank = automatic)", None),
+        ("handle_length", "number", "Swatch width:", (0.0, 8.0, 0.5)),
+        ("border_pad", "number", "Inner padding:", (0.0, 4.0, 0.1)),
+    ]),
+    ("Frame", False, [
+        ("frame", "check", "Draw legend frame", None),
+        ("frame_color", "color", "Fill:", None),
+        ("frame_alpha", "number", "Fill opacity:", (0.0, 1.0, 0.05)),
+        ("frame_edge_color", "color", "Border:", None),
+        ("frame_width", "number", "Border width:", (0.0, 6.0, 0.2)),
+        ("rounded", "check", "Rounded corners", None),
+        ("shadow", "check", "Drop shadow", None),
+    ]),
+    ("Text", False, [
+        ("fontsize", "number", "Font size:", (4, 32, 1)),
+        ("title_fontsize", "number", "Title font size:", (4, 40, 1)),
+        ("font_family", "choice", "Font:", FONT_FAMILIES),
+        ("title_align", "choice", "Title align:", TITLE_ALIGNMENTS),
+        ("label_color", "color", "Label colour:", None),
+        ("title_color", "color", "Title colour:", None),
+        ("label", "style", "Label text:", None),
+        ("title", "style", "Title text:", None),
+    ]),
+]
+
+
+def _style_fields(prefix: str) -> list[tuple[str, str]]:
+    return [(f"{prefix}_{name}", text) for name, text
+            in (("bold", "B"), ("italic", "I"), ("underline", "U"))]
+
+
+def _legend_fields() -> list[tuple[str, str, object]]:
+    """(field, kind, extra) for every LegendOptions field on the panel."""
+    fields = []
+    for _title, _expanded, rows in LEGEND_ROWS:
+        for field, kind, _label, extra in rows:
+            if kind == "style":
+                fields += [(name, "check", None)
+                           for name, _text in _style_fields(field)]
+            elif kind != "note":
+                fields.append((field, kind, extra))
+    return fields
+
+
 def name_for(names: dict, value) -> str:
     """The display name a ``{name: stored value}`` mapping shows for
     *value*, falling back to the first name."""
@@ -265,21 +360,6 @@ class ControlPanel(ttk.Frame):
         return self._combo_row(parent, label, var, list(names), command,
                                width=width)
 
-    def _build_text_style_row(self, parent, label: str,
-                              bold_var: tk.BooleanVar,
-                              italic_var: tk.BooleanVar,
-                              underline_var: tk.BooleanVar) -> None:
-        """A row of Bold / Italic / Underline toggles for a legend text
-        element, wired to the legend-options handler."""
-        row = ttk.Frame(parent)
-        row.pack(fill="x", pady=(2, 0))
-        ttk.Label(row, text=label).pack(side="left")
-        for text, var in (("B", bold_var), ("I", italic_var),
-                          ("U", underline_var)):
-            ttk.Checkbutton(row, text=text, variable=var, width=3,
-                            command=self.app.on_legend_options).pack(
-                side="left", padx=(4, 0))
-
     # ------------------------------------------------------------ data tab
 
     def _build_data_section(self, tab) -> None:
@@ -392,237 +472,57 @@ class ControlPanel(ttk.Frame):
                   command=self._on_alpha_scale).pack(fill="x")
 
     def _build_legend_section(self, tab) -> None:
-        # Two handlers, and which one a control uses matters. Anything that
-        # changes the row *text* or the set of rows is content and has to
-        # re-derive the groups; anything that only changes how they look can
-        # restyle the existing legend in place.
-        restyle = self.app.on_legend_options
-        rebuild = self.app.on_legend_content
         defaults = LegendOptions()
-
-        sec = self._section(tab, "Legend")
-        self.legend_show_var = tk.BooleanVar(value=defaults.show)
-        self._check(sec, "Show legend", self.legend_show_var, restyle)
-
-        self.legend_loc_var = tk.StringVar(value=defaults.location)
-        self._combo_row(sec, "Position:", self.legend_loc_var,
-                        LEGEND_LOCATIONS, self.app.on_legend_position,
-                        width=14)
-
-        self.legend_title_var = tk.StringVar(value="")
-        self._entry_row(sec, "Title:", self.legend_title_var, restyle,
-                        width=18)
-        ttk.Label(sec, text="(blank = use the Group by column name)",
-                  foreground="#666666").pack(anchor="w")
-
-        self._build_legend_content_group(tab, rebuild, defaults)
-        self._build_legend_nesting_group(tab, restyle, rebuild, defaults)
-        self._build_legend_layout_group(tab, restyle, defaults)
-        self._build_legend_frame_group(tab, restyle, defaults)
-        self._build_legend_text_group(tab, restyle, defaults)
+        self.legend_vars: dict[str, tk.Variable] = {}
+        for title, expanded, rows in LEGEND_ROWS:
+            sec = (self._section(tab, title) if expanded is None
+                   else self._collapsible(tab, title, expanded))
+            for field, kind, label, extra in rows:
+                self._legend_control(sec, field, kind, label, extra,
+                                     defaults)
         self._build_legend_placement_group(tab)
 
-    # ------------------------------------------------- legend sub-sections
-
-    def _build_legend_content_group(self, tab, rebuild, defaults) -> None:
-        sec = self._collapsible(tab, "Rows and order", expanded=True)
-
-        self.legend_hierarchy_var = tk.StringVar(
-            value=name_for(HIERARCHY_MODES, defaults.hierarchy))
-        self._named_combo(sec, "Hierarchy:", self.legend_hierarchy_var,
-                          HIERARCHY_MODES, rebuild)
-        ttk.Label(sec, text="Nesting also lets shapes repeat across colour "
-                            "groups, so a hierarchy needs fewer of them.",
-                  wraplength=PANEL_WIDTH - 70,
-                  foreground="#666666").pack(anchor="w")
-
-        self.legend_order_var = tk.StringVar(
-            value=name_for(ENTRY_ORDERS, defaults.order))
-        self._named_combo(sec, "Order:", self.legend_order_var,
-                          ENTRY_ORDERS, rebuild)
-
-        # Counts are built into the legend rows themselves, so changing this
-        # has to re-derive the groups rather than just restyle the legend.
-        self.legend_counts_var = tk.BooleanVar(value=defaults.counts)
-        self._check(sec, "Show point counts", self.legend_counts_var, rebuild)
-
-        self.legend_count_format_var = tk.StringVar(
-            value=name_for(COUNT_FORMATS, defaults.count_format))
-        self._named_combo(sec, "Counts look like:",
-                          self.legend_count_format_var, COUNT_FORMATS,
-                          rebuild, width=12)
-
-        self.legend_blank_label_var = tk.StringVar(value=defaults.blank_label)
-        self._entry_row(sec, "Blank values:", self.legend_blank_label_var,
-                        rebuild, width=12)
-
-        self.legend_section_titles_var = tk.BooleanVar(
-            value=defaults.section_titles)
-        self._check(sec, "Show section titles",
-                    self.legend_section_titles_var, rebuild)
-
-        self.legend_title_separator_var = tk.StringVar(
-            value=defaults.title_separator)
-        self._entry_row(sec, "Title separator:",
-                        self.legend_title_separator_var, rebuild, width=8)
-
-        self.legend_dataset_prefix_var = tk.BooleanVar(
-            value=defaults.dataset_prefix)
-        self._check(sec, "Prefix sections with the dataset name",
-                    self.legend_dataset_prefix_var, rebuild)
-
-        self.legend_empty_groups_var = tk.BooleanVar(
-            value=defaults.empty_groups)
-        self._check(sec, "Keep groups with no visible rows",
-                    self.legend_empty_groups_var, rebuild)
-
-    def _build_legend_nesting_group(self, tab, restyle, rebuild,
-                                    defaults) -> None:
-        sec = self._collapsible(tab, "Nested keys")
-
-        self.legend_indent_var = tk.StringVar(value=str(defaults.indent))
-        self._spin_row(sec, "Indent (spaces):", self.legend_indent_var,
-                       0, 12, 1, restyle)
-
-        self.legend_bold_groups_var = tk.BooleanVar(value=defaults.bold_groups)
-        self._check(sec, "Bold the group rows", self.legend_bold_groups_var,
-                    restyle)
-
-        self.legend_group_spacer_var = tk.BooleanVar(
-            value=defaults.group_spacer)
-        self._check(sec, "Blank row between groups",
-                    self.legend_group_spacer_var, restyle)
-
-        self.legend_group_swatch_var = tk.StringVar(
-            value=name_for(GROUP_SWATCHES, defaults.group_swatch))
-        self._named_combo(sec, "Group swatch:", self.legend_group_swatch_var,
-                          GROUP_SWATCHES, rebuild)
-
-        self.legend_symbol_color_var = tk.StringVar(
-            value=defaults.symbol_swatch_color)
-        self._color_row(sec, "Crossed symbol colour:",
-                        self.legend_symbol_color_var, rebuild)
-        ttk.Label(sec, text="Used only when the columns cross, where a shape "
-                            "appears in every colour.",
-                  wraplength=PANEL_WIDTH - 70,
-                  foreground="#666666").pack(anchor="w")
-
-    def _build_legend_layout_group(self, tab, restyle, defaults) -> None:
-        sec = self._collapsible(tab, "Layout")
-
-        self.legend_columns_var = tk.StringVar(value=str(defaults.columns))
-        self._spin_row(sec, "Columns:", self.legend_columns_var, 1, 6, 1,
-                       restyle)
-
-        self.legend_label_spacing_var = tk.StringVar(
-            value=f"{defaults.label_spacing:g}")
-        self._spin_row(sec, "Row spacing:", self.legend_label_spacing_var,
-                       0.0, 4.0, 0.1, restyle)
-
-        self.legend_column_spacing_var = tk.StringVar(
-            value=f"{defaults.column_spacing:g}")
-        self._spin_row(sec, "Column spacing:",
-                       self.legend_column_spacing_var, 0.0, 8.0, 0.5, restyle)
-
-        # Marker size scales the sample symbols shown in the legend
-        # (markerscale), independent of the point sizes on the map.
-        self.legend_marker_scale_var = tk.StringVar(
-            value=f"{defaults.marker_scale:g}")
-        self._spin_row(sec, "Marker size:", self.legend_marker_scale_var,
-                       0.1, 6.0, 0.25, restyle)
-
-        self.legend_handle_pad_var = tk.StringVar(value="")
-        self._spin_row(sec, "Swatch gap:", self.legend_handle_pad_var,
-                       0.0, 4.0, 0.1, restyle)
-        ttk.Label(sec, text="(blank = automatic)",
-                  foreground="#666666").pack(anchor="w")
-
-        self.legend_handle_length_var = tk.StringVar(
-            value=f"{defaults.handle_length:g}")
-        self._spin_row(sec, "Swatch width:", self.legend_handle_length_var,
-                       0.0, 8.0, 0.5, restyle)
-
-        self.legend_border_pad_var = tk.StringVar(
-            value=f"{defaults.border_pad:g}")
-        self._spin_row(sec, "Inner padding:", self.legend_border_pad_var,
-                       0.0, 4.0, 0.1, restyle)
-
-    def _build_legend_frame_group(self, tab, restyle, defaults) -> None:
-        sec = self._collapsible(tab, "Frame")
-
-        self.legend_frame_var = tk.BooleanVar(value=defaults.frame)
-        self._check(sec, "Draw legend frame", self.legend_frame_var, restyle)
-
-        self.legend_frame_color_var = tk.StringVar(value=defaults.frame_color)
-        self._color_row(sec, "Fill:", self.legend_frame_color_var, restyle)
-
-        self.legend_frame_alpha_var = tk.StringVar(
-            value=f"{defaults.frame_alpha:g}")
-        self._spin_row(sec, "Fill opacity:", self.legend_frame_alpha_var,
-                       0.0, 1.0, 0.05, restyle)
-
-        self.legend_frame_edge_var = tk.StringVar(
-            value=defaults.frame_edge_color)
-        self._color_row(sec, "Border:", self.legend_frame_edge_var, restyle)
-
-        self.legend_frame_width_var = tk.StringVar(
-            value=f"{defaults.frame_width:g}")
-        self._spin_row(sec, "Border width:", self.legend_frame_width_var,
-                       0.0, 6.0, 0.2, restyle)
-
-        self.legend_rounded_var = tk.BooleanVar(value=defaults.rounded)
-        self._check(sec, "Rounded corners", self.legend_rounded_var, restyle)
-
-        self.legend_shadow_var = tk.BooleanVar(value=defaults.shadow)
-        self._check(sec, "Drop shadow", self.legend_shadow_var, restyle)
-
-    def _build_legend_text_group(self, tab, restyle, defaults) -> None:
-        sec = self._collapsible(tab, "Text")
-
-        self.legend_fontsize_var = tk.StringVar(value=f"{defaults.fontsize:g}")
-        self._spin_row(sec, "Font size:", self.legend_fontsize_var,
-                       4, 32, 1, restyle)
-
-        self.legend_title_fontsize_var = tk.StringVar(
-            value=f"{defaults.title_fontsize:g}")
-        self._spin_row(sec, "Title font size:",
-                       self.legend_title_fontsize_var, 4, 40, 1, restyle)
-
-        self.legend_font_family_var = tk.StringVar(
-            value=name_for(FONT_FAMILIES, defaults.font_family))
-        self._named_combo(sec, "Font:", self.legend_font_family_var,
-                          FONT_FAMILIES, restyle, width=12)
-
-        self.legend_title_align_var = tk.StringVar(
-            value=name_for(TITLE_ALIGNMENTS, defaults.title_align))
-        self._named_combo(sec, "Title align:", self.legend_title_align_var,
-                          TITLE_ALIGNMENTS, restyle, width=12)
-
-        self.legend_label_color_var = tk.StringVar(value=defaults.label_color)
-        self._color_row(sec, "Label colour:", self.legend_label_color_var,
-                        restyle)
-        self.legend_title_color_var = tk.StringVar(value=defaults.title_color)
-        self._color_row(sec, "Title colour:", self.legend_title_color_var,
-                        restyle)
-
-        # Text styling for the labels and the title (bold / italic /
-        # underline), applied independently to each.
-        self.legend_label_bold_var = tk.BooleanVar(value=defaults.label_bold)
-        self.legend_label_italic_var = tk.BooleanVar(
-            value=defaults.label_italic)
-        self.legend_label_underline_var = tk.BooleanVar(
-            value=defaults.label_underline)
-        self.legend_title_bold_var = tk.BooleanVar(value=defaults.title_bold)
-        self.legend_title_italic_var = tk.BooleanVar(
-            value=defaults.title_italic)
-        self.legend_title_underline_var = tk.BooleanVar(
-            value=defaults.title_underline)
-        self._build_text_style_row(
-            sec, "Label text:", self.legend_label_bold_var,
-            self.legend_label_italic_var, self.legend_label_underline_var)
-        self._build_text_style_row(
-            sec, "Title text:", self.legend_title_bold_var,
-            self.legend_title_italic_var, self.legend_title_underline_var)
+    def _legend_control(self, sec, field, kind, label, extra,
+                        defaults: LegendOptions) -> None:
+        """One legend setting's widget, wired to redraw the legend."""
+        command = (self.app.on_legend_position if field == "location"
+                   else self.app.on_legend_options)
+        if kind == "note":
+            ttk.Label(sec, text=label, wraplength=PANEL_WIDTH - 70,
+                      foreground="#666666").pack(anchor="w")
+            return
+        if kind == "style":
+            row = ttk.Frame(sec)
+            row.pack(fill="x", pady=(2, 0))
+            ttk.Label(row, text=label).pack(side="left")
+            for name, text in _style_fields(field):
+                var = tk.BooleanVar(value=getattr(defaults, name))
+                ttk.Checkbutton(row, text=text, variable=var, width=3,
+                                command=command).pack(side="left",
+                                                      padx=(4, 0))
+                self.legend_vars[name] = var
+            return
+        default = getattr(defaults, field)
+        if kind == "check":
+            var = tk.BooleanVar(value=default)
+            self._check(sec, label, var, command)
+        elif kind == "combo":
+            var = tk.StringVar(value=default)
+            self._combo_row(sec, label, var, extra, command, width=14)
+        elif kind == "choice":
+            var = tk.StringVar(value=name_for(extra, default))
+            self._named_combo(sec, label, var, extra, command, width=14)
+        elif kind == "text":
+            var = tk.StringVar(value=default or "")
+            self._entry_row(sec, label, var, command, width=extra)
+        elif kind == "number":
+            var = tk.StringVar(value="" if default is None
+                               else f"{default:g}")
+            self._spin_row(sec, label, var, *extra, command)
+        else:  # color
+            var = tk.StringVar(value=default)
+            self._color_row(sec, label, var, command)
+        self.legend_vars[field] = var
 
     def _build_legend_placement_group(self, tab) -> None:
         sec = self._section(tab, "Placement")
@@ -1085,136 +985,44 @@ class ControlPanel(ttk.Frame):
         except ValueError:
             return None
 
-    @staticmethod
-    def _value_of(names: dict, var: tk.StringVar, fallback):
-        return names.get(var.get(), fallback)
-
     def legend_options(self) -> LegendOptions:
         """Every legend setting, as one options object for the renderer,
-        the project file and the code export."""
-        d = LegendOptions()
-        return LegendOptions(
-            show=self.legend_show_var.get(),
-            title=self.legend_title_var.get().strip() or None,
-            location=self.legend_loc_var.get(),
-            hierarchy=self._value_of(HIERARCHY_MODES,
-                                     self.legend_hierarchy_var, d.hierarchy),
-            order=self._value_of(ENTRY_ORDERS, self.legend_order_var, d.order),
-            counts=self.legend_counts_var.get(),
-            count_format=self._value_of(COUNT_FORMATS,
-                                        self.legend_count_format_var,
-                                        d.count_format),
-            blank_label=self.legend_blank_label_var.get() or d.blank_label,
-            section_titles=self.legend_section_titles_var.get(),
-            title_separator=self.legend_title_separator_var.get(),
-            dataset_prefix=self.legend_dataset_prefix_var.get(),
-            empty_groups=self.legend_empty_groups_var.get(),
-            indent=int(self._number(self.legend_indent_var, 0, 12, d.indent)),
-            bold_groups=self.legend_bold_groups_var.get(),
-            group_spacer=self.legend_group_spacer_var.get(),
-            group_swatch=self._value_of(GROUP_SWATCHES,
-                                        self.legend_group_swatch_var,
-                                        d.group_swatch),
-            symbol_swatch_color=self.legend_symbol_color_var.get(),
-            columns=int(self._number(self.legend_columns_var, 1, 6,
-                                     d.columns)),
-            label_spacing=self._number(self.legend_label_spacing_var, 0.0,
-                                       4.0, d.label_spacing),
-            column_spacing=self._number(self.legend_column_spacing_var, 0.0,
-                                        8.0, d.column_spacing),
-            handle_text_pad=self._optional_number(self.legend_handle_pad_var,
-                                                  0.0, 4.0),
-            handle_length=self._number(self.legend_handle_length_var, 0.0,
-                                       8.0, d.handle_length),
-            border_pad=self._number(self.legend_border_pad_var, 0.0, 4.0,
-                                    d.border_pad),
-            marker_scale=self._number(self.legend_marker_scale_var, 0.1, 6.0,
-                                      d.marker_scale),
-            frame=self.legend_frame_var.get(),
-            frame_color=self.legend_frame_color_var.get(),
-            frame_alpha=self._number(self.legend_frame_alpha_var, 0.0, 1.0,
-                                     d.frame_alpha),
-            frame_edge_color=self.legend_frame_edge_var.get(),
-            frame_width=self._number(self.legend_frame_width_var, 0.0, 6.0,
-                                     d.frame_width),
-            rounded=self.legend_rounded_var.get(),
-            shadow=self.legend_shadow_var.get(),
-            fontsize=self._number(self.legend_fontsize_var, 4.0, 32.0,
-                                  d.fontsize),
-            title_fontsize=self._number(self.legend_title_fontsize_var, 4.0,
-                                        40.0, d.title_fontsize),
-            font_family=self._value_of(FONT_FAMILIES,
-                                       self.legend_font_family_var,
-                                       d.font_family),
-            label_color=self.legend_label_color_var.get(),
-            title_color=self.legend_title_color_var.get(),
-            label_bold=self.legend_label_bold_var.get(),
-            label_italic=self.legend_label_italic_var.get(),
-            label_underline=self.legend_label_underline_var.get(),
-            title_bold=self.legend_title_bold_var.get(),
-            title_italic=self.legend_title_italic_var.get(),
-            title_underline=self.legend_title_underline_var.get(),
-            title_align=self._value_of(TITLE_ALIGNMENTS,
-                                       self.legend_title_align_var,
-                                       d.title_align),
-        )
+        the project file and the code export. Half-typed or out-of-range
+        numbers fall back or clamp rather than raise."""
+        defaults = LegendOptions()
+        values = {}
+        for field, kind, extra in _legend_fields():
+            var, default = self.legend_vars[field], getattr(defaults, field)
+            if kind == "choice":
+                value = extra.get(var.get(), default)
+            elif kind == "number" and default is None:
+                value = self._optional_number(var, *extra[:2])
+            elif kind == "number":
+                value = type(default)(self._number(var, *extra[:2],
+                                                   default))
+            elif kind == "text" and default is None:
+                value = var.get().strip() or None   # the title
+            elif kind in ("text", "color", "combo"):
+                value = var.get() or default
+            else:
+                value = bool(var.get())
+            values[field] = value
+        return LegendOptions(**values)
 
     def set_legend_options(self, options: LegendOptions) -> None:
         """Push a stored options object back into the widgets."""
-        self.legend_show_var.set(options.show)
-        self.legend_title_var.set(options.title or "")
-        self.legend_loc_var.set(options.location)
-        self.legend_hierarchy_var.set(
-            name_for(HIERARCHY_MODES, options.hierarchy))
-        self.legend_order_var.set(name_for(ENTRY_ORDERS, options.order))
-        self.legend_counts_var.set(options.counts)
-        self.legend_count_format_var.set(
-            name_for(COUNT_FORMATS, options.count_format))
-        self.legend_blank_label_var.set(options.blank_label)
-        self.legend_section_titles_var.set(options.section_titles)
-        self.legend_title_separator_var.set(options.title_separator)
-        self.legend_dataset_prefix_var.set(options.dataset_prefix)
-        self.legend_empty_groups_var.set(options.empty_groups)
-        self.legend_indent_var.set(str(options.indent))
-        self.legend_bold_groups_var.set(options.bold_groups)
-        self.legend_group_spacer_var.set(options.group_spacer)
-        self.legend_group_swatch_var.set(
-            name_for(GROUP_SWATCHES, options.group_swatch))
-        self.legend_columns_var.set(str(options.columns))
-        self.legend_label_spacing_var.set(f"{options.label_spacing:g}")
-        self.legend_column_spacing_var.set(f"{options.column_spacing:g}")
-        self.legend_handle_pad_var.set(
-            "" if options.handle_text_pad is None
-            else f"{options.handle_text_pad:g}")
-        self.legend_handle_length_var.set(f"{options.handle_length:g}")
-        self.legend_border_pad_var.set(f"{options.border_pad:g}")
-        self.legend_marker_scale_var.set(f"{options.marker_scale:g}")
-        self.legend_frame_var.set(options.frame)
-        self.legend_frame_alpha_var.set(f"{options.frame_alpha:g}")
-        self.legend_frame_width_var.set(f"{options.frame_width:g}")
-        self.legend_rounded_var.set(options.rounded)
-        self.legend_shadow_var.set(options.shadow)
-        self.legend_fontsize_var.set(f"{options.fontsize:g}")
-        self.legend_title_fontsize_var.set(f"{options.title_fontsize:g}")
-        self.legend_font_family_var.set(
-            name_for(FONT_FAMILIES, options.font_family))
-        self.legend_label_bold_var.set(options.label_bold)
-        self.legend_label_italic_var.set(options.label_italic)
-        self.legend_label_underline_var.set(options.label_underline)
-        self.legend_title_bold_var.set(options.title_bold)
-        self.legend_title_italic_var.set(options.title_italic)
-        self.legend_title_underline_var.set(options.title_underline)
-        self.legend_title_align_var.set(
-            name_for(TITLE_ALIGNMENTS, options.title_align))
-        # Colours last: the swatch buttons have to be repainted, not just set.
-        for var, value in ((self.legend_symbol_color_var,
-                            options.symbol_swatch_color),
-                           (self.legend_frame_color_var, options.frame_color),
-                           (self.legend_frame_edge_var,
-                            options.frame_edge_color),
-                           (self.legend_label_color_var, options.label_color),
-                           (self.legend_title_color_var, options.title_color)):
-            self._set_color(var, value)
+        for field, kind, extra in _legend_fields():
+            var, value = self.legend_vars[field], getattr(options, field)
+            if kind == "choice":
+                var.set(name_for(extra, value))
+            elif kind == "number":
+                var.set("" if value is None else f"{value:g}")
+            elif kind == "color":
+                self._set_color(var, value)
+            elif kind == "text":
+                var.set(value or "")
+            else:
+                var.set(value)
 
     def set_dataset_list(self, rows: list[tuple[str, bool]],
                          active: int | None) -> None:
