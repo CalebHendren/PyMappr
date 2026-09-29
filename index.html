@@ -64,7 +64,10 @@
   #stage{flex:1 1 auto;min-width:0;position:relative;background:var(--stage);display:flex;
     align-items:center;justify-content:center;overflow:hidden}
   #mapwrap{position:absolute;inset:0}
-  svg#map{width:100%;height:100%;display:block;cursor:grab}
+  /* touch-action:none hands touch drags to the map (pan, spin, place, move
+     the legend) instead of scrolling the page. */
+  svg#map{width:100%;height:100%;display:block;cursor:grab;touch-action:none;
+    user-select:none;-webkit-user-select:none}
   svg#map.panning{cursor:grabbing}
   #stage .hint{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
     color:var(--stage-muted);text-align:center;max-width:340px;pointer-events:none}
@@ -1210,6 +1213,25 @@ function el(tag, attrs){ const e=document.createElementNS(svgNS,tag); return att
 function clearNode(node){ while(node.firstChild) node.removeChild(node.firstChild); }
 let sceneSize={w:0,h:0};
 
+// Follow one pointer (mouse, pen or finger) from pointerdown until it lifts.
+// Capturing it keeps the moves coming to `node` when the pointer leaves it.
+// onEnd gets whether the pointer was lifted rather than cancelled.
+function trackPointer(node, down, onMove, onEnd){
+  const id=down.pointerId;
+  try{ node.setPointerCapture(id); }catch(e){ /* pointer already gone */ }
+  const move=ev=>{ if(ev.pointerId===id) onMove(ev); };
+  const end=ev=>{
+    if(ev.pointerId!==id) return;
+    node.removeEventListener("pointermove",move);
+    node.removeEventListener("pointerup",end);
+    node.removeEventListener("pointercancel",end);
+    onEnd(ev, ev.type==="pointerup");
+  };
+  node.addEventListener("pointermove",move);
+  node.addEventListener("pointerup",end);
+  node.addEventListener("pointercancel",end);
+}
+
 // Every change asks for a render, and a colour picker or a drag asks dozens of
 // times a second. Coalescing those into one render per frame keeps the
 // controls smooth; anything that reads the finished SVG (the exports) calls
@@ -1772,18 +1794,16 @@ function drawLegend(parent, W, H, entries, attrLegends){
     }
   });
   // Dragging only slides the drawn legend; the map is rendered once, on release.
-  g.addEventListener("mousedown",ev=>{
+  g.addEventListener("pointerdown",ev=>{
+    if(ev.button!==0 || !ev.isPrimary) return;
     ev.preventDefault(); ev.stopPropagation(); // don't also start a map pan
     const startX=ev.clientX, startY=ev.clientY;
     let dx=0, dy=0;
-    function mv(e){
+    trackPointer(g, ev, e=>{
       dx=clamp(bx+e.clientX-startX, 2, W-boxW-2)-bx;
       dy=clamp(by+e.clientY-startY, 2, H-boxH-2)-by;
       g.setAttribute("transform",`translate(${dx},${dy})`);
-    }
-    function up(){ window.removeEventListener("mousemove",mv); window.removeEventListener("mouseup",up);
-      if(dx||dy){ legendDrag={x:(bx+dx)/W, y:(by+dy)/H}; render(); } }
-    window.addEventListener("mousemove",mv); window.addEventListener("mouseup",up);
+    }, ()=>{ if(dx||dy){ legendDrag={x:(bx+dx)/W, y:(by+dy)/H}; render(); } });
   });
   g.addEventListener("dblclick",ev=>{ ev.stopPropagation(); legendDrag=null; render(); });
   parent.appendChild(g);
@@ -2408,16 +2428,16 @@ stageEl.addEventListener("wheel",e=>{
   view.k=newK; view.x=sx-newK*lx; view.y=sy-newK*ly;
   clampView(); render();
 },{passive:false});
-svg.addEventListener("mousedown",e=>{
-  if(e.button!==0) return;
+// Pointer events, so a finger or a pen drags, spins and places like a mouse.
+svg.addEventListener("pointerdown",e=>{
+  if(e.button!==0 || !e.isPrimary) return;
   // Click-to-place: drop a point where the map is clicked (ignore drags).
   if(placeMode){
     e.preventDefault();
     const sx=e.clientX, sy=e.clientY; let moved=false;
-    function mv(ev){ if(Math.abs(ev.clientX-sx)+Math.abs(ev.clientY-sy)>4) moved=true; }
-    function up(ev){ window.removeEventListener("mousemove",mv); window.removeEventListener("mouseup",up);
-      if(!moved) placeAt(ev.clientX, ev.clientY); }
-    window.addEventListener("mousemove",mv); window.addEventListener("mouseup",up);
+    trackPointer(svg, e,
+      ev=>{ if(Math.abs(ev.clientX-sx)+Math.abs(ev.clientY-sy)>4) moved=true; },
+      (ev,lifted)=>{ if(lifted && !moved) placeAt(ev.clientX, ev.clientY); });
     return;
   }
   // Spinning the globe: a drag rotates it by re-centring the projection.
@@ -2427,26 +2447,22 @@ svg.addEventListener("mousedown",e=>{
     const r=svg.getBoundingClientRect();
     const scale=180/Math.max(Math.min(r.width,r.height),1)/view.k;  // deg per pixel across the disk
     svg.classList.add("panning");
-    function mv(ev){
+    trackPointer(svg, e, ev=>{
       let lon=lon0-(ev.clientX-sx)*scale, lat=clamp(lat0+(ev.clientY-sy)*scale,-90,90);
       lon=((lon+180)%360+360)%360-180;
       opts.centerLon=lon; opts.centerLat=lat;
       $("#centerLon").value=Math.round(lon); $("#centerLat").value=Math.round(lat);
       render();
-    }
-    function up(){ window.removeEventListener("mousemove",mv); window.removeEventListener("mouseup",up);
-      svg.classList.remove("panning"); scheduleSave(); }
-    window.addEventListener("mousemove",mv); window.addEventListener("mouseup",up);
+    }, ()=>{ svg.classList.remove("panning"); scheduleSave(); });
     return;
   }
   if(!isZoomed()) return; // nothing to pan at fit-to-frame zoom
   e.preventDefault();
   const sx=e.clientX, sy=e.clientY, ox=view.x, oy=view.y; let moved=false;
   svg.classList.add("panning");
-  function mv(ev){ view.x=ox+(ev.clientX-sx); view.y=oy+(ev.clientY-sy); clampView(); render(); moved=true; }
-  function up(){ window.removeEventListener("mousemove",mv); window.removeEventListener("mouseup",up);
-    svg.classList.remove("panning"); if(moved) scheduleSave(); }
-  window.addEventListener("mousemove",mv); window.addEventListener("mouseup",up);
+  trackPointer(svg, e,
+    ev=>{ view.x=ox+(ev.clientX-sx); view.y=oy+(ev.clientY-sy); clampView(); render(); moved=true; },
+    ()=>{ svg.classList.remove("panning"); if(moved) scheduleSave(); });
 });
 svg.addEventListener("dblclick",()=>{ view={k:1,x:0,y:0}; render(); }); // reset view
 

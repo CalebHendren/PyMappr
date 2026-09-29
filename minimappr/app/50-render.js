@@ -5,6 +5,25 @@ function el(tag, attrs){ const e=document.createElementNS(svgNS,tag); return att
 function clearNode(node){ while(node.firstChild) node.removeChild(node.firstChild); }
 let sceneSize={w:0,h:0};
 
+// Follow one pointer (mouse, pen or finger) from pointerdown until it lifts.
+// Capturing it keeps the moves coming to `node` when the pointer leaves it.
+// onEnd gets whether the pointer was lifted rather than cancelled.
+function trackPointer(node, down, onMove, onEnd){
+  const id=down.pointerId;
+  try{ node.setPointerCapture(id); }catch(e){ /* pointer already gone */ }
+  const move=ev=>{ if(ev.pointerId===id) onMove(ev); };
+  const end=ev=>{
+    if(ev.pointerId!==id) return;
+    node.removeEventListener("pointermove",move);
+    node.removeEventListener("pointerup",end);
+    node.removeEventListener("pointercancel",end);
+    onEnd(ev, ev.type==="pointerup");
+  };
+  node.addEventListener("pointermove",move);
+  node.addEventListener("pointerup",end);
+  node.addEventListener("pointercancel",end);
+}
+
 // Every change asks for a render, and a colour picker or a drag asks dozens of
 // times a second. Coalescing those into one render per frame keeps the
 // controls smooth; anything that reads the finished SVG (the exports) calls
@@ -567,18 +586,16 @@ function drawLegend(parent, W, H, entries, attrLegends){
     }
   });
   // Dragging only slides the drawn legend; the map is rendered once, on release.
-  g.addEventListener("mousedown",ev=>{
+  g.addEventListener("pointerdown",ev=>{
+    if(ev.button!==0 || !ev.isPrimary) return;
     ev.preventDefault(); ev.stopPropagation(); // don't also start a map pan
     const startX=ev.clientX, startY=ev.clientY;
     let dx=0, dy=0;
-    function mv(e){
+    trackPointer(g, ev, e=>{
       dx=clamp(bx+e.clientX-startX, 2, W-boxW-2)-bx;
       dy=clamp(by+e.clientY-startY, 2, H-boxH-2)-by;
       g.setAttribute("transform",`translate(${dx},${dy})`);
-    }
-    function up(){ window.removeEventListener("mousemove",mv); window.removeEventListener("mouseup",up);
-      if(dx||dy){ legendDrag={x:(bx+dx)/W, y:(by+dy)/H}; render(); } }
-    window.addEventListener("mousemove",mv); window.addEventListener("mouseup",up);
+    }, ()=>{ if(dx||dy){ legendDrag={x:(bx+dx)/W, y:(by+dy)/H}; render(); } });
   });
   g.addEventListener("dblclick",ev=>{ ev.stopPropagation(); legendDrag=null; render(); });
   parent.appendChild(g);

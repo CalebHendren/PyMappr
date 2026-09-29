@@ -11,16 +11,16 @@ stageEl.addEventListener("wheel",e=>{
   view.k=newK; view.x=sx-newK*lx; view.y=sy-newK*ly;
   clampView(); render();
 },{passive:false});
-svg.addEventListener("mousedown",e=>{
-  if(e.button!==0) return;
+// Pointer events, so a finger or a pen drags, spins and places like a mouse.
+svg.addEventListener("pointerdown",e=>{
+  if(e.button!==0 || !e.isPrimary) return;
   // Click-to-place: drop a point where the map is clicked (ignore drags).
   if(placeMode){
     e.preventDefault();
     const sx=e.clientX, sy=e.clientY; let moved=false;
-    function mv(ev){ if(Math.abs(ev.clientX-sx)+Math.abs(ev.clientY-sy)>4) moved=true; }
-    function up(ev){ window.removeEventListener("mousemove",mv); window.removeEventListener("mouseup",up);
-      if(!moved) placeAt(ev.clientX, ev.clientY); }
-    window.addEventListener("mousemove",mv); window.addEventListener("mouseup",up);
+    trackPointer(svg, e,
+      ev=>{ if(Math.abs(ev.clientX-sx)+Math.abs(ev.clientY-sy)>4) moved=true; },
+      (ev,lifted)=>{ if(lifted && !moved) placeAt(ev.clientX, ev.clientY); });
     return;
   }
   // Spinning the globe: a drag rotates it by re-centring the projection.
@@ -30,26 +30,22 @@ svg.addEventListener("mousedown",e=>{
     const r=svg.getBoundingClientRect();
     const scale=180/Math.max(Math.min(r.width,r.height),1)/view.k;  // deg per pixel across the disk
     svg.classList.add("panning");
-    function mv(ev){
+    trackPointer(svg, e, ev=>{
       let lon=lon0-(ev.clientX-sx)*scale, lat=clamp(lat0+(ev.clientY-sy)*scale,-90,90);
       lon=((lon+180)%360+360)%360-180;
       opts.centerLon=lon; opts.centerLat=lat;
       $("#centerLon").value=Math.round(lon); $("#centerLat").value=Math.round(lat);
       render();
-    }
-    function up(){ window.removeEventListener("mousemove",mv); window.removeEventListener("mouseup",up);
-      svg.classList.remove("panning"); scheduleSave(); }
-    window.addEventListener("mousemove",mv); window.addEventListener("mouseup",up);
+    }, ()=>{ svg.classList.remove("panning"); scheduleSave(); });
     return;
   }
   if(!isZoomed()) return; // nothing to pan at fit-to-frame zoom
   e.preventDefault();
   const sx=e.clientX, sy=e.clientY, ox=view.x, oy=view.y; let moved=false;
   svg.classList.add("panning");
-  function mv(ev){ view.x=ox+(ev.clientX-sx); view.y=oy+(ev.clientY-sy); clampView(); render(); moved=true; }
-  function up(){ window.removeEventListener("mousemove",mv); window.removeEventListener("mouseup",up);
-    svg.classList.remove("panning"); if(moved) scheduleSave(); }
-  window.addEventListener("mousemove",mv); window.addEventListener("mouseup",up);
+  trackPointer(svg, e,
+    ev=>{ view.x=ox+(ev.clientX-sx); view.y=oy+(ev.clientY-sy); clampView(); render(); moved=true; },
+    ()=>{ svg.classList.remove("panning"); if(moved) scheduleSave(); });
 });
 svg.addEventListener("dblclick",()=>{ view={k:1,x:0,y:0}; render(); }); // reset view
 
