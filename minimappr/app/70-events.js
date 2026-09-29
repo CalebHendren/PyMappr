@@ -264,6 +264,10 @@ $("#showBorders").addEventListener("change",e=>{ opts.showBorders=e.target.check
 $("#showCoast").addEventListener("change",e=>{ opts.showCoast=e.target.checked; render(); });
 $("#mapTitle").addEventListener("input",e=>{ opts.title=e.target.value; render(); });
 $("#showCompass").addEventListener("change",e=>{ opts.compass=e.target.checked; render(); });
+$("#showScaleBar").addEventListener("change",e=>{ opts.scaleBar=e.target.checked; render(); });
+$("#pointEdgeColor").addEventListener("input",e=>{ opts.pointEdgeColor=e.target.value; render(); });
+$("#pointEdgeWidth").addEventListener("input",e=>{ const n=parseFloat(e.target.value);
+  opts.pointEdgeWidth=Number.isFinite(n) ? clamp(n,0,3) : 0; render(); });
 $("#showLabels").addEventListener("change",e=>{ opts.labels=e.target.checked; render(); });
 $("#matColor").addEventListener("input",e=>{ opts.matColor=e.target.value; render(); });
 $("#lineWidth").addEventListener("input",e=>{ opts.lineWidth=+e.target.value; $("#lwVal").textContent=(+e.target.value).toFixed(2); render(); });

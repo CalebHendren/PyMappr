@@ -107,12 +107,17 @@ function renderNow(){
   // marker outline is built once per group; each point is a translated path.
   const visible=datasets.filter(d=>d.visible);
   const resolved=visible.map(ds=>({ds, res:resolveGroups(ds)}));
-  const pKey=JSON.stringify([projKey, opts.labels, resolved.map(({ds,res})=>[
+  const edge=opts.pointEdgeWidth>0 ? opts.pointEdgeColor : null;
+  const pKey=JSON.stringify([projKey, opts.labels, edge, opts.pointEdgeWidth, resolved.map(({ds,res})=>[
     rowsId(ds.rows), ds.rows.length, ds.groupBy, ds.colorBy, ds.symbolBy, ds.opacity ?? 1,
     res.groups.map(g=>[g.rows.length, g.style.color, g.style.marker, g.style.size])])]);
   if(pKey!==pointsKey){
     pointsKey=pKey;
     const ptsG=layers.points; clearNode(ptsG);
+    // Labels sit on a white halo (a stroked copy underneath, which every SVG
+    // editor draws, unlike paint-order) so they read over borders and coasts.
+    const haloG=el("g",{"font-family":"sans-serif","font-size":10,fill:"#ffffff",stroke:"#ffffff",
+      "stroke-width":3,"stroke-linejoin":"round","stroke-opacity":0.85});
     const labelsG=el("g",{"font-family":"sans-serif","font-size":10,fill:"#222"});
     const onGlobe=!!pd.globe, centre=[opts.centerLon,opts.centerLat];
     for(const {ds,res} of resolved){
@@ -121,7 +126,9 @@ function renderNow(){
         const st=grp.style, r_=sizePx(st.size), d=markerPath(st.marker,r_);
         const g=el("g", isOpen(st.marker)
           ? {fill:"none", stroke:st.color, "stroke-width":Math.max(1.1,r_*0.22), "stroke-opacity":op}
-          : {fill:st.color, "fill-opacity":op, stroke:"none"});
+          : edge ? {fill:st.color, "fill-opacity":op, stroke:edge, "stroke-width":opts.pointEdgeWidth,
+                    "stroke-opacity":op, "stroke-linejoin":"round"}
+                 : {fill:st.color, "fill-opacity":op, stroke:"none"});
         for(const r of grp.rows){
           if(onGlobe && d3.geoDistance([r.lon,r.lat],centre)>Math.PI/2) continue;
           const xy=proj([r.lon, r.lat]);
@@ -133,12 +140,13 @@ function renderNow(){
           if(opts.labels && r.label){
             const t=el("text",{x:(xy[0]+r_+2).toFixed(2), y:(xy[1]+3).toFixed(2)});
             t.textContent=r.label; labelsG.appendChild(t);
+            haloG.appendChild(t.cloneNode(true));
           }
         }
         if(g.firstChild) ptsG.appendChild(g);
       }
     }
-    if(labelsG.firstChild) ptsG.appendChild(labelsG);
+    if(labelsG.firstChild){ ptsG.appendChild(haloG); ptsG.appendChild(labelsG); }
   }
 
   // legend rows
@@ -172,11 +180,17 @@ function renderNow(){
     const rank={}; order.forEach((l,i)=>{ rank[l]=i; });
     rows=rows.sort((a,b)=>(rank[a.label]??0)-(rank[b.label]??0));
     const prefix=(manyDatasets && opts.legDatasetPrefix) ? ds.name+": " : "";
-    legendEntries.push({title:prefix+(ds.groupBy||ds.name||""), rows});
+    // An ungrouped dataset's heading is its name, so a prefix would double it.
+    legendEntries.push({title:ds.groupBy ? prefix+ds.groupBy : (ds.name||""), rows});
   }
 
-  // frame outline (unclipped, crisp), title and compass. Zoomed in, a round
-  // silhouette runs past the frame, so the frame itself is the outline.
+  // legend, drawn first so the compass and scale bar can keep clear of it
+  clearNode(layers.legend);
+  const legendBox = opts.legShow && (legendEntries.length || attrLegends.length)
+    ? drawLegend(layers.legend, W, H, legendEntries, attrLegends) : null;
+
+  // frame outline (unclipped, crisp), title, compass and scale bar. Zoomed
+  // in, a round silhouette runs past the frame, so the frame is the outline.
   const overlay=layers.overlay; clearNode(overlay);
   overlay.appendChild(useRect || isZoomed()
     ? el("rect",{x:rx0,y:ry0,width:rw,height:rh,fill:"none",stroke:"#5a6068","stroke-width":1})
@@ -186,13 +200,8 @@ function renderNow(){
       "font-size":19,"font-weight":700,fill:"#1d2127"});
     t.textContent=opts.title; overlay.appendChild(t);
   }
-  if(opts.compass) drawCompass(overlay, rect);
-
-  // legend
-  clearNode(layers.legend);
-  if(opts.legShow && (legendEntries.length || attrLegends.length)){
-    drawLegend(layers.legend, W, H, legendEntries, attrLegends);
-  }
+  if(opts.compass) drawCompass(overlay, rect, legendBox);
+  if(opts.scaleBar) drawScaleBar(overlay, proj, rect, legendBox);
 
   updateSwatches(resolved);
   $("#emptyHint").style.display = visible.some(d=>d.rows.length) ? "none":"block";
@@ -200,15 +209,63 @@ function renderNow(){
   scheduleSave();
 }
 
-function drawCompass(parent, rect){
+// Whether two {x,y,w,h} boxes overlap.
+function boxesMeet(a, b){
+  return !!(a && b) && a.x<b.x+b.w && b.x<a.x+a.w && a.y<b.y+b.h && b.y<a.y+a.h;
+}
+
+// The north arrow sits top right, or top left when the legend is there.
+function drawCompass(parent, rect, avoid){
   const [[x0,y0],[x1]] = rect;
-  const cx=x1-26, cy=y0+34;
+  let cx=x1-26;
+  const cy=y0+34;
+  if(boxesMeet({x:cx-12, y:cy-38, w:24, h:56}, avoid)) cx=x0+26;
   const g=el("g");
   g.appendChild(el("line",{x1:cx,y1:cy+16,x2:cx,y2:cy-14,stroke:"#1a1a1a","stroke-width":1.6}));
   g.appendChild(el("path",{d:poly([[cx,cy-20],[cx-4,cy-11],[cx+4,cy-11]]),fill:"#1a1a1a"}));
   const t=el("text",{x:cx,y:cy-24,"text-anchor":"middle","font-family":"sans-serif",
     "font-size":13,"font-weight":700,fill:"#1a1a1a"}); t.textContent="N";
   g.appendChild(t); parent.appendChild(g);
+}
+
+// A scale bar of a round length (1, 2 or 5 x 10^n km) near a fifth of the
+// frame width. Projections stretch distances, so it is measured across the
+// centre of the frame and holds there; the globe gets none. Bottom left,
+// clear of the on-screen status bar, or bottom right when the legend is in
+// the way.
+const EARTH_KM=6371.0088;
+function drawScaleBar(parent, proj, rect, avoid){
+  if(currentProjDef().globe || !proj.invert) return;
+  const [[x0,y0],[x1,y1]]=rect;
+  const cx=(x0+x1)/2, cy=(y0+y1)/2, half=50;
+  const a=proj.invert([cx-half,cy]), b=proj.invert([cx+half,cy]);
+  if(!a || !b || ![...a,...b].every(Number.isFinite)) return;
+  const kmPerPx=d3.geoDistance(a,b)*EARTH_KM/(2*half);
+  if(!(kmPerPx>0) || !Number.isFinite(kmPerPx)) return;
+  const target=(x1-x0)*0.2*kmPerPx;
+  const pow=10**Math.floor(Math.log10(target));
+  const km=Number(([5,2,1].map(m=>m*pow).find(v=>v<=target)||pow).toPrecision(2));
+  const len=km/kmPerPx;
+  const label=km.toLocaleString("en-US")+" km";
+  const labelW=textWidth(label, 11, "sans-serif", false, false);
+  const w=Math.max(len, labelW), h=24, by=y1-30;
+  let bx=x0+14;
+  if(boxesMeet({x:bx, y:by-h+6, w, h}, avoid)) bx=x1-14-w;
+  const x=bx+(w-len)/2;
+  const bar=`M${x.toFixed(2)},${(by-5).toFixed(2)}V${by.toFixed(2)}H${(x+len).toFixed(2)}V${(by-5).toFixed(2)}`;
+  const g=el("g");
+  // a white halo under the bar and the label keeps both legible on any fill
+  g.appendChild(el("path",{d:bar, fill:"none", stroke:"#ffffff", "stroke-width":4,
+    "stroke-opacity":0.85, "stroke-linejoin":"round", "stroke-linecap":"round"}));
+  g.appendChild(el("path",{d:bar, fill:"none", stroke:"#1a1a1a", "stroke-width":1.4,
+    "stroke-linejoin":"miter"}));
+  for(const halo of [true,false]){
+    const t=el("text",{x:(x+len/2).toFixed(2), y:(by-9).toFixed(2), "text-anchor":"middle",
+      "font-family":"sans-serif", "font-size":11, fill:halo?"#ffffff":"#1a1a1a"});
+    if(halo) setAttrs(t, {stroke:"#ffffff", "stroke-width":3, "stroke-opacity":0.85, "stroke-linejoin":"round"});
+    t.textContent=label; g.appendChild(t);
+  }
+  parent.appendChild(g);
 }
 
 function legendItems(entries, attrLegends){
@@ -388,9 +445,10 @@ function textWidth(text, size, family, bold, italic){
   return measureCtx.measureText(text).width;
 }
 
+// Draws the legend and returns its box, or null when there is nothing to show.
 function drawLegend(parent, W, H, entries, attrLegends){
   const sections=legendItems(entries, attrLegends);
-  if(!sections.length) return;
+  if(!sections.length) return null;
   const fs=opts.legFont, scale=opts.legScale;
   const font=opts.legFontFamily||"sans-serif";
   const titleFs=opts.legTitleFont||fs;
@@ -492,6 +550,8 @@ function drawLegend(parent, W, H, entries, attrLegends){
             transform:`translate(${mx.toFixed(2)},${my.toFixed(2)})`});
           if(isOpen(item.style.marker)){ p.setAttribute("fill","none");
             p.setAttribute("stroke",item.style.color); p.setAttribute("stroke-width",Math.max(1,rr*0.24)); }
+          else if(opts.pointEdgeWidth>0){ setAttrs(p, {fill:item.style.color, stroke:opts.pointEdgeColor,
+            "stroke-width":opts.pointEdgeWidth, "stroke-linejoin":"round"}); }
           else { p.setAttribute("fill",item.style.color); p.setAttribute("stroke","none"); }
           g.appendChild(p);
         }
@@ -522,6 +582,7 @@ function drawLegend(parent, W, H, entries, attrLegends){
   });
   g.addEventListener("dblclick",ev=>{ ev.stopPropagation(); legendDrag=null; render(); });
   parent.appendChild(g);
+  return {x:bx, y:by, w:boxW, h:boxH};
 }
 
 function updateStagebar(){

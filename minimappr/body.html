@@ -86,7 +86,14 @@
                   <select id="paletteSel" class="grow">
                     <option value="Default">Default</option>
                     <option value="Colourblind safe (Okabe-Ito)">Colourblind safe (Okabe-Ito)</option>
+                    <option value="Black &amp; white">Black &amp; white</option>
                   </select></div>
+                <div class="row"><label class="lbl grow">Point outline</label>
+                  <input type="color" id="pointEdgeColor" value="#ffffff" aria-label="Point outline colour">
+                  <input type="number" id="pointEdgeWidth" min="0" max="3" step="0.1" value="0.6"
+                    style="width:64px" aria-label="Point outline width" title="Width in px (0 = none)"></div>
+                <p class="hintline">The outline keeps overlapping points apart. Use a black one with
+                  <b>Black &amp; white</b>, whose white points need it.</p>
               </div>
             </details>
 
@@ -170,6 +177,7 @@
               <label class="block">Map title</label>
               <input type="text" id="mapTitle" placeholder="(optional)">
               <label class="check"><input type="checkbox" id="showCompass"> Compass (north arrow)</label>
+              <label class="check"><input type="checkbox" id="showScaleBar"> Scale bar (true at the map centre)</label>
               <label class="check"><input type="checkbox" id="showLabels"> Point labels (from a Label column)</label>
               <div class="row"><label class="lbl">Background</label><input type="color" id="matColor" value="#ffffff"></div>
               <div class="row"><label class="lbl grow">Border weight</label>

@@ -132,6 +132,8 @@ function syncMapControls(){
   $("#showLand").checked=opts.showLand; $("#landColor").value=opts.landColor;
   $("#showBorders").checked=opts.showBorders; $("#showCoast").checked=opts.showCoast;
   $("#mapTitle").value=opts.title; $("#showCompass").checked=opts.compass; $("#showLabels").checked=opts.labels;
+  $("#showScaleBar").checked=opts.scaleBar;
+  $("#pointEdgeColor").value=opts.pointEdgeColor; $("#pointEdgeWidth").value=opts.pointEdgeWidth;
   $("#matColor").value=opts.matColor; $("#paletteSel").value=opts.palette;
   $("#lineWidth").value=opts.lineWidth; $("#lwVal").textContent=Number(opts.lineWidth).toFixed(2);
   // Legend controls come back from the same table that defines them, so a

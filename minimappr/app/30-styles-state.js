@@ -227,7 +227,11 @@ const opts = {
   extent:"World", projection:"Equirectangular", centerLon:0, centerLat:0,
   orientation:"landscape", showLand:true, landColor:"#ffffff", showBorders:true,
   showCoast:true, ocean:"blue", graticule:0, title:"", compass:false, labels:false,
-  matColor:"#ffffff", lineWidth:1, palette:"Default",
+  matColor:"#ffffff", lineWidth:1, palette:"Default", scaleBar:false,
+  // The outline drawn around filled markers (open markers outline in their
+  // own colour). White keeps overlapping points apart; width 0 turns it off.
+  // Matches POINT_EDGE_COLOR / POINT_EDGE_WIDTH in styles.py.
+  pointEdgeColor:"#ffffff", pointEdgeWidth:0.6,
 };
 for(const [id,,value] of LEGEND_CONTROLS) opts[id]=value;
 let currentProjection=null;     // the d3 projection from the last render()

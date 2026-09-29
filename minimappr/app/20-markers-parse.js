@@ -6,8 +6,12 @@ const DEFAULT_PALETTE = ["#d62728","#1f77b4","#2ca02c","#ff7f0e","#9467bd",
 // green do not. Matches OKABE_ITO in styles.py.
 const OKABE_ITO = ["#0072b2","#d55e00","#009e73","#cc79a7","#e69f00",
   "#56b4e9","#f0e442","#000000"];
+// Black, white and grey, the look of a printed journal figure. White points
+// only show with a dark point outline. Matches BLACK_AND_WHITE in styles.py.
+const BLACK_AND_WHITE = ["#000000","#ffffff","#808080"];
 const PALETTES = {"Default": DEFAULT_PALETTE,
-  "Colourblind safe (Okabe-Ito)": OKABE_ITO};
+  "Colourblind safe (Okabe-Ito)": OKABE_ITO,
+  "Black & white": BLACK_AND_WHITE};
 // The palette in use is a map-wide setting (opts.palette), not a per-dataset one.
 function palette(){ return PALETTES[opts.palette] || DEFAULT_PALETTE; }
 const BASE_MARKERS = ["Circle","Square","Triangle","Triangle down","Triangle left",
