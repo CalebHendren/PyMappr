@@ -1407,7 +1407,7 @@ function legendItems(entries, attrLegends){
   for(const group of entries){
     // Group-mode datasets each get their own section, so several datasets on
     // one map stay tellable apart instead of merging into a single list.
-    const title = opts.legSectionTitles ? (opts.legTitle || group.title || "") : "";
+    const title = opts.legSectionTitles ? (group.title || "") : "";
     const rows = group.rows.map(e=>({label:e.label, style:e.style}));
     if(rows.length) sections.push({title, rows});
   }
@@ -1485,6 +1485,13 @@ function legendItems(entries, attrLegends){
       if(rows.length) sections.push({title:sectionTitle(prefix,res.symbolKey||"Symbol"), rows});
     }
   }
+  // A typed legend title names the whole key, whatever built it: it replaces
+  // the heading of a one-section legend, and heads a legend of several
+  // sections, which keep their own headings.
+  if(opts.legTitle && sections.length){
+    if(sections.length===1) sections[0].title=opts.legTitle;
+    else sections.unshift({title:opts.legTitle, rows:[]});
+  }
   return sections;
 }
 
@@ -1533,6 +1540,36 @@ function legendCounts(rows, colorKey, symbolKey){
   return counts;
 }
 
+// Split legend items into at most `cols` columns of about equal height. A
+// heading stays with the row it heads, and no column starts or ends on a gap.
+function splitColumns(items, cols, heightOf){
+  const trim=col=>{ while(col.length && col[col.length-1].type==="gap") col.pop(); return col; };
+  const total=items.reduce((a,it)=>a+heightOf(it),0);
+  if(cols<=1) return [trim([...items])];
+  // What must fit before a column may break: a run of headings plus the
+  // first thing under them.
+  const needAt=i=>{
+    let h=0, j=i;
+    while(j<items.length && items[j].type==="title") h+=heightOf(items[j++]);
+    return h+(j<items.length ? heightOf(items[j]) : 0);
+  };
+  const pack=limit=>{
+    const out=[[]]; let h=0;
+    for(let i=0;i<items.length;i++){
+      const it=items[i]; let col=out[out.length-1];
+      if(it.type==="gap" && !col.length) continue;
+      if(it.type!=="gap" && col.length && h+needAt(i)>limit){
+        if(out.length===cols) return null;
+        trim(col); out.push(col=[]); h=0;
+      }
+      col.push(it); h+=heightOf(it);
+    }
+    return out.map(trim).filter(col=>col.length);
+  };
+  const step=Math.max(1, Math.min(...items.map(heightOf))/4);
+  for(let limit=total/cols;; limit+=step){ const cols_=pack(limit); if(cols_) return cols_; }
+}
+
 // Text width from an offscreen canvas. Measuring an SVG <text> instead forces
 // a layout of the whole map, thousands of freshly drawn points included.
 const measureCtx=document.createElement("canvas").getContext("2d");
@@ -1544,41 +1581,52 @@ function textWidth(text, size, family, bold, italic){
 function drawLegend(parent, W, H, entries, attrLegends){
   const sections=legendItems(entries, attrLegends);
   if(!sections.length) return;
-  const fs=opts.legFont, scale=opts.legScale, cols=Math.max(1,opts.legCols);
+  const fs=opts.legFont, scale=opts.legScale;
   const font=opts.legFontFamily||"sans-serif";
   const titleFs=opts.legTitleFont||fs;
   const pad=opts.legPad, gap=opts.legSwatchGap;
   const rowH=fs*(1.05+opts.legRowSpacing), swW=fs*1.7*scale;
   const g=el("g"); g.style.cursor="move";
-  const textW=s=>textWidth(s, fs, font, false, false);
 
-  let maxLabel=0;
-  const flat=[];
   // A nested key's group rows head a block of children, so they take the
   // title weight on top of their swatch - indenting alone reads too weakly
   // when every swatch sits in the same column.
   const indent=fs*0.3*opts.legIndent;
-  let maxIndent=0;
-  for(const sec of sections){
-    if(sec.title){ flat.push({type:"title",text:sec.title}); }
+  const titleH=Math.max(rowH, titleFs*(1.05+opts.legRowSpacing));
+  const gapH=rowH*0.4, colGap=16;
+  const cols=Math.max(1,Math.round(opts.legCols));
+  const titleW=text=>textWidth(text, titleFs, font, opts.legTitleBold, opts.legTitleItalic);
+  // Across several columns, a title that names the whole legend (the typed
+  // title, or the heading of the only section) spans them instead of
+  // widening the first.
+  const whole=cols>1 && sections[0].title && (sections.length===1 || !sections[0].rows.length);
+  const header=whole ? {text:sections[0].title, w:titleW(sections[0].title)} : null;
+  const flat=[];
+  let prevRows=false;
+  for(const [si,sec] of sections.entries()){
+    if(flat.length && prevRows) flat.push({type:"gap"});
+    if(sec.title && !(header && si===0)) flat.push({type:"title", text:sec.title, w:titleW(sec.title)});
     sec.rows.forEach((r,i)=>{
       const depth=r.depth||0;
+      const head=!!sec.nested&&depth===0&&opts.legBoldGroups;
       if(sec.nested && depth===0 && i && opts.legGroupSpacer) flat.push({type:"gap"});
-      flat.push({type:"row",...r,depth,
-                 head:!!sec.nested&&depth===0&&opts.legBoldGroups});
-      maxLabel=Math.max(maxLabel,textW(r.label));
-      maxIndent=Math.max(maxIndent,depth*indent);
+      // Measured in the weight and slant it is drawn in.
+      const w=depth*indent + swW + gap + textWidth(r.label, fs, font,
+        head?opts.legTitleBold:opts.legLabelBold, head?opts.legTitleItalic:opts.legLabelItalic);
+      flat.push({type:"row",...r,depth,head,w});
     });
-    flat.push({type:"gap"});
+    prevRows=sec.rows.length>0;
   }
-  // layout in columns
-  const perCol=Math.ceil(flat.length/cols);
-  const colW=swW+gap+maxLabel+maxIndent+16;
-  let maxColRows=0;
-  const colItems=[];
-  for(let c=0;c<cols;c++){ colItems.push(flat.slice(c*perCol,(c+1)*perCol)); maxColRows=Math.max(maxColRows,colItems[c].length); }
-  const boxW=pad*2 + cols*colW;
-  const boxH=pad*2 + maxColRows*rowH;
+  const heightOf=it=>it.type==="title"?titleH:it.type==="row"?rowH:gapH;
+  const colItems=flat.length ? splitColumns(flat, cols, heightOf) : [];
+  const contentW=Math.max(0,...flat.filter(it=>it.w).map(it=>it.w));
+  const colW=contentW+colGap;
+  const colH=colItems.map(col=>col.reduce((a,it)=>a+heightOf(it),0));
+  const headerH=header ? titleH : 0;
+  const innerW=Math.max(colItems.length*contentW + Math.max(0,colItems.length-1)*colGap,
+                        header ? header.w : 0);
+  const boxW=pad*2 + innerW;
+  const boxH=pad*2 + headerH + Math.max(0,...colH);
 
   // position
   let bx,by;
@@ -1602,26 +1650,30 @@ function drawLegend(parent, W, H, entries, attrLegends){
     "fill-opacity":opts.legFrame?opts.legFrameAlpha:0,
     stroke:opts.legFrame?opts.legFrameEdge:"none",
     "stroke-width":opts.legFrameWidth}));
-  for(let c=0;c<cols;c++){
-    let yy=by+pad+rowH*0.5;
+  // Alignment is over the width the title heads - its column, or the whole
+  // legend for a spanning title - which is as much as a hand-laid-out SVG
+  // legend can honestly offer.
+  const drawTitle=(text, x0, width, top)=>{
+    const tx = opts.legTitleAlign==="right" ? x0+width
+             : opts.legTitleAlign==="center" ? x0+width/2 : x0;
+    const t=el("text",{x:tx, y:top+titleH/2+titleFs*0.34,"font-family":font,"font-size":titleFs,
+      "text-anchor":opts.legTitleAlign==="right"?"end":opts.legTitleAlign==="center"?"middle":"start",
+      "font-weight":opts.legTitleBold?700:400,fill:opts.legTitleColor});
+    if(opts.legTitleItalic) t.setAttribute("font-style","italic");
+    if(opts.legTitleUnderline) t.setAttribute("text-decoration","underline");
+    t.textContent=text; g.appendChild(t);
+  };
+  if(header) drawTitle(header.text, bx+pad, innerW, by+pad);
+  colItems.forEach((items,c)=>{
+    let yy=by+pad+headerH;
     const cx0=bx+pad+c*colW;
-    for(const item of colItems[c]){
+    for(const item of items){
       if(item.type==="title"){
-        // Alignment is over the column the title heads, which is as much as
-        // a hand-laid-out SVG legend can honestly offer.
-        const inner=colW-16;
-        const tx = opts.legTitleAlign==="right" ? cx0+inner
-                 : opts.legTitleAlign==="center" ? cx0+inner/2 : cx0;
-        const t=el("text",{x:tx, y:yy+fs*0.34,"font-family":font,"font-size":titleFs,
-          "text-anchor":opts.legTitleAlign==="right"?"end":opts.legTitleAlign==="center"?"middle":"start",
-          "font-weight":opts.legTitleBold?700:400,fill:opts.legTitleColor});
-        if(opts.legTitleItalic) t.setAttribute("font-style","italic");
-        if(opts.legTitleUnderline) t.setAttribute("text-decoration","underline");
-        t.textContent=item.text; g.appendChild(t);
-        yy+=rowH;
+        drawTitle(item.text, cx0, contentW, yy);
+        yy+=titleH;
       } else if(item.type==="row"){
         const dx=(item.depth||0)*indent;
-        const mx=cx0+dx+swW/2, my=yy;
+        const mx=cx0+dx+swW/2, my=yy+rowH/2;
         // A null style is a row that takes no swatch.
         if(item.style){
           const r_=Math.min(sizePx(item.style.size)*scale, fs*0.8*scale);
@@ -1641,9 +1693,9 @@ function drawLegend(parent, W, H, entries, attrLegends){
         if(item.head?opts.legTitleUnderline:opts.legLabelUnderline) t.setAttribute("text-decoration","underline");
         t.textContent=item.label; g.appendChild(t);
         yy+=rowH;
-      } else { yy+=rowH*0.4; }
+      } else { yy+=gapH; }
     }
-  }
+  });
   // Dragging only slides the drawn legend; the map is rendered once, on release.
   g.addEventListener("mousedown",ev=>{
     ev.preventDefault(); ev.stopPropagation(); // don't also start a map pan
