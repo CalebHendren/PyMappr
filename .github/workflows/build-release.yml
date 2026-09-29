@@ -70,12 +70,43 @@ jobs:
             /DMyAppVersion=${{ steps.version.outputs.version }} `
             packaging\installer.iss
 
+      # Uploads to artifact storage occasionally fail on a network blip
+      # (DNS, reset), so try up to three times before failing the job.
       - name: Upload installer artifact
+        id: upload1
+        continue-on-error: true
         uses: actions/upload-artifact@v7
         with:
           name: windows-installer
           path: dist/installer/PyMappr-Setup-*.exe
           if-no-files-found: error
+      - name: Wait before retrying the upload
+        if: steps.upload1.outcome == 'failure'
+        shell: bash
+        run: sleep 30
+      - name: Upload installer artifact (retry 1)
+        id: upload2
+        if: steps.upload1.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: windows-installer
+          path: dist/installer/PyMappr-Setup-*.exe
+          if-no-files-found: error
+          overwrite: true
+      - name: Wait before retrying the upload
+        if: steps.upload2.outcome == 'failure'
+        shell: bash
+        run: sleep 90
+      - name: Upload installer artifact (retry 2)
+        id: upload3
+        if: steps.upload2.outcome == 'failure'
+        uses: actions/upload-artifact@v7
+        with:
+          name: windows-installer
+          path: dist/installer/PyMappr-Setup-*.exe
+          if-no-files-found: error
+          overwrite: true
 
   build-macos:
     if: github.event_name != 'pull_request' || github.event.pull_request.merged == true
@@ -123,12 +154,43 @@ jobs:
             -srcfolder dist/PyMappr.app -ov -format UDZO \
             "dist/PyMappr-${{ steps.version.outputs.version }}-macOS.dmg"
 
+      # Uploads to artifact storage occasionally fail on a network blip
+      # (DNS, reset), so try up to three times before failing the job.
       - name: Upload DMG artifact
+        id: upload1
+        continue-on-error: true
         uses: actions/upload-artifact@v7
         with:
           name: macos-dmg
           path: dist/PyMappr-*-macOS.dmg
           if-no-files-found: error
+      - name: Wait before retrying the upload
+        if: steps.upload1.outcome == 'failure'
+        shell: bash
+        run: sleep 30
+      - name: Upload DMG artifact (retry 1)
+        id: upload2
+        if: steps.upload1.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: macos-dmg
+          path: dist/PyMappr-*-macOS.dmg
+          if-no-files-found: error
+          overwrite: true
+      - name: Wait before retrying the upload
+        if: steps.upload2.outcome == 'failure'
+        shell: bash
+        run: sleep 90
+      - name: Upload DMG artifact (retry 2)
+        id: upload3
+        if: steps.upload2.outcome == 'failure'
+        uses: actions/upload-artifact@v7
+        with:
+          name: macos-dmg
+          path: dist/PyMappr-*-macOS.dmg
+          if-no-files-found: error
+          overwrite: true
 
   build-ubuntu:
     if: github.event_name != 'pull_request' || github.event.pull_request.merged == true
@@ -168,7 +230,11 @@ jobs:
       - name: Package tarball and .deb
         run: bash packaging/build_linux.sh ubuntu --deb
 
+      # Uploads to artifact storage occasionally fail on a network blip
+      # (DNS, reset), so try up to three times before failing the job.
       - name: Upload Ubuntu artifacts
+        id: upload1
+        continue-on-error: true
         uses: actions/upload-artifact@v7
         with:
           name: linux-ubuntu
@@ -176,6 +242,37 @@ jobs:
             dist/PyMappr-*-linux-ubuntu-*.tar.gz
             dist/pymappr_*_amd64.deb
           if-no-files-found: error
+      - name: Wait before retrying the upload
+        if: steps.upload1.outcome == 'failure'
+        shell: bash
+        run: sleep 30
+      - name: Upload Ubuntu artifacts (retry 1)
+        id: upload2
+        if: steps.upload1.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: linux-ubuntu
+          path: |
+            dist/PyMappr-*-linux-ubuntu-*.tar.gz
+            dist/pymappr_*_amd64.deb
+          if-no-files-found: error
+          overwrite: true
+      - name: Wait before retrying the upload
+        if: steps.upload2.outcome == 'failure'
+        shell: bash
+        run: sleep 90
+      - name: Upload Ubuntu artifacts (retry 2)
+        id: upload3
+        if: steps.upload2.outcome == 'failure'
+        uses: actions/upload-artifact@v7
+        with:
+          name: linux-ubuntu
+          path: |
+            dist/PyMappr-*-linux-ubuntu-*.tar.gz
+            dist/pymappr_*_amd64.deb
+          if-no-files-found: error
+          overwrite: true
 
   build-arch:
     if: github.event_name != 'pull_request' || github.event.pull_request.merged == true
@@ -225,7 +322,11 @@ jobs:
           su builder -c "cd packaging/arch && makepkg --noconfirm"
           cp packaging/arch/pymappr-*.pkg.tar.zst dist/
 
+      # Uploads to artifact storage occasionally fail on a network blip
+      # (DNS, reset), so try up to three times before failing the job.
       - name: Upload Arch artifacts
+        id: upload1
+        continue-on-error: true
         uses: actions/upload-artifact@v7
         with:
           name: linux-arch
@@ -233,6 +334,37 @@ jobs:
             dist/PyMappr-*-linux-arch-*.tar.gz
             dist/pymappr-*.pkg.tar.zst
           if-no-files-found: error
+      - name: Wait before retrying the upload
+        if: steps.upload1.outcome == 'failure'
+        shell: bash
+        run: sleep 30
+      - name: Upload Arch artifacts (retry 1)
+        id: upload2
+        if: steps.upload1.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: linux-arch
+          path: |
+            dist/PyMappr-*-linux-arch-*.tar.gz
+            dist/pymappr-*.pkg.tar.zst
+          if-no-files-found: error
+          overwrite: true
+      - name: Wait before retrying the upload
+        if: steps.upload2.outcome == 'failure'
+        shell: bash
+        run: sleep 90
+      - name: Upload Arch artifacts (retry 2)
+        id: upload3
+        if: steps.upload2.outcome == 'failure'
+        uses: actions/upload-artifact@v7
+        with:
+          name: linux-arch
+          path: |
+            dist/PyMappr-*-linux-arch-*.tar.gz
+            dist/pymappr-*.pkg.tar.zst
+          if-no-files-found: error
+          overwrite: true
 
   build-fedora:
     if: github.event_name != 'pull_request' || github.event.pull_request.merged == true
@@ -276,7 +408,11 @@ jobs:
       - name: Build RPM (rpmbuild)
         run: bash packaging/build_rpm.sh
 
+      # Uploads to artifact storage occasionally fail on a network blip
+      # (DNS, reset), so try up to three times before failing the job.
       - name: Upload Fedora artifacts
+        id: upload1
+        continue-on-error: true
         uses: actions/upload-artifact@v7
         with:
           name: linux-fedora
@@ -284,6 +420,37 @@ jobs:
             dist/PyMappr-*-linux-fedora-*.tar.gz
             dist/pymappr-*.rpm
           if-no-files-found: error
+      - name: Wait before retrying the upload
+        if: steps.upload1.outcome == 'failure'
+        shell: bash
+        run: sleep 30
+      - name: Upload Fedora artifacts (retry 1)
+        id: upload2
+        if: steps.upload1.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: linux-fedora
+          path: |
+            dist/PyMappr-*-linux-fedora-*.tar.gz
+            dist/pymappr-*.rpm
+          if-no-files-found: error
+          overwrite: true
+      - name: Wait before retrying the upload
+        if: steps.upload2.outcome == 'failure'
+        shell: bash
+        run: sleep 90
+      - name: Upload Fedora artifacts (retry 2)
+        id: upload3
+        if: steps.upload2.outcome == 'failure'
+        uses: actions/upload-artifact@v7
+        with:
+          name: linux-fedora
+          path: |
+            dist/PyMappr-*-linux-fedora-*.tar.gz
+            dist/pymappr-*.rpm
+          if-no-files-found: error
+          overwrite: true
 
   release:
     needs: [build-windows, build-macos, build-ubuntu, build-arch, build-fedora]
