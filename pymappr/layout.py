@@ -20,7 +20,8 @@ from pymappr.styles import (PointStyle, apply_override, attribute_style_maps,
                             resolve_nesting, row_key, style_by_attributes)
 
 __all__ = ["DatasetLayout", "MapLayout", "column_key", "group_styles",
-           "layout_points", "with_default_title", "editor_rows"]
+           "layout_points", "with_default_title", "editor_rows",
+           "parent_name_column", "organise_publication_legend"]
 
 
 @dataclass
@@ -63,6 +64,63 @@ def column_key(entry: DatasetEntry, label: str) -> str | None:
         return None
     keys = dict(zip(entry.dataset.name_labels, entry.dataset.name_keys))
     return keys.get(label)
+
+
+def parent_name_column(dataset, group_by: str) -> str:
+    """The label of the name column that *group_by* is built on, or "".
+
+    Genus is the parent of a combined "Genus Species" column: it has fewer
+    distinct values, and each row's Genus is the start of that row's full
+    name. Colouring the full-name groups by their parent puts the species of
+    one genus in one shade and lets their shapes restart inside it. The
+    species epithet is not a parent - it does not lead the name - and a
+    column with a blank cell is not either, since a blank prefixes every
+    name. With several candidates the one closest to *group_by* (the most
+    distinct values) wins. Returns "" when nothing qualifies.
+    """
+    keys = dict(zip(dataset.name_labels, dataset.name_keys))
+    group_key = keys.get(group_by)
+    if group_key is None:
+        return ""
+    frame = dataset.frame
+
+    def text(key):
+        return frame[key].fillna("").astype(str).str.strip()
+
+    names = text(group_key)
+    best, best_count = "", 0
+    for label, key in keys.items():
+        if key == group_key:
+            continue
+        parts = text(key)
+        count = parts.nunique()
+        if (count >= names.nunique() or count <= best_count
+                or (parts == "").any()
+                or not all(name.startswith(part)
+                           for name, part in zip(names, parts))):
+            continue
+        best, best_count = label, count
+    return best
+
+
+def organise_publication_legend(entries,
+                                options: LegendOptions) -> LegendOptions:
+    """Arrange the legend for a journal figure: species rows sorted A-Z, each
+    genus a block in its own shade.
+
+    Three shades alone cannot separate every species, but shade by genus plus
+    a shape that restarts within each genus can, and sorting keeps a genus's
+    rows together. A dataset already coloured by a column keeps that choice,
+    and a manual order is the user's own arrangement, so neither is touched.
+    Sets ``color_by`` on the entries and returns the adjusted *options*.
+    """
+    for entry in entries:
+        if not entry.color_by:
+            entry.color_by = parent_name_column(entry.dataset,
+                                                entry.group_by)
+    if options.order == "manual":
+        return options
+    return dataclasses.replace(options, order="az")
 
 
 def _visible(entries) -> list[DatasetEntry]:

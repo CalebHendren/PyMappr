@@ -29,7 +29,8 @@ from pymappr.decorations import (CompassOptions,  # noqa: E402
                                  ScaleBarOptions)
 from pymappr.layers import LayerStore  # noqa: E402
 from pymappr.layout import (MapLayout, column_key,  # noqa: E402
-                            editor_rows, layout_points, with_default_title)
+                            editor_rows, layout_points,
+                            organise_publication_legend, with_default_title)
 from pymappr.legend import (ENTRY_ORDERS, PUBLICATION_LEGEND,  # noqa: E402
                             LegendOptions)
 from pymappr.projects import PROJECT_EXTENSION, DatasetEntry  # noqa: E402
@@ -1135,19 +1136,24 @@ class PyMapprApp:
     def on_publication_style(self) -> None:
         """Apply several settings at once for a journal figure: black and
         white points with black outlines and varied shapes, a plain boxed
-        legend with italic names, and 600 DPI export. Rows the user styled
-        by hand in the legend editor keep their styling."""
+        legend with italic names sorted A-Z and shaded by genus, and 600 DPI
+        export. Rows the user styled by hand in the legend editor keep their
+        styling, and so do a manual legend order and a chosen Color by."""
         p = self.panel
         p.palette_var.set(BLACK_AND_WHITE_NAME)
         p.set_point_edge(*PUBLICATION_POINT_EDGE)
         p.set_point_alpha(1.0)
-        p.set_legend_options(dataclasses.replace(p.legend_options(),
-                                                 **PUBLICATION_LEGEND))
+        p.set_legend_options(organise_publication_legend(
+            self.entries, dataclasses.replace(p.legend_options(),
+                                              **PUBLICATION_LEGEND)))
         p.dpi_var.set(PUBLICATION_DPI)
         # Three shades alone cannot tell more than three groups apart.
         for entry in self.entries:
             entry.vary_symbols = True
         p.vary_symbols_var.set(True)
+        active = self._active_entry()
+        if active is not None:
+            p.color_by_var.set(active.color_by or "None")
         self.renderer.set_point_alpha(1.0)
         self.renderer.set_point_edge(*p.point_edge())
         self._push_points()

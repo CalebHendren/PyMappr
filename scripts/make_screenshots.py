@@ -85,7 +85,8 @@ def readme_scenes(store: LayerStore) -> dict:
 
     # The publication style: Genus and Species combined into one legend
     # line, black & white outlined markers in varied shapes, and a plain
-    # boxed legend with italic names.
+    # boxed legend with italic names. Shading by genus and sorting A-Z make
+    # each genus a block of rows in one shade, its shapes restarting.
     dataset, label = combine_name_columns(beetles.dataset,
                                           ["Genus", "Species"])
     r = new_renderer(store)
@@ -94,8 +95,10 @@ def readme_scenes(store: LayerStore) -> dict:
     r.set_orientation("portrait")
     r.set_point_edge(*PUBLICATION_POINT_EDGE)
     show_points(r, DatasetEntry(dataset=dataset, name=beetles.name,
-                                group_by=label, vary_symbols=True),
-                BLACK_AND_WHITE, location="lower right", **PUBLICATION_LEGEND)
+                                group_by=label, color_by="Genus",
+                                vary_symbols=True),
+                BLACK_AND_WHITE, location="lower right", order="az",
+                **PUBLICATION_LEGEND)
     scenes["publication_style.png"] = (r, True)
 
     # Seabirds grouped by family on Mollweide, with a plain legend.
