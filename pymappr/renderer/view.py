@@ -302,6 +302,9 @@ class ViewMixin:
             self._wrap_view()
             self._sync_resolutions()
             self._sync_wrap_copies()
+            # After the wrap copies settle, so only the copies actually on
+            # screen pay for a crop.
+            self._refresh_basemap()
             self._refresh_point_layers()
             self._refresh_labels()
             # Unlike the compass, the bar's length is a function of the view.
@@ -523,13 +526,28 @@ class ViewMixin:
         side bars) and then restored.
         """
         fmt = fmt.lower()
-        with self._cropped_for_export():
+        with self._cropped_for_export(), self.basemap_detail_for(dpi):
             if fmt in ("tif", "tiff"):
                 self._save_tiff(path, dpi)
                 return
             if fmt in ("jpg", "jpeg"):
                 fmt = "jpeg"  # JPEG has no alpha; the white facecolor fills it
             self.fig.savefig(path, format=fmt, dpi=dpi, facecolor="white")
+
+    @contextmanager
+    def basemap_detail_for(self, dpi: float):
+        """Raise the raster basemap's detail to suit a render at *dpi*.
+
+        ``savefig`` renders at its own dpi without changing ``fig.dpi``, so
+        without this a 200- or 600-dpi export would be written from the crop
+        cut for a 100-dpi screen - visibly softer than before the basemap
+        became view-scoped. Anything that saves the figure directly rather
+        than through :meth:`save_image` wants this too."""
+        try:
+            self._refresh_basemap(dpi=dpi)
+            yield
+        finally:
+            self._refresh_basemap()
 
     @contextmanager
     def _cropped_for_export(self):

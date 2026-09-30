@@ -1,5 +1,5 @@
-"""Mouse handling: spinning the globe and dragging the legend, labels
-and scale bar."""
+"""Mouse handling: panning and spinning the globe, and dragging the
+legend, labels and scale bar."""
 
 from __future__ import annotations
 
@@ -13,6 +13,13 @@ from pymappr.projections import GLOBE
 # The globe re-projects at most this often (seconds) while being dragged;
 # the last position is always applied when the drag ends.
 _SPIN_INTERVAL = 0.05
+
+# A pan re-renders for real at most this often (seconds). Every motion event
+# in between only shifts the cached bitmap, which costs ~0.1 ms against ~1 s
+# for a full re-render of a raster basemap with several vector layers. The
+# real render is what fills in the strip the shift cannot cover, and the
+# release always ends on one.
+_PAN_INTERVAL = 0.18
 
 
 class MouseMixin:
@@ -29,6 +36,10 @@ class MouseMixin:
         # its centre-lon/lat controls in sync with the drag.
         self._globe_drag: dict | None = None
         self._on_globe_rotate = None
+        # Map pan: a left-drag with the toolbar's pan tool active, shown by
+        # shifting the cached bitmap rather than re-rendering (see
+        # ``_pan_press``).
+        self._pan_drag: dict | None = None
 
     # Dragging a label with the left mouse button moves it and remembers the
     # offset (per layer + label text) across pans, zooms, and layer toggles;
@@ -37,6 +48,12 @@ class MouseMixin:
     def _toolbar_busy(self) -> bool:
         toolbar = getattr(self.fig.canvas, "toolbar", None)
         return bool(toolbar is not None and toolbar.mode)
+
+    def _toolbar_panning(self) -> bool:
+        """Whether the toolbar's pan/zoom tool is the active one."""
+        toolbar = getattr(self.fig.canvas, "toolbar", None)
+        mode = getattr(toolbar, "mode", "")
+        return str(mode) == "pan/zoom"
 
     def _label_under(self, event):
         for texts in self._label_texts.values():
@@ -69,16 +86,18 @@ class MouseMixin:
         self._legend_dragging_enabled = enabled
 
     def _sync_navigation(self) -> None:
-        """Hand pan/zoom drags to our own spin handler when the globe is shown:
-        matplotlib's built-in axes pan and rubber-band zoom are switched off for
-        the map axes so a drag spins the globe instead of sliding or boxing the
-        view. The scroll wheel and the zoom buttons still zoom - they don't
-        route through this."""
+        """Hand pan drags to our own handlers rather than matplotlib's.
+
+        Matplotlib's axes pan re-renders the whole scene on every motion event.
+        Switching it off for the map axes leaves the gesture to us in every
+        projection: the globe spins (``_globe_press``) and every other
+        projection blits (``_pan_press``). The rubber-band zoom is switched off
+        only on the globe, whose disk stays centred. The scroll wheel and the
+        zoom buttons still zoom - they don't route through this."""
+        self.ax.can_pan = lambda *_a, **_k: False
         if self.proj.hemisphere:
-            self.ax.can_pan = lambda *_a, **_k: False
             self.ax.can_zoom = lambda *_a, **_k: False
         else:
-            self.ax.__dict__.pop("can_pan", None)
             self.ax.__dict__.pop("can_zoom", None)
 
     def set_globe_rotate_callback(self, callback) -> None:
@@ -119,8 +138,12 @@ class MouseMixin:
             self._label_press(event)
             if self._label_drag is not None:
                 return
-        if self.proj.hemisphere and event.button == 1:
+        if event.button != 1:
+            return
+        if self.proj.hemisphere:
             self._globe_press(event)
+        elif self._toolbar_panning():
+            self._pan_press(event)
 
     def _globe_disk_px(self) -> float:
         """The globe disk's diameter on screen, in pixels."""
@@ -166,6 +189,117 @@ class MouseMixin:
         drag["applied_at"] = time.monotonic()
         if self._on_globe_rotate is not None:
             self._on_globe_rotate(lon0, lat0)
+        self.redraw()
+
+    # ------------------------------------------------------------------- pan
+    #
+    # Panning a flat projection only translates the map, so the drag shifts the
+    # pixels already rendered - ~0.1 ms a frame - and re-renders for real only
+    # every _PAN_INTERVAL. Matplotlib's own axes pan re-rendered the whole
+    # scene on every motion event instead: about a second a frame with a raster
+    # basemap and a few vector layers.
+    #
+    # The shift is geometrically exact: measured against a re-render of the
+    # shifted view it is bit-identical wherever the content is drawn at 1:1
+    # scale. Where the content is resampled - a downscaled basemap, an
+    # anti-aliased stroke - a re-render samples the source at a different
+    # sub-pixel phase, so a shifted frame is the same content in the same
+    # place but not the same bytes. That, and the strip newly exposed at the
+    # leading edge, is what the throttled render settles; the release always
+    # ends on one, so what the user stops on is a full render either way.
+
+    def _pinned_overlays(self) -> list:
+        """The artists anchored to the axes rather than to the map.
+
+        The scale bar, compass and legend sit at a corner in axes coordinates,
+        so they must not slide with a shifted bitmap. They are held out of the
+        cached background and re-drawn over each shift instead."""
+        overlays = [*self._artists.get("scale_bar", []),
+                    *self._artists.get("compass", [])]
+        legend = self.ax.get_legend()
+        if legend is not None:
+            overlays.append(legend)
+        return overlays
+
+    def _pan_press(self, event) -> None:
+        canvas = self.fig.canvas
+        if not hasattr(canvas, "copy_from_bbox"):
+            return  # a canvas that cannot cache pixels: no blitting to do
+        overlays = self._pinned_overlays()
+        for artist in overlays:
+            artist.set_animated(True)
+        # Drawn once with the overlays held out, so the cached bitmap is the
+        # map alone.
+        canvas.draw()
+        self._pan_drag = {"x": event.x, "y": event.y,
+                          "last": (event.x, event.y), "overlays": overlays,
+                          "background": canvas.copy_from_bbox(self.ax.bbox),
+                          "pending": None, "applied_at": None}
+
+    def _drag_map(self, event) -> None:
+        drag = self._pan_drag
+        if event.x is None or event.y is None:
+            return
+        dx, dy = event.x - drag["x"], event.y - drag["y"]
+        self._blit_pan(dx, dy)
+        x0, x1 = self.ax.get_xlim()
+        y0, y1 = self.ax.get_ylim()
+        bbox = self.ax.bbox
+        # The map follows the cursor, so the view moves the opposite way.
+        drag["pending"] = (-(x1 - x0) / bbox.width * dx,
+                           -(y1 - y0) / bbox.height * dy)
+        drag["last"] = (event.x, event.y)
+        last = drag["applied_at"]
+        if last is None or time.monotonic() - last >= _PAN_INTERVAL:
+            self._apply_pan()
+
+    def _blit_pan(self, dx: float, dy: float) -> None:
+        """Shift the cached map bitmap by *dx, dy* pixels and put the pinned
+        overlays back on top.
+
+        *dy* arrives in event coordinates, which count upwards, while the
+        region's rows count down from the top; hence the negated y.
+        """
+        drag = self._pan_drag
+        canvas = self.fig.canvas
+        bbox = self.ax.bbox
+        canvas.restore_region(drag["background"], bbox=bbox,
+                              xy=(bbox.x0 + dx, bbox.y0 - dy))
+        for artist in drag["overlays"]:
+            self.ax.draw_artist(artist)
+        canvas.blit(bbox)
+
+    def _apply_pan(self) -> None:
+        """Move the view to the drag's latest position and render for real.
+
+        Re-caches the bitmap, so the shifts that follow move the new pixels,
+        and re-bases the drag on the position just applied."""
+        drag = self._pan_drag
+        if drag["pending"] is None:
+            return
+        dx, dy = drag["pending"]
+        drag["pending"] = None
+        x0, x1 = self.ax.get_xlim()
+        y0, y1 = self.ax.get_ylim()
+        with self._one_view_change():
+            self.ax.set_xlim(x0 + dx, x1 + dx)
+            self.ax.set_ylim(y0 + dy, y1 + dy)
+        canvas = self.fig.canvas
+        # Drawn now rather than deferred: the fresh pixels are needed
+        # immediately, as the next motion event will shift them.
+        canvas.draw()
+        drag["background"] = canvas.copy_from_bbox(self.ax.bbox)
+        drag["x"], drag["y"] = drag["last"]
+        # Timed from the end of the render, so the interval is breathing room
+        # between renders rather than a deadline they compete with.
+        drag["applied_at"] = time.monotonic()
+
+    def _pan_release(self) -> None:
+        drag = self._pan_drag
+        self._apply_pan()
+        self._pan_drag = None
+        for artist in drag["overlays"]:
+            artist.set_animated(False)
         self.redraw()
 
     def _legend_press(self, event) -> bool:
@@ -253,6 +387,9 @@ class MouseMixin:
         if self._globe_drag is not None:
             self._spin_globe(event)
             return
+        if self._pan_drag is not None:
+            self._drag_map(event)
+            return
         if self._scale_bar_drag is not None:
             self._drag_scale_bar(event)
             return
@@ -294,6 +431,9 @@ class MouseMixin:
                     artist.remove()
                 self.set_basemap(self._basemap)
                 self.redraw()
+            return
+        if self._pan_drag is not None:
+            self._pan_release()
             return
         if self._scale_bar_drag is not None:
             self._scale_bar_drag = None

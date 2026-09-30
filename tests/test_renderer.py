@@ -24,6 +24,7 @@ from pymappr.renderer.geometry import (export_geometry,  # noqa: E402
                                        oriented_axes_rect, refit_xlim)
 from pymappr.renderer.tables import (MARGINS_PLAIN,  # noqa: E402
                                      MARGINS_WITH_TICKS, ORIENTATION_ASPECT)
+from pymappr.decorations import ScaleBarOptions  # noqa: E402
 from pymappr.legend import LegendOptions  # noqa: E402
 from pymappr.styles import PointStyle  # noqa: E402
 
@@ -373,14 +374,17 @@ def test_globe_spins_when_the_pan_tool_is_active():
     assert (r.proj.lon_0, r.proj.lat_0) != (0.0, 0.0)
 
 
-def test_switching_off_the_globe_restores_panning():
+def test_switching_off_the_globe_restores_the_zoom_tool_only():
+    # Pan drags are handled here in every projection - the globe spins, the
+    # rest blit - so matplotlib's axes pan stays switched off throughout.
+    # Only its rubber-band zoom comes back off the globe.
     from pymappr.projections import GLOBE
 
     r = _renderer(9.0, 6.5)
     r.set_projection(GLOBE, 0.0, 0.0)
-    assert "can_pan" in r.ax.__dict__
+    assert "can_pan" in r.ax.__dict__ and "can_zoom" in r.ax.__dict__
     r.set_projection("Equirectangular")
-    assert "can_pan" not in r.ax.__dict__ and "can_zoom" not in r.ax.__dict__
+    assert "can_pan" in r.ax.__dict__ and "can_zoom" not in r.ax.__dict__
 
 
 def test_globe_view_is_circular_not_stretched():
@@ -826,3 +830,196 @@ def test_labels_that_stay_in_view_keep_their_text_artists():
     assert kept and all(before[name] is after[name] for name in kept)
     assert all(t.axes is r.ax for t in after.values())
 
+
+def _basemap_renderer(extent="World", mode="relief"):
+    """A renderer with a raster basemap, or a skip when the data is absent."""
+    store = LayerStore()
+    if not store.has_basemap(mode):
+        pytest.skip("basemap raster not downloaded")
+    fig = Figure(figsize=(9, 6.5), dpi=100)
+    FigureCanvasAgg(fig)
+    r = MapRenderer(fig, store)
+    r.set_extent(extent)
+    r.set_basemap(mode)
+    r.fig.canvas.draw()
+    return r
+
+
+def _primary_raster(r, mode="relief"):
+    """The un-wrapped basemap artist (offset 0), the one the view sits on."""
+    for artist in r._artists[f"raster_{mode}"]:
+        if not getattr(artist, "_pym_offset", 0.0):
+            return artist
+    raise AssertionError("no primary raster artist")
+
+
+def test_basemap_is_cropped_to_the_view_not_the_world():
+    # The whole point of the crop: imshow's cost tracks the pixels it is handed,
+    # so a zoomed-in view must not be handed the whole world.
+    r = _basemap_renderer("World")
+    world = _primary_raster(r).get_array().shape
+    full = r.store.basemap_pyramid("relief")[0].shape
+    assert world[1] < full[1]            # the world view already draws coarser
+
+    r.set_extent((-0.6, 0.6, 51.2, 51.8))
+    r.fig.canvas.draw()
+    city = _primary_raster(r).get_array().shape
+    assert city[1] < world[1] / 10       # a city view is a tiny slice
+    crop = _primary_raster(r)._pym_crop
+    x0, x1 = sorted(r.ax.get_xlim())
+    y0, y1 = sorted(r.ax.get_ylim())
+    assert crop.covers((x0, x1, y0, y1))  # and it still covers what is shown
+
+
+def test_projected_basemap_is_warped_over_the_view():
+    r = _basemap_renderer("World")
+    r.set_projection("Robinson")
+    r.set_extent("World")
+    r.fig.canvas.draw()
+    world = _primary_raster(r)._pym_crop
+    r.set_extent((-10, 40, 35, 62))
+    r.fig.canvas.draw()
+    zoomed = _primary_raster(r)._pym_crop
+    # Same grid size either way - it tracks the screen, not the world - but the
+    # zoomed warp covers far less ground, which is what makes it sharper.
+    assert (zoomed.region[1] - zoomed.region[0]) < (world.region[1]
+                                                    - world.region[0]) / 2
+
+
+def test_a_small_pan_reuses_the_loaded_crop():
+    r = _basemap_renderer((-10, 40, 35, 62))
+    before = _primary_raster(r)._pym_crop
+    x0, x1 = r.ax.get_xlim()
+    r.ax.set_xlim(x0 + (x1 - x0) * 0.01, x1 + (x1 - x0) * 0.01)
+    r.fig.canvas.draw()
+    assert _primary_raster(r)._pym_crop is before   # margin absorbed it
+    r.ax.set_xlim(x0 + (x1 - x0) * 0.9, x1 + (x1 - x0) * 0.9)
+    r.fig.canvas.draw()
+    assert _primary_raster(r)._pym_crop is not before  # left the crop behind
+
+
+def test_export_dpi_raises_the_basemap_detail_then_restores_it():
+    # savefig renders at its own dpi without touching fig.dpi, so without this
+    # a high-dpi export would be written from the crop cut for the screen.
+    r = _basemap_renderer("World")
+    screen = _primary_raster(r).get_array().shape[1]
+    with r.basemap_detail_for(600):
+        assert _primary_raster(r).get_array().shape[1] > screen
+    assert _primary_raster(r).get_array().shape[1] == screen
+
+
+def _pan_renderer():
+    """A renderer with the pan tool active and one marker to track."""
+    r = _renderer(9.0, 6.5)
+    r.fig.canvas.toolbar = _FakeToolbar()
+    r.set_extent("World")
+    # A plain data-coordinate artist, so these tests need no map download.
+    r.ax.plot([-60.0], [20.0], marker="s", markersize=8, color="red")
+    r.fig.canvas.draw()
+    return r
+
+
+def _red_centre(canvas):
+    """Where the red marker sits in the canvas buffer (column, row)."""
+    buf = np.asarray(canvas.buffer_rgba())[..., :3].astype(int)
+    mask = (buf[..., 0] > 150) & (buf[..., 1] < 100) & (buf[..., 2] < 100)
+    rows, cols = np.nonzero(mask)
+    assert len(rows), "marker not found"
+    return cols.mean(), rows.mean()
+
+
+def test_a_pan_drag_moves_the_view_by_the_dragged_distance():
+    r = _pan_renderer()
+    x0, x1 = r.ax.get_xlim()
+    y0, y1 = r.ax.get_ylim()
+    bbox = r.ax.bbox
+    cx, cy = (bbox.x0 + bbox.x1) / 2, (bbox.y0 + bbox.y1) / 2
+    dx, dy = 40, 25
+    r._on_canvas_press(_MouseEvent(r.ax, cx, cy))
+    assert r._pan_drag is not None
+    r._on_canvas_motion(_MouseEvent(r.ax, cx + dx, cy + dy))
+    r._on_canvas_release(_MouseEvent(r.ax, cx + dx, cy + dy))
+    # The map follows the cursor, so the view moves the opposite way.
+    assert r.ax.get_xlim()[0] - x0 == pytest.approx(
+        -(x1 - x0) / bbox.width * dx)
+    assert r.ax.get_ylim()[0] - y0 == pytest.approx(
+        -(y1 - y0) / bbox.height * dy)
+    assert r._pan_drag is None
+    assert not any(a.get_animated() for a in r._pinned_overlays())
+
+
+def test_a_pan_press_without_a_drag_leaves_the_view_alone():
+    r = _pan_renderer()
+    before = (r.ax.get_xlim(), r.ax.get_ylim())
+    bbox = r.ax.bbox
+    r._on_canvas_press(_MouseEvent(r.ax, bbox.x0 + 50, bbox.y0 + 50))
+    r._on_canvas_release(_MouseEvent(r.ax, bbox.x0 + 50, bbox.y0 + 50))
+    assert (r.ax.get_xlim(), r.ax.get_ylim()) == before
+    assert r._pan_drag is None
+
+
+def test_panning_only_takes_the_drag_while_the_pan_tool_is_active():
+    r = _pan_renderer()
+    bbox = r.ax.bbox
+    press = _MouseEvent(r.ax, (bbox.x0 + bbox.x1) / 2, (bbox.y0 + bbox.y1) / 2)
+    for mode in ("", "zoom rect"):
+        r.fig.canvas.toolbar = _FakeToolbar(mode)
+        r._on_canvas_press(press)
+        assert r._pan_drag is None, f"pan started with toolbar mode {mode!r}"
+
+
+def test_the_blitted_drag_shifts_the_map_the_way_the_cursor_went():
+    # Guards the sign of the blit offset: event y counts up, the cached
+    # region's rows count down, so a mixed-up sign silently drags the map the
+    # wrong way vertically.
+    import time
+
+    r = _pan_renderer()
+    before = _red_centre(r.fig.canvas)
+    bbox = r.ax.bbox
+    cx, cy = (bbox.x0 + bbox.x1) / 2, (bbox.y0 + bbox.y1) / 2
+    dx, dy = 37, 21
+    r._on_canvas_press(_MouseEvent(r.ax, cx, cy))
+    # Hold off the throttled re-render, so what is on the canvas is the blit.
+    r._pan_drag["applied_at"] = time.monotonic()
+    r._on_canvas_motion(_MouseEvent(r.ax, cx + dx, cy + dy))
+    after = _red_centre(r.fig.canvas)
+    assert after[0] - before[0] == pytest.approx(dx, abs=1.0)   # right with it
+    assert after[1] - before[1] == pytest.approx(-dy, abs=1.0)  # and upwards
+
+
+def test_pinned_overlays_stay_put_while_the_map_is_dragged():
+    import time
+
+    r = _pan_renderer()
+    r.set_scale_bar(ScaleBarOptions(show=True))
+    r.fig.canvas.draw()
+    bbox = r.ax.bbox
+    bars = r._artists["scale_bar"]
+    assert bars, "no scale bar to check"
+    before = [a.get_window_extent().bounds for a in bars]
+    cx, cy = (bbox.x0 + bbox.x1) / 2, (bbox.y0 + bbox.y1) / 2
+    r._on_canvas_press(_MouseEvent(r.ax, cx, cy))
+    # Held out of the cached bitmap, so they can be re-drawn at their corner.
+    assert all(a.get_animated() for a in bars)
+    r._pan_drag["applied_at"] = time.monotonic()
+    r._on_canvas_motion(_MouseEvent(r.ax, cx + 45, cy + 30))
+    assert [a.get_window_extent().bounds for a in bars] == before
+    r._on_canvas_release(_MouseEvent(r.ax, cx + 45, cy + 30))
+    assert not any(a.get_animated() for a in bars)
+
+
+def test_an_unknown_layer_key_is_rejected_before_it_is_recorded():
+    # The toggles used to note the key first and look it up second, so a bad
+    # key left the visible set holding a name nothing can draw - and every
+    # later pan raised on it.
+    r = _renderer(9.0, 6.5)
+    for setter, state in ((r.set_layer, r._line_visible),
+                          (r.set_fill_layer, r._fill_visible),
+                          (r.set_point_layer, r._point_layers_visible)):
+        with pytest.raises(KeyError):
+            setter("nonesuch", True)
+        assert not state
+    x0, x1 = r.ax.get_xlim()
+    r.ax.set_xlim(x0 + 1.0, x1 + 1.0)   # fires _on_limits_changed
+    assert r.ax.get_xlim()[0] == pytest.approx(x0 + 1.0)

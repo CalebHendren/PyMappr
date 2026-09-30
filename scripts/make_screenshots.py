@@ -245,7 +245,10 @@ def main() -> int:
             # Portrait renders drop their blank orientation side bars.
             renderer.save_image(str(path), fmt="png", dpi=DPI)
         else:
-            renderer.fig.savefig(path, dpi=DPI, facecolor="white")
+            # Saving the figure directly still needs the basemap cut for the
+            # export dpi, not for the notional screen.
+            with renderer.basemap_detail_for(DPI):
+                renderer.fig.savefig(path, dpi=DPI, facecolor="white")
         print("wrote", path)
     return 0
 
