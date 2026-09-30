@@ -356,9 +356,10 @@ $("#showLabels").addEventListener("change",e=>{ opts.labels=e.target.checked; re
 $("#matColor").addEventListener("input",e=>{ opts.matColor=e.target.value; render(); });
 $("#lineWidth").addEventListener("input",e=>{ opts.lineWidth=+e.target.value; $("#lwVal").textContent=(+e.target.value).toFixed(2); render(); });
 
-// Legend controls, wired from the LEGEND_CONTROLS table so a new setting is
-// one row there rather than another near-identical line here.
-for(const [id,kind,fallback] of LEGEND_CONTROLS){
+// Legend and map controls, wired from the LEGEND_CONTROLS and MAP_CONTROLS
+// tables so a new setting is one row there rather than another
+// near-identical line here.
+for(const [id,kind,fallback] of [...LEGEND_CONTROLS, ...MAP_CONTROLS]){
   const node=$("#"+id);
   if(!node) continue;                       // control not on the page (yet)
   const event = kind==="bool"||node.tagName==="SELECT" ? "change" : "input";
@@ -370,8 +371,15 @@ for(const [id,kind,fallback] of LEGEND_CONTROLS){
     } else opts[id]=e.target.value;
     // Choosing a preset position discards any manual (dragged) placement.
     if(id==="legPos") legendDrag=null;
+    if(id==="scalePos") opts.scaleAnchor=null;
     render();
   });
+}
+$("#scaleReset").addEventListener("click",()=>{ opts.scaleAnchor=null; render(); });
+// Controls that only apply in some states are greyed out in the others.
+function syncControlStates(){
+  $("#scaleFixed").disabled = opts.scaleLengthMode!=="fixed";
+  $("#scaleReset").disabled = !opts.scaleAnchor;
 }
 
 // export

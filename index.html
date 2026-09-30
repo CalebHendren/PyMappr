@@ -81,9 +81,11 @@
   #stage .hint{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
     color:var(--stage-muted);text-align:center;max-width:340px;pointer-events:none}
   #stage .hint .lead{font-size:15px;font-weight:600;color:var(--stage-ink)}
-  #stagebar{position:absolute;left:10px;bottom:10px;display:flex;gap:8px;align-items:center;
+  #stagebar{position:absolute;left:10px;bottom:10px;max-width:min(560px,calc(100% - 20px));
     background:var(--stagebar-bg);border:1px solid var(--line);border-radius:7px;padding:4px 8px;
-    font-size:12px;color:var(--muted);backdrop-filter:blur(3px)}
+    font-size:12px;color:var(--muted);backdrop-filter:blur(3px);pointer-events:none}
+  #stagebar .note{color:var(--err);margin-top:2px}
+  .subopts{margin:2px 0 8px 24px}
 
   /* controls */
   .sec{border:1px solid var(--line2);border-radius:var(--radius);margin:10px 0;background:var(--panel2)}
@@ -115,6 +117,8 @@
   .btn.pri{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
   .btn.pri:hover{filter:brightness(1.05)}
   .btn.sm{padding:6px 9px;font-size:12px}
+  .btn:disabled,input:disabled,select:disabled{opacity:.5;cursor:default}
+  .btn:disabled:hover{background:var(--panel)}
   .btn.full{width:100%}
   .btn.on{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
   .btnrow{display:flex;gap:7px;flex-wrap:wrap}
@@ -367,7 +371,53 @@
               <label class="block">Map title</label>
               <input type="text" id="mapTitle" placeholder="(optional)">
               <label class="check"><input type="checkbox" id="showCompass"> Compass (north arrow)</label>
-              <label class="check"><input type="checkbox" id="showScaleBar"> Scale bar (true at the map centre)</label>
+              <div class="subopts">
+                <div class="row"><label class="lbl grow">Position</label>
+                  <select id="compassPos" class="grow">
+                    <option value="upper right">Upper right</option>
+                    <option value="upper left">Upper left</option>
+                    <option value="lower left">Lower left</option>
+                    <option value="lower right">Lower right</option>
+                  </select></div>
+                <div class="row"><label class="lbl grow">Style</label>
+                  <select id="compassStyle" class="grow">
+                    <option value="arrow">Arrow with N</option>
+                    <option value="triangle">Filled triangle</option>
+                  </select></div>
+                <div class="row"><label class="lbl grow">Size</label>
+                  <input type="number" id="compassSize" min="0.5" max="3" step="0.1" value="1" style="width:74px"></div>
+              </div>
+              <label class="check"><input type="checkbox" id="showScaleBar"> Scale bar</label>
+              <div class="subopts">
+                <div class="row"><label class="lbl grow">Units</label>
+                  <select id="scaleUnits" class="grow">
+                    <option value="km">Kilometres</option>
+                    <option value="mi">Miles</option>
+                    <option value="both">Both</option>
+                  </select></div>
+                <div class="row"><label class="lbl grow">Position</label>
+                  <select id="scalePos" class="grow">
+                    <option value="lower left">Lower left</option>
+                    <option value="lower right">Lower right</option>
+                    <option value="upper left">Upper left</option>
+                    <option value="upper right">Upper right</option>
+                  </select></div>
+                <div class="row"><label class="lbl grow">Style</label>
+                  <select id="scaleStyle" class="grow">
+                    <option value="segmented">Segmented</option>
+                    <option value="plain">Plain bar</option>
+                  </select></div>
+                <div class="row"><label class="lbl grow">Length</label>
+                  <select id="scaleLengthMode" class="grow">
+                    <option value="auto">Automatic</option>
+                    <option value="fixed">Fixed</option>
+                  </select>
+                  <input type="number" id="scaleFixed" min="0.1" max="100000" step="10" value="100"
+                    style="width:90px" aria-label="Fixed length, in the chosen units" disabled></div>
+                <button class="btn sm" id="scaleReset" disabled>Reset position</button>
+                <p class="hintline">Drag the bar to place it; double-click it to snap back. On a
+                  world map the scale changes with latitude; the bar is accurate where it stands.</p>
+              </div>
               <label class="check"><input type="checkbox" id="showLabels"> Point labels (from a Label column)</label>
               <div class="row"><label class="lbl">Background</label><input type="color" id="matColor" value="#ffffff"></div>
               <div class="row"><label class="lbl grow">Border weight</label>
@@ -1177,6 +1227,19 @@ const LEGEND_CONTROLS = [
   ["legTitleItalic", "bool", false],
   ["legTitleUnderline", "bool", false],
 ];
+// Map settings that are a plain control each, in the same form: the compass
+// and scale bar options. The legend table's listener and restore serve these
+// too.
+const MAP_CONTROLS = [
+  ["compassPos", "str", "upper right"],
+  ["compassStyle", "str", "arrow"],        // arrow | triangle
+  ["compassSize", "num", 1],
+  ["scaleUnits", "str", "km"],             // km | mi | both
+  ["scalePos", "str", "lower left"],
+  ["scaleStyle", "str", "segmented"],      // segmented | plain
+  ["scaleLengthMode", "str", "auto"],      // auto | fixed
+  ["scaleFixed", "num", 100],              // in scaleUnits, for a fixed length
+];
 // Changing one of these re-derives the rows; the rest only restyle. Kept for
 // readability - MiniMappr rebuilds the whole SVG either way.
 const LEGEND_CONTENT_KEYS = new Set(["legHierarchy", "legOrder", "legCounts",
@@ -1193,7 +1256,9 @@ const opts = {
   // Matches POINT_EDGE_COLOR / POINT_EDGE_WIDTH in styles.py.
   pointEdgeColor:"#ffffff", pointEdgeWidth:0.6,
 };
-for(const [id,,value] of LEGEND_CONTROLS) opts[id]=value;
+for(const [id,,value] of [...LEGEND_CONTROLS, ...MAP_CONTROLS]) opts[id]=value;
+// Where the scale bar was dragged to, as frame fractions; null = its corner.
+opts.scaleAnchor=null;
 let currentProjection=null;     // the d3 projection from the last render()
 let placeMode=false;            // click-to-place points onto the map
 let placeDsId=null;             // manual dataset placed points go into
@@ -1358,6 +1423,7 @@ function setAttrs(e, attrs){ for(const k in attrs) e.setAttribute(k, attrs[k]); 
 function el(tag, attrs){ const e=document.createElementNS(svgNS,tag); return attrs ? setAttrs(e, attrs) : e; }
 function clearNode(node){ while(node.firstChild) node.removeChild(node.firstChild); }
 let sceneSize={w:0,h:0};
+let stageNotes=[];
 
 // Follow one pointer (mouse, pen or finger) from pointerdown until it lifts.
 // Capturing it keeps the moves coming to `node` when the pointer leaves it.
@@ -1434,6 +1500,8 @@ function renderNow(){
   const path = d3.geoPath(proj);
   const [[rx0,ry0],[rx1,ry1]] = rect;
   const rw=rx1-rx0, rh=ry1-ry0;
+  // Warnings gathered while drawing, for the status line.
+  stageNotes=[];
   const useRect = silhouetteIsRect();
   const pd = currentProjDef();
   const projKey = JSON.stringify([opts.projection, opts.extent, opts.centerLon, opts.centerLat,
@@ -1577,7 +1645,11 @@ function renderNow(){
     t.textContent=opts.title; overlay.appendChild(t);
   }
   if(opts.compass) drawCompass(overlay, rect, legendBox);
+  scaleBarNote=null;
   if(opts.scaleBar) drawScaleBar(overlay, proj, rect, legendBox);
+  // A bar that silently fails to appear is worse than one that says why.
+  if(scaleBarNote) stageNotes.push(scaleBarNote);
+  syncControlStates();
 
   updateSwatches(resolved);
   $("#emptyHint").style.display = visible.some(d=>d.rows.length) ? "none":"block";
@@ -1588,60 +1660,6 @@ function renderNow(){
 // Whether two {x,y,w,h} boxes overlap.
 function boxesMeet(a, b){
   return !!(a && b) && a.x<b.x+b.w && b.x<a.x+a.w && a.y<b.y+b.h && b.y<a.y+a.h;
-}
-
-// The north arrow sits top right, or top left when the legend is there.
-function drawCompass(parent, rect, avoid){
-  const [[x0,y0],[x1]] = rect;
-  let cx=x1-26;
-  const cy=y0+34;
-  if(boxesMeet({x:cx-12, y:cy-38, w:24, h:56}, avoid)) cx=x0+26;
-  const g=el("g");
-  g.appendChild(el("line",{x1:cx,y1:cy+16,x2:cx,y2:cy-14,stroke:"#1a1a1a","stroke-width":1.6}));
-  g.appendChild(el("path",{d:poly([[cx,cy-20],[cx-4,cy-11],[cx+4,cy-11]]),fill:"#1a1a1a"}));
-  const t=el("text",{x:cx,y:cy-24,"text-anchor":"middle","font-family":"sans-serif",
-    "font-size":13,"font-weight":700,fill:"#1a1a1a"}); t.textContent="N";
-  g.appendChild(t); parent.appendChild(g);
-}
-
-// A scale bar of a round length (1, 2 or 5 x 10^n km) near a fifth of the
-// frame width. Projections stretch distances, so it is measured across the
-// centre of the frame and holds there; the globe gets none. Bottom left,
-// clear of the on-screen status bar, or bottom right when the legend is in
-// the way.
-const EARTH_KM=6371.0088;
-function drawScaleBar(parent, proj, rect, avoid){
-  if(currentProjDef().globe || !proj.invert) return;
-  const [[x0,y0],[x1,y1]]=rect;
-  const cx=(x0+x1)/2, cy=(y0+y1)/2, half=50;
-  const a=proj.invert([cx-half,cy]), b=proj.invert([cx+half,cy]);
-  if(!a || !b || ![...a,...b].every(Number.isFinite)) return;
-  const kmPerPx=d3.geoDistance(a,b)*EARTH_KM/(2*half);
-  if(!(kmPerPx>0) || !Number.isFinite(kmPerPx)) return;
-  const target=(x1-x0)*0.2*kmPerPx;
-  const pow=10**Math.floor(Math.log10(target));
-  const km=Number(([5,2,1].map(m=>m*pow).find(v=>v<=target)||pow).toPrecision(2));
-  const len=km/kmPerPx;
-  const label=km.toLocaleString("en-US")+" km";
-  const labelW=textWidth(label, 11, "sans-serif", false, false);
-  const w=Math.max(len, labelW), h=24, by=y1-30;
-  let bx=x0+14;
-  if(boxesMeet({x:bx, y:by-h+6, w, h}, avoid)) bx=x1-14-w;
-  const x=bx+(w-len)/2;
-  const bar=`M${x.toFixed(2)},${(by-5).toFixed(2)}V${by.toFixed(2)}H${(x+len).toFixed(2)}V${(by-5).toFixed(2)}`;
-  const g=el("g");
-  // a white halo under the bar and the label keeps both legible on any fill
-  g.appendChild(el("path",{d:bar, fill:"none", stroke:"#ffffff", "stroke-width":4,
-    "stroke-opacity":0.85, "stroke-linejoin":"round", "stroke-linecap":"round"}));
-  g.appendChild(el("path",{d:bar, fill:"none", stroke:"#1a1a1a", "stroke-width":1.4,
-    "stroke-linejoin":"miter"}));
-  for(const halo of [true,false]){
-    const t=el("text",{x:(x+len/2).toFixed(2), y:(by-9).toFixed(2), "text-anchor":"middle",
-      "font-family":"sans-serif", "font-size":11, fill:halo?"#ffffff":"#1a1a1a"});
-    if(halo) setAttrs(t, {stroke:"#ffffff", "stroke-width":3, "stroke-opacity":0.85, "stroke-linejoin":"round"});
-    t.textContent=label; g.appendChild(t);
-  }
-  parent.appendChild(g);
 }
 
 function legendItems(entries, attrLegends){
@@ -1977,15 +1995,278 @@ function updateStagebar(){
   if(fds && filterSig()){
     const shown=shownRows(fds).length;
     if(shown!==fds.rows.length){
-      $("#stagebar").textContent=`Filter: showing ${shown} of ${fds.rows.length} points of ${fds.name}.`;
+      setStagebar(`Filter: showing ${shown} of ${fds.rows.length} points of ${fds.name}.`);
       return;
     }
   }
   const n=datasets.reduce((a,d)=>a+(d.visible?d.rows.length:0),0);
   const shown=datasets.filter(d=>d.visible).length;
-  $("#stagebar").textContent = n ? `${n} point${n!==1?"s":""} · ${shown} dataset${shown!==1?"s":""} · ${opts.projection}` : opts.projection;
+  setStagebar(n ? `${n} point${n!==1?"s":""} · ${shown} dataset${shown!==1?"s":""} · ${opts.projection}` : opts.projection);
+}
+// The status line: one line of state, then any warnings from the render.
+function setStagebar(text){
+  const bar=$("#stagebar"); bar.textContent=text;
+  for(const note of stageNotes){
+    const d=document.createElement("div"); d.className="note"; d.textContent=note; bar.appendChild(d);
+  }
 }
 
+/* compass and scale bar (ported from decorations.py and renderer/overlays.py) */
+// Where a decoration can sit. Matches decorations.CORNERS.
+const CORNERS=["lower left","lower right","upper left","upper right"];
+const DECOR_COLOR="#1a1a1a";
+
+// Text with a white halo underneath (a stroked copy, which every SVG editor
+// draws, unlike paint-order), so it reads over any fill.
+function haloText(parent, text, attrs){
+  for(const halo of [true,false]){
+    const t=el("text", attrs);
+    if(halo) setAttrs(t, {fill:"#ffffff", stroke:"#ffffff", "stroke-width":3,
+      "stroke-opacity":0.85, "stroke-linejoin":"round"});
+    t.textContent=text; parent.appendChild(t);
+  }
+}
+
+// The north arrow, in a corner of the frame; it moves to the other side when
+// the legend is in that corner. It always points up the page: PyMappr's
+// arrow runs from the "N" to its corner, which in a lower corner points
+// south, and that is not carried over.
+function drawCompass(parent, rect, avoid){
+  const [[x0,y0],[x1,y1]]=rect;
+  const k=clamp(Number(opts.compassSize)||1, 0.5, 3);
+  const triangle=opts.compassStyle==="triangle";
+  const w=24*k, h=(triangle?44:56)*k;
+  const padX=Math.max(0.025*(x1-x0),12), padY=Math.max(0.025*(y1-y0),12);
+  const [vertical, horizontal]=(CORNERS.includes(opts.compassPos) ? opts.compassPos : "upper right").split(" ");
+  const at=side=>({x:side==="left" ? x0+padX : x1-padX-w,
+                   y:vertical==="upper" ? y0+padY : y1-padY-h, w, h});
+  let box=at(horizontal);
+  if(boxesMeet(box, avoid)){
+    const other=at(horizontal==="left" ? "right" : "left");
+    if(!boxesMeet(other, avoid)) box=other;
+  }
+  const cx=box.x+w/2, top=box.y;
+  const g=el("g");
+  const N={x:cx, "text-anchor":"middle", "font-family":"sans-serif", "font-weight":700, fill:DECOR_COLOR};
+  if(triangle){
+    // a filled triangle pointing north, with the "N" under its base
+    g.appendChild(el("path",{d:poly([[cx,top+2*k],[cx-9*k,top+26*k],[cx+9*k,top+26*k]]),
+      fill:DECOR_COLOR, stroke:"#ffffff", "stroke-width":0.8*k, "stroke-linejoin":"round"}));
+    haloText(g, "N", {...N, y:top+41*k, "font-size":12*k});
+  } else {
+    haloText(g, "N", {...N, y:top+13*k, "font-size":13*k});
+    g.appendChild(el("line",{x1:cx, y1:top+54*k, x2:cx, y2:top+24*k,
+      stroke:DECOR_COLOR, "stroke-width":1.6*k}));
+    g.appendChild(el("path",{d:poly([[cx,top+17*k],[cx-4*k,top+27*k],[cx+4*k,top+27*k]]),
+      fill:DECOR_COLOR}));
+  }
+  parent.appendChild(g);
+}
+
+// Round lengths a scale bar may show: 1, 2, 3 or 5 x 10^n, snapped down so
+// the bar stays inside the width it was budgeted. Matches decorations.py.
+const NICE_LENGTHS=[1,2,3,5];
+const METRES_PER_MILE=1609.344;
+const SCALE_WIDTH=0.22, SCALE_SEGMENTS=4;
+function unitMetres(units){ return units==="mi" ? METRES_PER_MILE : 1000; }
+function niceLength(metres, units){
+  const per=unitMetres(units), value=metres/per;
+  if(!Number.isFinite(value) || value<=0) return 0;
+  const decade=10**Math.floor(Math.log10(value));
+  for(const c of [...NICE_LENGTHS].reverse()) if(c*decade<=value) return c*decade*per;
+  return NICE_LENGTHS[NICE_LENGTHS.length-1]*decade/10*per;
+}
+// "500 km"; a metric bar under a kilometre reads in metres, as a reader
+// zoomed in on one locality expects.
+function formatLength(metres, units){
+  const fmt=v=>Number(v.toPrecision(6)).toLocaleString("en-US",{maximumFractionDigits:6});
+  if(units!=="mi" && metres<1000) return `${fmt(metres)} m`;
+  const value=metres/unitMetres(units);
+  return `${value>=1 ? fmt(value) : Number(value.toPrecision(3))} ${units==="mi"?"mi":"km"}`;
+}
+
+// Metres between two lon/lat points on the WGS84 ellipsoid (Vincenty's
+// inverse formula), which is what PyMappr measures with. Nearly antipodal
+// points, where the iteration does not settle, fall back to the sphere.
+const EARTH_KM=6371.0088;
+function geodesicMetres(p, q){
+  const a=6378137, f=1/298.257223563, b=a*(1-f), rad=Math.PI/180;
+  const L=(q[0]-p[0])*rad;
+  const U1=Math.atan((1-f)*Math.tan(p[1]*rad)), U2=Math.atan((1-f)*Math.tan(q[1]*rad));
+  const sinU1=Math.sin(U1), cosU1=Math.cos(U1), sinU2=Math.sin(U2), cosU2=Math.cos(U2);
+  let lambda=L, sinSigma, cosSigma, sigma, cosSqAlpha, cos2SigmaM, settled=false;
+  for(let i=0;i<200;i++){
+    const sinL=Math.sin(lambda), cosL=Math.cos(lambda);
+    sinSigma=Math.hypot(cosU2*sinL, cosU1*sinU2-sinU1*cosU2*cosL);
+    if(sinSigma===0) return 0;   // the same point
+    cosSigma=sinU1*sinU2+cosU1*cosU2*cosL;
+    sigma=Math.atan2(sinSigma, cosSigma);
+    const sinAlpha=cosU1*cosU2*sinL/sinSigma;
+    cosSqAlpha=1-sinAlpha*sinAlpha;
+    cos2SigmaM=cosSqAlpha ? cosSigma-2*sinU1*sinU2/cosSqAlpha : 0;   // 0 on the equator
+    const C=f/16*cosSqAlpha*(4+f*(4-3*cosSqAlpha));
+    const prev=lambda;
+    lambda=L+(1-C)*f*sinAlpha*(sigma+C*sinSigma*(cos2SigmaM+C*cosSigma*(-1+2*cos2SigmaM*cos2SigmaM)));
+    if(Math.abs(lambda-prev)<1e-12){ settled=true; break; }
+  }
+  if(!settled) return d3.geoDistance(p,q)*EARTH_KM*1000;
+  const uSq=cosSqAlpha*(a*a-b*b)/(b*b);
+  const A=1+uSq/16384*(4096+uSq*(-768+uSq*(320-175*uSq)));
+  const B=uSq/1024*(256+uSq*(-128+uSq*(74-47*uSq)));
+  const dSigma=B*sinSigma*(cos2SigmaM+B/4*(cosSigma*(-1+2*cos2SigmaM*cos2SigmaM)
+    -B/6*cos2SigmaM*(-3+4*sinSigma*sinSigma)*(-3+4*cos2SigmaM*cos2SigmaM)));
+  return b*A*(sigma-dSigma);
+}
+
+// Heights are in pixels so the bar reads the same in a small window; its
+// placement and length are fractions of the frame, as in PyMappr. Frame
+// fractions here run up from the bottom, as matplotlib's axes do, so the
+// code below follows overlays.py line for line.
+const BAR_H=7, BAR_GAP=4, LABEL_GAP=4, LABEL_ROOM=20, SCALE_FONT=11;
+let scaleBarNote=null;   // why the bar is missing, for the status line
+
+// The scale bar: a round length measured on the row it stands on, refined
+// against its own endpoints, in one or two units. Mirrors
+// OverlaysMixin._apply_scale_bar and its helpers.
+function drawScaleBar(parent, proj, rect, avoid){
+  scaleBarNote=null;
+  if(!proj.invert) return;
+  const [[x0,y0],[x1,y1]]=rect, fw=x1-x0, fh=y1-y0;
+  const sx=fx=>x0+fx*fw, sy=fy=>y1-fy*fh;
+  // A screen point's lon/lat, or null off the map: outside a Robinson
+  // ellipse or off the globe's disk, where invert returns nonsense or NaN.
+  const lonLat=(px,py)=>{
+    const ll=proj.invert([px,py]);
+    if(!ll || !Number.isFinite(ll[0]) || !Number.isFinite(ll[1])) return null;
+    const back=proj(ll);
+    return back && Math.hypot(back[0]-px, back[1]-py)<0.5 ? ll : null;
+  };
+  const span=(fa,fb,fy)=>{
+    const a=lonLat(sx(fa),sy(fy)), b=lonLat(sx(fb),sy(fy));
+    return a && b ? geodesicMetres(a,b) : NaN;
+  };
+  // The bar's own row whenever the scale can be measured there; otherwise
+  // step towards the middle, since the corners of a Robinson map or the
+  // globe lie off the map altogether.
+  const referenceRow=fy=>{
+    for(const row of [fy, ...[0.25,0.5,0.75,1].map(step=>fy+(0.5-fy)*step)])
+      if(Number.isFinite(span(0.45,0.55,row))) return row;
+    return 0.5;
+  };
+  // Ground metres per unit of frame width near fx: a first guess only.
+  const estimate=(fx,fy)=>{
+    const left=clamp(fx-0.05, 0, 0.9);
+    let metres=span(left, left+0.1, fy);
+    if(!(metres>0)) metres=span(0.45,0.55,fy);
+    return metres>0 ? metres/0.1 : NaN;
+  };
+  // The width a bar of `metres` needs, refined until the drawing really is
+  // as long as its label says; null when no honest bar of it fits.
+  const fitWidth=(metres, x, row, rightAnchored)=>{
+    const per=estimate(x,row);
+    if(!(per>0)) return null;
+    let width=metres/per;
+    for(let i=0;i<6;i++){
+      if(!(width>0) || width>0.95) return null;
+      const left=rightAnchored ? x-width : x;
+      let actual=span(left, left+width, row);
+      if(!(actual>0)) actual=span(0.5-width/2, 0.5+width/2, row);
+      if(!(actual>0)) break;   // nothing measurable: keep the estimate
+      const adjust=metres/actual;
+      if(Math.abs(adjust-1)<0.001) break;
+      width*=adjust;
+    }
+    return width>0 && width<=0.95 ? width : null;
+  };
+
+  const units=opts.scaleUnits==="both" ? ["km","mi"] : [opts.scaleUnits==="mi" ? "mi" : "km"];
+  const anchor=opts.scaleAnchor;
+  const dragged=!!(anchor && Number.isFinite(anchor.x) && Number.isFinite(anchor.y));
+  const height=BAR_H/fh, gap=BAR_GAP/fh;
+  const [vertical, horizontal]=(CORNERS.includes(opts.scalePos) ? opts.scalePos : "lower left").split(" ");
+  // The lower pad also keeps the bar clear of the on-screen status line.
+  const y=dragged ? anchor.y : vertical==="upper" ? 1-0.03 : Math.max(0.03, 24/fh);
+
+  const layout=x=>{
+    const rightAnchored=x>0.5 && !dragged, topAnchored=y>0.5 && !dragged;
+    const stack=units.length*height+(units.length-1)*gap;
+    let baseY=topAnchored ? y-stack : y;
+    // a second unit is labelled underneath, so lift the stack clear of it
+    if(units.length>1 && !topAnchored && !dragged) baseY+=LABEL_ROOM/fh;
+    const bars=[], last=units.length-1;
+    for(const [i,unit] of units.entries()){
+      const yb=baseY+(last-i)*(height+gap);
+      const row=referenceRow(yb+height/2);
+      let metres;
+      if(i===0 && opts.scaleLengthMode==="fixed" && opts.scaleFixed>0){
+        metres=opts.scaleFixed*unitMetres(opts.scaleUnits);
+      } else {
+        const per=estimate(x,row);
+        if(!(per>0)) return {note:"Scale bar: the map scale cannot be measured at this view."};
+        metres=niceLength(per*SCALE_WIDTH, unit);
+      }
+      if(!(metres>0)) return {note:null};
+      const width=fitWidth(metres, x, row, rightAnchored);
+      if(width==null) return {note:"Scale bar: scale varies too much across this view to draw "
+        + "an accurate bar - zoom in, or move the bar away from the poles."};
+      const left=rightAnchored ? x-width : x;
+      bars.push({unit, metres, width, yb, left, label:formatLength(metres, unit)});
+    }
+    // screen box, labels included, for dodging the legend and for dragging
+    let bx0=Infinity, bx1=-Infinity;
+    for(const b of bars){
+      const lw=textWidth(b.label, SCALE_FONT, "sans-serif", false, false);
+      const mid=sx(b.left+b.width/2);
+      bx0=Math.min(bx0, sx(b.left), mid-lw/2); bx1=Math.max(bx1, sx(b.left+b.width), mid+lw/2);
+    }
+    const top=sy(bars[0].yb+height)-LABEL_GAP-SCALE_FONT;
+    const bottom=bars.length>1 ? sy(bars[last].yb)+LABEL_GAP+SCALE_FONT : sy(bars[0].yb);
+    return {bars, baseY, box:{x:bx0, y:top, w:bx1-bx0, h:bottom-top}};
+  };
+
+  let x=dragged ? anchor.x : horizontal==="right" ? 1-0.03 : 0.03;
+  let result=layout(x);
+  if(result.bars && !dragged && boxesMeet(result.box, avoid)){
+    const other=layout(1-x);
+    if(other.bars && !boxesMeet(other.box, avoid)){ result=other; x=1-x; }
+  }
+  if(!result.bars){ scaleBarNote=result.note; return; }
+
+  const g=el("g"); g.style.cursor="move";
+  const segments=opts.scaleStyle==="plain" ? 1 : SCALE_SEGMENTS;
+  result.bars.forEach((b,i)=>{
+    const top=sy(b.yb+height), bottom=sy(b.yb);
+    for(let s=0;s<segments;s++){
+      const left=sx(b.left+b.width*s/segments), right=sx(b.left+b.width*(s+1)/segments);
+      g.appendChild(el("rect",{x:left.toFixed(2), y:top.toFixed(2), width:(right-left).toFixed(2),
+        height:(bottom-top).toFixed(2), fill:s%2===0 ? DECOR_COLOR : "#ffffff",
+        stroke:DECOR_COLOR, "stroke-width":0.8}));
+    }
+    // the first unit is labelled above the stack, a second one below it
+    haloText(g, b.label, {x:sx(b.left+b.width/2).toFixed(2),
+      y:(i===0 ? top-LABEL_GAP : bottom+LABEL_GAP+SCALE_FONT*0.8).toFixed(2),
+      "text-anchor":"middle", "font-family":"sans-serif", "font-size":SCALE_FONT, fill:DECOR_COLOR});
+  });
+  // Drag to place it anywhere; the drop point is kept as the stack's lower
+  // left corner in frame fractions, as PyMappr stores it. Double-click
+  // snaps it back to its corner.
+  const left=Math.min(...result.bars.map(b=>b.left));
+  g.addEventListener("pointerdown",ev=>{
+    if(ev.button!==0 || !ev.isPrimary) return;
+    ev.preventDefault(); ev.stopPropagation();   // don't also start a map pan
+    const startX=ev.clientX, startY=ev.clientY; let dx=0, dy=0;
+    trackPointer(g, ev, e=>{
+      dx=e.clientX-startX; dy=e.clientY-startY;
+      g.setAttribute("transform",`translate(${dx},${dy})`);
+    }, ()=>{
+      if(!dx && !dy) return;
+      opts.scaleAnchor={x:clamp(left+dx/fw,0,1), y:clamp(result.baseY-dy/fh,0,1)};
+      render();
+    });
+  });
+  g.addEventListener("dblclick",ev=>{ ev.stopPropagation(); opts.scaleAnchor=null; render(); });
+  parent.appendChild(g);
+}
 /* dataset ingest */
 function makeDataset(name, columns, rows, base){
   // rows: array of {lon,lat,label,_attr}
@@ -2725,9 +3006,10 @@ $("#showLabels").addEventListener("change",e=>{ opts.labels=e.target.checked; re
 $("#matColor").addEventListener("input",e=>{ opts.matColor=e.target.value; render(); });
 $("#lineWidth").addEventListener("input",e=>{ opts.lineWidth=+e.target.value; $("#lwVal").textContent=(+e.target.value).toFixed(2); render(); });
 
-// Legend controls, wired from the LEGEND_CONTROLS table so a new setting is
-// one row there rather than another near-identical line here.
-for(const [id,kind,fallback] of LEGEND_CONTROLS){
+// Legend and map controls, wired from the LEGEND_CONTROLS and MAP_CONTROLS
+// tables so a new setting is one row there rather than another
+// near-identical line here.
+for(const [id,kind,fallback] of [...LEGEND_CONTROLS, ...MAP_CONTROLS]){
   const node=$("#"+id);
   if(!node) continue;                       // control not on the page (yet)
   const event = kind==="bool"||node.tagName==="SELECT" ? "change" : "input";
@@ -2739,8 +3021,15 @@ for(const [id,kind,fallback] of LEGEND_CONTROLS){
     } else opts[id]=e.target.value;
     // Choosing a preset position discards any manual (dragged) placement.
     if(id==="legPos") legendDrag=null;
+    if(id==="scalePos") opts.scaleAnchor=null;
     render();
   });
+}
+$("#scaleReset").addEventListener("click",()=>{ opts.scaleAnchor=null; render(); });
+// Controls that only apply in some states are greyed out in the others.
+function syncControlStates(){
+  $("#scaleFixed").disabled = opts.scaleLengthMode!=="fixed";
+  $("#scaleReset").disabled = !opts.scaleAnchor;
 }
 
 // export
@@ -2910,7 +3199,7 @@ function syncMapControls(){
   // Legend controls come back from the same table that defines them, so a
   // new setting cannot end up rendering from a restored value while its
   // control still shows the default.
-  for(const [id,kind] of LEGEND_CONTROLS){
+  for(const [id,kind] of [...LEGEND_CONTROLS, ...MAP_CONTROLS]){
     const node=$("#"+id);
     if(!node) continue;
     if(kind==="bool") node.checked=opts[id]; else node.value=opts[id];

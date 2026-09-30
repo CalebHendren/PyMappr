@@ -217,6 +217,19 @@ const LEGEND_CONTROLS = [
   ["legTitleItalic", "bool", false],
   ["legTitleUnderline", "bool", false],
 ];
+// Map settings that are a plain control each, in the same form: the compass
+// and scale bar options. The legend table's listener and restore serve these
+// too.
+const MAP_CONTROLS = [
+  ["compassPos", "str", "upper right"],
+  ["compassStyle", "str", "arrow"],        // arrow | triangle
+  ["compassSize", "num", 1],
+  ["scaleUnits", "str", "km"],             // km | mi | both
+  ["scalePos", "str", "lower left"],
+  ["scaleStyle", "str", "segmented"],      // segmented | plain
+  ["scaleLengthMode", "str", "auto"],      // auto | fixed
+  ["scaleFixed", "num", 100],              // in scaleUnits, for a fixed length
+];
 // Changing one of these re-derives the rows; the rest only restyle. Kept for
 // readability - MiniMappr rebuilds the whole SVG either way.
 const LEGEND_CONTENT_KEYS = new Set(["legHierarchy", "legOrder", "legCounts",
@@ -233,7 +246,9 @@ const opts = {
   // Matches POINT_EDGE_COLOR / POINT_EDGE_WIDTH in styles.py.
   pointEdgeColor:"#ffffff", pointEdgeWidth:0.6,
 };
-for(const [id,,value] of LEGEND_CONTROLS) opts[id]=value;
+for(const [id,,value] of [...LEGEND_CONTROLS, ...MAP_CONTROLS]) opts[id]=value;
+// Where the scale bar was dragged to, as frame fractions; null = its corner.
+opts.scaleAnchor=null;
 let currentProjection=null;     // the d3 projection from the last render()
 let placeMode=false;            // click-to-place points onto the map
 let placeDsId=null;             // manual dataset placed points go into

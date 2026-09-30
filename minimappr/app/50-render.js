@@ -4,6 +4,7 @@ function setAttrs(e, attrs){ for(const k in attrs) e.setAttribute(k, attrs[k]); 
 function el(tag, attrs){ const e=document.createElementNS(svgNS,tag); return attrs ? setAttrs(e, attrs) : e; }
 function clearNode(node){ while(node.firstChild) node.removeChild(node.firstChild); }
 let sceneSize={w:0,h:0};
+let stageNotes=[];
 
 // Follow one pointer (mouse, pen or finger) from pointerdown until it lifts.
 // Capturing it keeps the moves coming to `node` when the pointer leaves it.
@@ -80,6 +81,8 @@ function renderNow(){
   const path = d3.geoPath(proj);
   const [[rx0,ry0],[rx1,ry1]] = rect;
   const rw=rx1-rx0, rh=ry1-ry0;
+  // Warnings gathered while drawing, for the status line.
+  stageNotes=[];
   const useRect = silhouetteIsRect();
   const pd = currentProjDef();
   const projKey = JSON.stringify([opts.projection, opts.extent, opts.centerLon, opts.centerLat,
@@ -223,7 +226,11 @@ function renderNow(){
     t.textContent=opts.title; overlay.appendChild(t);
   }
   if(opts.compass) drawCompass(overlay, rect, legendBox);
+  scaleBarNote=null;
   if(opts.scaleBar) drawScaleBar(overlay, proj, rect, legendBox);
+  // A bar that silently fails to appear is worse than one that says why.
+  if(scaleBarNote) stageNotes.push(scaleBarNote);
+  syncControlStates();
 
   updateSwatches(resolved);
   $("#emptyHint").style.display = visible.some(d=>d.rows.length) ? "none":"block";
@@ -234,60 +241,6 @@ function renderNow(){
 // Whether two {x,y,w,h} boxes overlap.
 function boxesMeet(a, b){
   return !!(a && b) && a.x<b.x+b.w && b.x<a.x+a.w && a.y<b.y+b.h && b.y<a.y+a.h;
-}
-
-// The north arrow sits top right, or top left when the legend is there.
-function drawCompass(parent, rect, avoid){
-  const [[x0,y0],[x1]] = rect;
-  let cx=x1-26;
-  const cy=y0+34;
-  if(boxesMeet({x:cx-12, y:cy-38, w:24, h:56}, avoid)) cx=x0+26;
-  const g=el("g");
-  g.appendChild(el("line",{x1:cx,y1:cy+16,x2:cx,y2:cy-14,stroke:"#1a1a1a","stroke-width":1.6}));
-  g.appendChild(el("path",{d:poly([[cx,cy-20],[cx-4,cy-11],[cx+4,cy-11]]),fill:"#1a1a1a"}));
-  const t=el("text",{x:cx,y:cy-24,"text-anchor":"middle","font-family":"sans-serif",
-    "font-size":13,"font-weight":700,fill:"#1a1a1a"}); t.textContent="N";
-  g.appendChild(t); parent.appendChild(g);
-}
-
-// A scale bar of a round length (1, 2 or 5 x 10^n km) near a fifth of the
-// frame width. Projections stretch distances, so it is measured across the
-// centre of the frame and holds there; the globe gets none. Bottom left,
-// clear of the on-screen status bar, or bottom right when the legend is in
-// the way.
-const EARTH_KM=6371.0088;
-function drawScaleBar(parent, proj, rect, avoid){
-  if(currentProjDef().globe || !proj.invert) return;
-  const [[x0,y0],[x1,y1]]=rect;
-  const cx=(x0+x1)/2, cy=(y0+y1)/2, half=50;
-  const a=proj.invert([cx-half,cy]), b=proj.invert([cx+half,cy]);
-  if(!a || !b || ![...a,...b].every(Number.isFinite)) return;
-  const kmPerPx=d3.geoDistance(a,b)*EARTH_KM/(2*half);
-  if(!(kmPerPx>0) || !Number.isFinite(kmPerPx)) return;
-  const target=(x1-x0)*0.2*kmPerPx;
-  const pow=10**Math.floor(Math.log10(target));
-  const km=Number(([5,2,1].map(m=>m*pow).find(v=>v<=target)||pow).toPrecision(2));
-  const len=km/kmPerPx;
-  const label=km.toLocaleString("en-US")+" km";
-  const labelW=textWidth(label, 11, "sans-serif", false, false);
-  const w=Math.max(len, labelW), h=24, by=y1-30;
-  let bx=x0+14;
-  if(boxesMeet({x:bx, y:by-h+6, w, h}, avoid)) bx=x1-14-w;
-  const x=bx+(w-len)/2;
-  const bar=`M${x.toFixed(2)},${(by-5).toFixed(2)}V${by.toFixed(2)}H${(x+len).toFixed(2)}V${(by-5).toFixed(2)}`;
-  const g=el("g");
-  // a white halo under the bar and the label keeps both legible on any fill
-  g.appendChild(el("path",{d:bar, fill:"none", stroke:"#ffffff", "stroke-width":4,
-    "stroke-opacity":0.85, "stroke-linejoin":"round", "stroke-linecap":"round"}));
-  g.appendChild(el("path",{d:bar, fill:"none", stroke:"#1a1a1a", "stroke-width":1.4,
-    "stroke-linejoin":"miter"}));
-  for(const halo of [true,false]){
-    const t=el("text",{x:(x+len/2).toFixed(2), y:(by-9).toFixed(2), "text-anchor":"middle",
-      "font-family":"sans-serif", "font-size":11, fill:halo?"#ffffff":"#1a1a1a"});
-    if(halo) setAttrs(t, {stroke:"#ffffff", "stroke-width":3, "stroke-opacity":0.85, "stroke-linejoin":"round"});
-    t.textContent=label; g.appendChild(t);
-  }
-  parent.appendChild(g);
 }
 
 function legendItems(entries, attrLegends){
@@ -623,12 +576,19 @@ function updateStagebar(){
   if(fds && filterSig()){
     const shown=shownRows(fds).length;
     if(shown!==fds.rows.length){
-      $("#stagebar").textContent=`Filter: showing ${shown} of ${fds.rows.length} points of ${fds.name}.`;
+      setStagebar(`Filter: showing ${shown} of ${fds.rows.length} points of ${fds.name}.`);
       return;
     }
   }
   const n=datasets.reduce((a,d)=>a+(d.visible?d.rows.length:0),0);
   const shown=datasets.filter(d=>d.visible).length;
-  $("#stagebar").textContent = n ? `${n} point${n!==1?"s":""} · ${shown} dataset${shown!==1?"s":""} · ${opts.projection}` : opts.projection;
+  setStagebar(n ? `${n} point${n!==1?"s":""} · ${shown} dataset${shown!==1?"s":""} · ${opts.projection}` : opts.projection);
+}
+// The status line: one line of state, then any warnings from the render.
+function setStagebar(text){
+  const bar=$("#stagebar"); bar.textContent=text;
+  for(const note of stageNotes){
+    const d=document.createElement("div"); d.className="note"; d.textContent=note; bar.appendChild(d);
+  }
 }
 

@@ -138,7 +138,7 @@ function syncMapControls(){
   // Legend controls come back from the same table that defines them, so a
   // new setting cannot end up rendering from a restored value while its
   // control still shows the default.
-  for(const [id,kind] of LEGEND_CONTROLS){
+  for(const [id,kind] of [...LEGEND_CONTROLS, ...MAP_CONTROLS]){
     const node=$("#"+id);
     if(!node) continue;
     if(kind==="bool") node.checked=opts[id]; else node.value=opts[id];
