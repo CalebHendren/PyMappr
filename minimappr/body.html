@@ -468,11 +468,6 @@
     <div id="stage">
       <div id="mapwrap">
         <svg id="map" xmlns="http://www.w3.org/2000/svg"></svg>
-        <div id="zoomctl" role="group" aria-label="Zoom">
-          <button id="zoomIn" title="Zoom in (+)" aria-label="Zoom in">+</button>
-          <button id="zoomOut" title="Zoom out (−)" aria-label="Zoom out">−</button>
-          <button id="zoomReset" title="Whole map (0)" aria-label="Show the whole map">⤢</button>
-        </div>
         <div class="hint" id="emptyHint">
           <div class="lead">A blank world, ready for points</div>
           <div style="margin-top:6px">Add a CSV, paste a table, type coordinates, or load a sample dataset
@@ -480,13 +475,22 @@
         </div>
         <div id="stagebar"></div>
       </div>
-      <!-- filter bar: which values of the selected dataset are drawn -->
-      <div id="filterbar" hidden>
-        <label for="filterCol" class="lbl">Filter by</label>
-        <select id="filterCol"></select>
-        <button class="btn sm" id="filterAll" disabled>All</button>
-        <button class="btn sm" id="filterNone" disabled>None</button>
-        <div id="filterVals" aria-label="Values to show"></div>
+      <!-- the bar under the map: the filter (which values of the selected
+           dataset are drawn) and the zoom buttons, kept off the map so they
+           never cover a corner the legend, compass or scale bar may use -->
+      <div id="mapbar">
+        <div id="filterbar" hidden>
+          <label for="filterCol" class="lbl">Filter by</label>
+          <select id="filterCol"></select>
+          <button class="btn sm" id="filterAll" disabled>All</button>
+          <button class="btn sm" id="filterNone" disabled>None</button>
+          <div id="filterVals" aria-label="Values to show"></div>
+        </div>
+        <div id="zoomctl" role="group" aria-label="Zoom">
+          <button id="zoomIn" title="Zoom in (+)" aria-label="Zoom in">+</button>
+          <button id="zoomOut" title="Zoom out (−)" aria-label="Zoom out">−</button>
+          <button id="zoomReset" title="Whole map (0)" aria-label="Show the whole map">⤢</button>
+        </div>
       </div>
     </div>
   </main>

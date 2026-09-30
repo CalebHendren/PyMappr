@@ -64,9 +64,11 @@
   #stage{flex:1 1 auto;min-width:0;position:relative;background:var(--stage);display:flex;
     flex-direction:column;overflow:hidden}
   #mapwrap{position:relative;flex:1 1 auto;min-height:0}
-  /* the filter bar sits under the map, as in PyMappr; its values scroll sideways */
-  #filterbar{flex:0 0 auto;display:flex;align-items:center;gap:8px;padding:6px 10px;
-    background:var(--panel);border-top:1px solid var(--line);min-width:0}
+  /* the bar under the map: the filter, as in PyMappr, whose values scroll
+     sideways, and the zoom buttons; on a narrow screen they take a row each */
+  #mapbar{flex:0 0 auto;display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;padding:6px 10px;
+    background:var(--panel);border-top:1px solid var(--line)}
+  #filterbar{flex:1 1 320px;display:flex;align-items:center;gap:8px;min-width:0}
   #filterbar[hidden]{display:none}
   #filterbar .lbl{color:var(--muted);font-size:12.5px;white-space:nowrap}
   #filterbar select{width:auto;max-width:170px;padding:5px 7px}
@@ -78,12 +80,10 @@
   svg#map{position:absolute;inset:0;width:100%;height:100%;display:block;cursor:grab;touch-action:none;
     user-select:none;-webkit-user-select:none}
   svg#map.panning{cursor:grabbing}
-  /* zoom buttons over the map's top left corner; they are not exported */
-  #zoomctl{position:absolute;left:18px;top:18px;display:flex;flex-direction:column;
-    border:1px solid var(--line);border-radius:7px;overflow:hidden;box-shadow:var(--shadow);z-index:2}
-  #zoomctl button{width:30px;height:30px;border:none;border-top:1px solid var(--line);
-    background:var(--panel);color:var(--ink);font-size:17px;line-height:1;padding:0}
-  #zoomctl button:first-child{border-top:none}
+  #zoomctl{margin-left:auto;display:flex;border:1px solid var(--line);border-radius:7px;overflow:hidden}
+  #zoomctl button{width:34px;height:30px;border:none;border-left:1px solid var(--line);
+    background:var(--panel);color:var(--ink);font-size:16px;line-height:1;padding:0}
+  #zoomctl button:first-child{border-left:none}
   #zoomctl button:hover{background:var(--hover)}
   #stage .hint{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
     color:var(--stage-muted);text-align:center;max-width:340px;pointer-events:none}
@@ -664,11 +664,6 @@
     <div id="stage">
       <div id="mapwrap">
         <svg id="map" xmlns="http://www.w3.org/2000/svg"></svg>
-        <div id="zoomctl" role="group" aria-label="Zoom">
-          <button id="zoomIn" title="Zoom in (+)" aria-label="Zoom in">+</button>
-          <button id="zoomOut" title="Zoom out (−)" aria-label="Zoom out">−</button>
-          <button id="zoomReset" title="Whole map (0)" aria-label="Show the whole map">⤢</button>
-        </div>
         <div class="hint" id="emptyHint">
           <div class="lead">A blank world, ready for points</div>
           <div style="margin-top:6px">Add a CSV, paste a table, type coordinates, or load a sample dataset
@@ -676,13 +671,22 @@
         </div>
         <div id="stagebar"></div>
       </div>
-      <!-- filter bar: which values of the selected dataset are drawn -->
-      <div id="filterbar" hidden>
-        <label for="filterCol" class="lbl">Filter by</label>
-        <select id="filterCol"></select>
-        <button class="btn sm" id="filterAll" disabled>All</button>
-        <button class="btn sm" id="filterNone" disabled>None</button>
-        <div id="filterVals" aria-label="Values to show"></div>
+      <!-- the bar under the map: the filter (which values of the selected
+           dataset are drawn) and the zoom buttons, kept off the map so they
+           never cover a corner the legend, compass or scale bar may use -->
+      <div id="mapbar">
+        <div id="filterbar" hidden>
+          <label for="filterCol" class="lbl">Filter by</label>
+          <select id="filterCol"></select>
+          <button class="btn sm" id="filterAll" disabled>All</button>
+          <button class="btn sm" id="filterNone" disabled>None</button>
+          <div id="filterVals" aria-label="Values to show"></div>
+        </div>
+        <div id="zoomctl" role="group" aria-label="Zoom">
+          <button id="zoomIn" title="Zoom in (+)" aria-label="Zoom in">+</button>
+          <button id="zoomOut" title="Zoom out (−)" aria-label="Zoom out">−</button>
+          <button id="zoomReset" title="Whole map (0)" aria-label="Show the whole map">⤢</button>
+        </div>
       </div>
     </div>
   </main>
