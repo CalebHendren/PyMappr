@@ -154,11 +154,17 @@ Building the release packages is automated by
 [`index.html`](index.html) is **MiniMappr**, a browser-only edition
 of PyMappr hosted with GitHub Pages at
 [calebhendren.github.io/PyMappr](https://calebhendren.github.io/PyMappr/). It
-covers the core workflow with no install: points from a CSV/TSV (with a
-column-mapping step), a pasted table, or manual entry, decimal degrees or DMS,
-styled by group/color/symbol on the same projections (Equirectangular, Mercator,
-Robinson, Mollweide, Natural Earth, Winkel Tripel, orthographic Globe, and
-regional Lambert), exported as PNG or SVG.
+covers the core workflow with no install:
+
+- Points from a CSV/TSV (with a column-mapping step), a pasted table, manual
+  entry, or click-to-place, in decimal degrees or DMS.
+- Styled by group/color/symbol, with Combine columns and the filter bar.
+- The same projections: Equirectangular, Mercator, Robinson, Mollweide,
+  Natural Earth, Winkel Tripel, orthographic Globe, and regional and custom
+  Lambert.
+- The same legend options, scale bar, compass and grid.
+- The one-click publication style.
+- Export as PNG, JPEG, WebP, TIFF, PDF or SVG at the DPI you choose.
 
 It intentionally leaves out the heavier desktop features: the ~30 Natural Earth
 layers, relief/Blue Marble basemaps, bathymetry, labels, Excel import, project

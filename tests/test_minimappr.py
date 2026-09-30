@@ -175,3 +175,141 @@ def test_manual_is_offered_as_an_order(body, app_js):
     # exist in the markup and the reorder has to switch to it.
     assert '<option value="manual">' in body
     assert 'opts.legOrder="manual"' in app_js
+
+
+# ------------------------------------------------------- map controls
+
+
+@pytest.fixture(scope="module")
+def map_controls():
+    """The MAP_CONTROLS table as [(id, kind, default), ...]."""
+    source = STATE.read_text(encoding="utf-8")
+    table = re.search(r"const MAP_CONTROLS = \[(.*?)\n\];", source, re.S)
+    assert table, "MAP_CONTROLS table not found"
+    rows = [(name, kind, _literal(default)) for name, kind, default in
+            re.findall(r'\["(\w+)",\s*"(\w+)",\s*(.+?)\],', table.group(1))]
+    assert rows, "MAP_CONTROLS parsed empty"
+    return rows
+
+
+def test_every_map_control_exists_with_its_default(map_controls, body):
+    # The same contract as the legend table: a row whose control is missing
+    # or starts at another value is a setting that silently misbehaves.
+    mismatched = {}
+    for name, kind, default in map_controls:
+        found = _markup_default(body, name)
+        if kind == "bool":
+            ok = found is not None and bool(found) == default
+        elif kind == "num":
+            ok = found not in (None, "") and float(found) == float(default)
+        else:
+            ok = found is not None and str(found) == str(default)
+        if not ok:
+            mismatched[name] = (default, found)
+    assert mismatched == {}
+
+
+# -------------------------------------------- constants shared with PyMappr
+#
+# MiniMappr ports these from the Python side, and the two apps should draw
+# the same map from the same settings, so each copy is checked against its
+# source rather than trusted to stay in step.
+
+
+def _js_value(app_js: str, name: str):
+    """A JS constant's value: a number, a string, or a flat array of them."""
+    match = re.search(r"\b%s\s*=\s*(\[[^\]]*\]|\"[^\"]*\"|[\d.]+)" % name,
+                      app_js)
+    assert match, f"{name} not found"
+    text = match.group(1)
+    if text.startswith("["):
+        return [_literal(item) for item in text[1:-1].split(",")
+                if item.strip()]
+    return _literal(text)
+
+
+def test_palettes_match_pymappr(app_js):
+    from pymappr import styles
+
+    for name in ("DEFAULT_PALETTE", "OKABE_ITO", "BLACK_AND_WHITE"):
+        assert _js_value(app_js, name) == getattr(styles, name), name
+
+
+def test_point_outlines_match_pymappr(app_js):
+    from pymappr import styles
+
+    assert _js_value(app_js, "POINT_EDGE_COLOR") == styles.POINT_EDGE_COLOR
+    assert _js_value(app_js, "POINT_EDGE_WIDTH") == styles.POINT_EDGE_WIDTH
+    assert (tuple(_js_value(app_js, "PUBLICATION_POINT_EDGE"))
+            == tuple(styles.PUBLICATION_POINT_EDGE))
+
+
+def test_shape_limit_matches_pymappr(app_js):
+    from pymappr.styles import LEGIBLE_MARKER_LIMIT
+
+    assert _js_value(app_js, "LEGIBLE_MARKER_LIMIT") == LEGIBLE_MARKER_LIMIT
+
+
+def test_scale_bar_maths_matches_pymappr(app_js):
+    from pymappr import decorations
+
+    assert _js_value(app_js, "NICE_LENGTHS") == list(decorations._NICE)
+    assert _js_value(app_js, "METRES_PER_MILE") == decorations.METRES_PER_MILE
+    assert _js_value(app_js, "CORNERS") == decorations.CORNERS
+    assert _js_value(app_js, "SCALE_WIDTH") == decorations.ScaleBarOptions().width
+
+
+def test_coordinate_hints_match_pymappr(app_js):
+    from pymappr import data_loader
+
+    assert _js_value(app_js, "LON_HINTS") == list(data_loader._LON_HINTS)
+    assert _js_value(app_js, "LAT_HINTS") == list(data_loader._LAT_HINTS)
+
+
+def test_every_pymappr_projection_is_offered(app_js):
+    from pymappr.projections import PROJECTIONS
+
+    table = re.search(r"const PROJ_DEFS = \{(.*?)\n\};", app_js, re.S)
+    offered = set(re.findall(r'^\s*"([^"]+)":\{', table.group(1), re.M))
+    assert set(PROJECTIONS) - offered == set()
+
+
+def test_every_pymappr_grid_spacing_is_offered(body):
+    # control_panel.py imports Tk, so its table is read as text.
+    source = (ROOT / "pymappr" / "ui" / "control_panel.py").read_text(
+        encoding="utf-8")
+    # The labels hold "\N{DEGREE SIGN}", so the table ends at a brace that
+    # closes a line, not at the first one.
+    block = re.search(r"GRATICULE_CHOICES = \{(.*?)\}\n", source, re.S).group(1)
+    pymappr = {float(v) for v in re.findall(r":\s*([\d.]+)", block)}
+    offered = {float(v) for v in re.findall(r'data-grat="([\d.]+)"', body)}
+    assert pymappr and pymappr <= offered
+
+
+def test_publication_style_matches_pymappr(app_js):
+    from pymappr.legend import PUBLICATION_LEGEND, LegendOptions
+
+    source = (ROOT / "pymappr" / "app.py").read_text(encoding="utf-8")
+    dpi = re.search(r'PUBLICATION_DPI = "(\d+)"', source).group(1)
+    assert _js_value(app_js, "PUBLICATION_DPI") == float(dpi)
+
+    table = re.search(r"const PUBLICATION_LEGEND = \{(.*?)\};", app_js, re.S)
+    js = {key: _literal(value) for key, value in
+          re.findall(r"(\w+):([^,}\s]+)", table.group(1))}
+    same = {"frame": "legFrame", "frame_color": "legFrameColor",
+            "frame_alpha": "legFrameAlpha", "frame_edge_color": "legFrameEdge",
+            "frame_width": "legFrameWidth", "shadow": "legShadow",
+            "label_italic": "legLabelItalic"}
+    for field, key in same.items():
+        assert js[key] == PUBLICATION_LEGEND[field], field
+    # Square corners: PyMappr has a switch, MiniMappr a radius.
+    assert PUBLICATION_LEGEND["rounded"] is False and js["legRadius"] == 0
+    # Sizes are points there and pixels here, so what carries over is the
+    # step up from each app's own defaults.
+    defaults = LegendOptions()
+    controls = dict((n, d) for n, _k, d in re.findall(
+        r'\["(\w+)",\s*"(\w+)",\s*([\d.]+)\]', app_js))
+    for field, key in (("fontsize", "legFont"),
+                       ("title_fontsize", "legTitleFont")):
+        step = PUBLICATION_LEGEND[field] - getattr(defaults, field)
+        assert js[key] - float(controls[key]) == step, field
