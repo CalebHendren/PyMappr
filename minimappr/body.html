@@ -95,7 +95,7 @@
                   </select></div>
                 <div class="row"><label class="lbl grow">Point outline</label>
                   <input type="color" id="pointEdgeColor" value="#ffffff" aria-label="Point outline colour">
-                  <input type="number" id="pointEdgeWidth" min="0" max="3" step="0.1" value="0.6"
+                  <input type="number" id="pointEdgeWidth" min="0" max="3" step="0.1" value="0.5"
                     style="width:64px" aria-label="Point outline width" title="Width in px (0 = none)"></div>
                 <p class="hintline">The outline keeps overlapping points apart. Use a black one with
                   <b>Black &amp; white</b>, whose white points need it.</p>
@@ -261,6 +261,7 @@
                   <option value="br">Bottom right</option>
                   <option value="bc">Bottom centre</option>
                   <option value="bl">Bottom left</option>
+                  <option value="best">Best (covers the fewest points)</option>
                 </select></div>
               <label class="block">Title <span class="muted">(blank = grouping column)</span></label>
               <input type="text" id="legTitle" placeholder="(auto)">
@@ -335,9 +336,14 @@
             <summary>Layout</summary>
             <div class="body">
               <div class="row"><label class="lbl grow">Columns</label>
-                <input type="number" id="legCols" min="1" max="5" step="1" value="1" style="width:74px"></div>
+                <input type="number" id="legCols" min="1" max="6" step="1" value="1" style="width:74px"></div>
+              <div class="row"><label class="lbl grow">Column spacing</label>
+                <input type="number" id="legColSpacing" min="0" max="80" step="2" value="16" style="width:74px"></div>
               <div class="row"><label class="lbl grow">Marker scale</label>
-                <input type="number" id="legScale" min="0.5" max="3" step="0.25" value="1" style="width:74px"></div>
+                <input type="number" id="legScale" min="0.1" max="6" step="0.05" value="1" style="width:74px"></div>
+              <div class="row"><label class="lbl grow">Swatch width</label>
+                <input type="number" id="legSwatchWidth" min="0.5" max="8" step="0.1" value="1.7" style="width:74px"
+                  title="In font sizes"></div>
               <div class="row"><label class="lbl grow">Row spacing</label>
                 <input type="number" id="legRowSpacing" min="0" max="3" step="0.1" value="0.5" style="width:74px"></div>
               <div class="row"><label class="lbl grow">Swatch gap</label>
@@ -406,6 +412,15 @@
 
         <!-- export tab -->
         <section class="tabpage" data-page="export">
+          <details class="sec" open>
+            <summary>Publication style</summary>
+            <div class="body">
+              <button class="btn full" id="btnPublication">Apply publication style</button>
+              <p class="hintline">Black &amp; white points with black outlines and varied shapes,
+                and a plain boxed legend with italic names. Entries restyled under
+                <b>Per-group overrides</b> keep their styling.</p>
+            </div>
+          </details>
           <details class="sec" open>
             <summary>Export image</summary>
             <div class="body">

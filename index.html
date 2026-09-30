@@ -291,7 +291,7 @@
                   </select></div>
                 <div class="row"><label class="lbl grow">Point outline</label>
                   <input type="color" id="pointEdgeColor" value="#ffffff" aria-label="Point outline colour">
-                  <input type="number" id="pointEdgeWidth" min="0" max="3" step="0.1" value="0.6"
+                  <input type="number" id="pointEdgeWidth" min="0" max="3" step="0.1" value="0.5"
                     style="width:64px" aria-label="Point outline width" title="Width in px (0 = none)"></div>
                 <p class="hintline">The outline keeps overlapping points apart. Use a black one with
                   <b>Black &amp; white</b>, whose white points need it.</p>
@@ -457,6 +457,7 @@
                   <option value="br">Bottom right</option>
                   <option value="bc">Bottom centre</option>
                   <option value="bl">Bottom left</option>
+                  <option value="best">Best (covers the fewest points)</option>
                 </select></div>
               <label class="block">Title <span class="muted">(blank = grouping column)</span></label>
               <input type="text" id="legTitle" placeholder="(auto)">
@@ -531,9 +532,14 @@
             <summary>Layout</summary>
             <div class="body">
               <div class="row"><label class="lbl grow">Columns</label>
-                <input type="number" id="legCols" min="1" max="5" step="1" value="1" style="width:74px"></div>
+                <input type="number" id="legCols" min="1" max="6" step="1" value="1" style="width:74px"></div>
+              <div class="row"><label class="lbl grow">Column spacing</label>
+                <input type="number" id="legColSpacing" min="0" max="80" step="2" value="16" style="width:74px"></div>
               <div class="row"><label class="lbl grow">Marker scale</label>
-                <input type="number" id="legScale" min="0.5" max="3" step="0.25" value="1" style="width:74px"></div>
+                <input type="number" id="legScale" min="0.1" max="6" step="0.05" value="1" style="width:74px"></div>
+              <div class="row"><label class="lbl grow">Swatch width</label>
+                <input type="number" id="legSwatchWidth" min="0.5" max="8" step="0.1" value="1.7" style="width:74px"
+                  title="In font sizes"></div>
               <div class="row"><label class="lbl grow">Row spacing</label>
                 <input type="number" id="legRowSpacing" min="0" max="3" step="0.1" value="0.5" style="width:74px"></div>
               <div class="row"><label class="lbl grow">Swatch gap</label>
@@ -602,6 +608,15 @@
 
         <!-- export tab -->
         <section class="tabpage" data-page="export">
+          <details class="sec" open>
+            <summary>Publication style</summary>
+            <div class="body">
+              <button class="btn full" id="btnPublication">Apply publication style</button>
+              <p class="hintline">Black &amp; white points with black outlines and varied shapes,
+                and a plain boxed legend with italic names. Entries restyled under
+                <b>Per-group overrides</b> keep their styling.</p>
+            </div>
+          </details>
           <details class="sec" open>
             <summary>Export image</summary>
             <div class="body">
@@ -850,6 +865,11 @@ const BLACK_AND_WHITE = ["#000000","#ffffff","#808080"];
 const PALETTES = {"Default": DEFAULT_PALETTE,
   "Colourblind safe (Okabe-Ito)": OKABE_ITO,
   "Black & white": BLACK_AND_WHITE};
+// The outline filled markers get by default, and the one the publication
+// style sets. Match POINT_EDGE_COLOR / POINT_EDGE_WIDTH and
+// PUBLICATION_POINT_EDGE in styles.py.
+const POINT_EDGE_COLOR="#ffffff", POINT_EDGE_WIDTH=0.5;
+const PUBLICATION_POINT_EDGE=["#000000", 0.6];
 // The palette in use is a map-wide setting (opts.palette), not a per-dataset one.
 function palette(){ return PALETTES[opts.palette] || DEFAULT_PALETTE; }
 const BASE_MARKERS = ["Circle","Square","Triangle","Triangle down","Triangle left",
@@ -1044,13 +1064,15 @@ function groupPoints(rows, groupBy){
   if(!groupBy) return [["All points", rows]];
   return [...bucketBy(rows, r=>r._attr[groupBy]??"")].map(([lab,sub])=>[lab||"(blank)", sub]);
 }
-function defaultStyles(labels, colorKeys, varySymbols, base){
+// `offset` starts the colours further into the palette, so several datasets
+// on one map get distinct default colours. Mirrors styles.default_styles.
+function defaultStyles(labels, colorKeys, varySymbols, base, offset=0){
   const styles={}, pal=palette();
   if(!colorKeys){
     labels.forEach((lab,i)=>{
       styles[lab]= labels.length===1
         ? {color:base.color, marker:base.marker, size:base.size}
-        : {color:pal[i%pal.length],
+        : {color:pal[(i+offset)%pal.length],
            marker:varySymbols?MARKER_CYCLE[i%MARKER_CYCLE.length]:base.marker, size:base.size};
     });
     return styles;
@@ -1059,10 +1081,64 @@ function defaultStyles(labels, colorKeys, varySymbols, base){
   for(const key of colorKeys) if(!order.has(key)) order.set(key, order.size);
   labels.forEach((lab,i)=>{
     const key=colorKeys[i]; const s=seen[key]||0; seen[key]=s+1;
-    styles[lab]={color:pal[order.get(key)%pal.length],
+    styles[lab]={color:pal[(order.get(key)+offset)%pal.length],
       marker:MARKER_CYCLE[s%MARKER_CYCLE.length], size:base.size};
   });
   return styles;
+}
+// Where each dataset's colours start in the palette: group-by datasets pick
+// up where the last visible one stopped, advancing by their number of
+// groups, so a second dataset is not red again. Symbol-by datasets colour by
+// value and take no part. Mirrors layout.layout_points' palette_offset.
+function paletteOffsets(){
+  const out=new Map(); let offset=0;
+  for(const ds of datasets){
+    out.set(ds.id, offset);
+    if(ds.visible && ds.rows.length && !ds.symbolBy) offset+=groupPoints(ds.rows, ds.groupBy).length;
+  }
+  return out;
+}
+
+// More shapes than this stop being easy to tell apart. Matches
+// LEGIBLE_MARKER_LIMIT in styles.py.
+const LEGIBLE_MARKER_LIMIT=6;
+// How many shapes a reader has to tell apart: under nesting, the most
+// symbol values inside one colour group (shapes restart per group);
+// otherwise every symbol value. Mirrors styles.marker_load.
+function markerLoad(rows, colorKey, symbolKey, hierarchy){
+  if(!symbolKey || !rows.length) return 0;
+  if(!resolveNesting(rows, colorKey, symbolKey, hierarchy))
+    return new Set(rows.map(r=>r._attr[symbolKey]??"")).size;
+  const per=new Map();
+  for(const r of rows){
+    const c=r._attr[colorKey]??"";
+    if(!per.has(c)) per.set(c, new Set());
+    per.get(c).add(r._attr[symbolKey]??"");
+  }
+  return Math.max(...[...per.values()].map(s=>s.size));
+}
+// A warning for the status line when the map asks too much of its shapes,
+// or when forced nesting leaves the key not describing the map; null when
+// all is well. Mirrors PyMapprApp._warn_marker_load, wording included.
+function legendWarning(visible){
+  if(opts.legHierarchy==="always"){
+    for(const ds of visible){
+      if(!ds.symbolBy || !ds.colorBy) continue;
+      if(resolveNesting(ds.rows, ds.colorBy, ds.symbolBy, "auto")) continue;
+      return `${ds.name}: “${ds.symbolBy}” does not nest inside “${ds.colorBy}”, so each `
+        + "shape is listed under the first colour it appears in. Set Hierarchy to Auto for "
+        + "two independent keys.";
+    }
+  }
+  let worst=0, worstDs=null;
+  for(const ds of visible){
+    const load=markerLoad(ds.rows, ds.colorBy, ds.symbolBy, opts.legHierarchy);
+    if(load>worst){ worst=load; worstDs=ds; }
+  }
+  if(worst<=LEGIBLE_MARKER_LIMIT) return null;
+  return `${worstDs.name}: “${worstDs.symbolBy}” needs ${worst} shapes, more than the `
+    + `${LEGIBLE_MARKER_LIMIT} that stay easy to tell apart. Consider a Color by column that `
+    + "groups them, or filtering to fewer values.";
 }
 // True when every value of symbolKey sits under exactly one value of colorKey -
 // a hierarchy (genus/species) rather than a cross-product. Nesting is what makes
@@ -1222,6 +1298,8 @@ const LEGEND_CONTROLS = [
   // layout
   ["legCols", "num", 1],
   ["legScale", "num", 1],
+  ["legSwatchWidth", "num", 1.7],        // in font sizes
+  ["legColSpacing", "num", 16],          // px between columns
   ["legRowSpacing", "num", 0.5],
   ["legSwatchGap", "num", 8],
   ["legPad", "num", 9],
@@ -1263,6 +1341,13 @@ const MAP_CONTROLS = [
 ];
 // Changing one of these re-derives the rows; the rest only restyle. Kept for
 // readability - MiniMappr rebuilds the whole SVG either way.
+// The legend half of the publication style: a plain white box with a thin
+// black border, and italic entries because taxon names are set in italics.
+// Mirrors legend.PUBLICATION_LEGEND; its 9/10 pt text is a step up from
+// PyMappr's 8/9 pt defaults, and so is 13/14 px from MiniMappr's 12/13.
+const PUBLICATION_LEGEND = {legFrame:true, legFrameColor:"#ffffff", legFrameAlpha:1,
+  legFrameEdge:"#000000", legFrameWidth:0.5, legRadius:0, legShadow:false,
+  legLabelItalic:true, legFont:13, legTitleFont:14};
 const LEGEND_CONTENT_KEYS = new Set(["legHierarchy", "legOrder", "legCounts",
   "legCountFormat", "legBlankLabel", "legSectionTitles", "legTitleSeparator",
   "legDatasetPrefix", "legEmptyGroups", "legGroupSwatch"]);
@@ -1274,8 +1359,7 @@ const opts = {
   matColor:"#ffffff", lineWidth:1, palette:"Default", scaleBar:false,
   // The outline drawn around filled markers (open markers outline in their
   // own colour). White keeps overlapping points apart; width 0 turns it off.
-  // Matches POINT_EDGE_COLOR / POINT_EDGE_WIDTH in styles.py.
-  pointEdgeColor:"#ffffff", pointEdgeWidth:0.6,
+  pointEdgeColor:POINT_EDGE_COLOR, pointEdgeWidth:POINT_EDGE_WIDTH,
 };
 for(const [id,,value] of [...LEGEND_CONTROLS, ...MAP_CONTROLS]) opts[id]=value;
 // Where the scale bar was dragged to, as frame fractions; null = its corner.
@@ -1326,7 +1410,7 @@ function shownRows(ds){
 // Colours and shapes are worked out from the whole dataset, so a group keeps
 // its look while the filter hides others; only the drawn rows are filtered.
 // Mirrors layout.group_styles / layout._attribute_layout.
-function resolveGroups(ds){
+function resolveGroups(ds, offset){
   // returns {mode, groups:[{label,style,rows}], shown, filtering, ...}
   const rows = ds.rows;
   const shown = shownRows(ds), filtering = shown!==rows;
@@ -1358,7 +1442,8 @@ function resolveGroups(ds){
   const grp = groupPoints(rows, ds.groupBy);
   const labels = grp.map(g=>g[0]);
   const colorKeys = ds.colorBy ? grp.map(g=>{ const r=g[1][0]; return r?(r._attr[ds.colorBy]??""):""; }) : null;
-  const styles = defaultStyles(labels, colorKeys, ds.varySymbols, ds.base);
+  if(offset===undefined) offset=paletteOffsets().get(ds.id)||0;
+  const styles = defaultStyles(labels, colorKeys, ds.varySymbols, ds.base, offset);
   // A group the filter empties keeps its place and style, with no rows.
   const shownBy = filtering ? new Map(groupPoints(shown, ds.groupBy)) : null;
   const groups = grp.map(([label,sub])=>({label, rows:shownBy ? (shownBy.get(label)||[]) : sub,
@@ -1454,6 +1539,7 @@ function el(tag, attrs){ const e=document.createElementNS(svgNS,tag); return att
 function clearNode(node){ while(node.firstChild) node.removeChild(node.firstChild); }
 let sceneSize={w:0,h:0};
 let stageNotes=[];
+let pointXY=[];   // screen positions of the drawn points, for the "Best" legend spot
 
 // Follow one pointer (mouse, pen or finger) from pointerdown until it lifts.
 // Capturing it keeps the moves coming to `node` when the pointer leaves it.
@@ -1578,7 +1664,10 @@ function renderNow(){
   // points: one <g> per style carries the colour, opacity and stroke, and the
   // marker outline is built once per group; each point is a translated path.
   const visible=datasets.filter(d=>d.visible);
-  const resolved=visible.map(ds=>({ds, res:resolveGroups(ds)}));
+  const offsets=paletteOffsets();
+  const resolved=visible.map(ds=>({ds, res:resolveGroups(ds, offsets.get(ds.id))}));
+  const warning=legendWarning(visible.filter(d=>d.rows.length));
+  if(warning) stageNotes.push(warning);
   const edge=opts.pointEdgeWidth>0 ? opts.pointEdgeColor : null;
   const pKey=JSON.stringify([projKey, opts.labels, edge, opts.pointEdgeWidth, filterSig(), resolved.map(({ds,res})=>[
     rowsId(ds.rows), ds.rows.length, ds.groupBy, ds.colorBy, ds.symbolBy, ds.opacity ?? 1,
@@ -1586,6 +1675,7 @@ function renderNow(){
   if(pKey!==pointsKey){
     pointsKey=pKey;
     const ptsG=layers.points; clearNode(ptsG);
+    pointXY=[];
     // Labels sit on a white halo (a stroked copy underneath, which every SVG
     // editor draws, unlike paint-order) so they read over borders and coasts.
     const haloG=el("g",{"font-family":"sans-serif","font-size":10,fill:"#ffffff",stroke:"#ffffff",
@@ -1609,6 +1699,7 @@ function renderNow(){
           // than draw them under the clip.
           if(xy[0]<rx0-r_ || xy[0]>rx1+r_ || xy[1]<ry0-r_ || xy[1]>ry1+r_) continue;
           g.appendChild(el("path",{d, transform:`translate(${xy[0].toFixed(2)},${xy[1].toFixed(2)})`}));
+          pointXY.push(xy);
           if(opts.labels && r.label){
             const t=el("text",{x:(xy[0]+r_+2).toFixed(2), y:(xy[1]+3).toFixed(2)});
             t.textContent=r.label; labelsG.appendChild(t);
@@ -1933,7 +2024,7 @@ function drawLegend(parent, W, H, entries, attrLegends){
   const font=opts.legFontFamily||"sans-serif";
   const titleFs=opts.legTitleFont||fs;
   const pad=opts.legPad, gap=opts.legSwatchGap;
-  const rowH=fs*(1.05+opts.legRowSpacing), swW=fs*1.7*scale;
+  const rowH=fs*(1.05+opts.legRowSpacing), swW=fs*opts.legSwatchWidth*scale;
   const g=el("g"); g.style.cursor="move";
 
   // A nested key's group rows head a block of children, so they take the
@@ -1941,7 +2032,7 @@ function drawLegend(parent, W, H, entries, attrLegends){
   // when every swatch sits in the same column.
   const indent=fs*0.3*opts.legIndent;
   const titleH=Math.max(rowH, titleFs*(1.05+opts.legRowSpacing));
-  const gapH=rowH*0.4, colGap=16;
+  const gapH=rowH*0.4, colGap=opts.legColSpacing;
   const cols=Math.max(1,Math.round(opts.legCols));
   const titleW=text=>textWidth(text, titleFs, font, opts.legTitleBold, opts.legTitleItalic);
   // Across several columns, a title that names the whole legend (the typed
@@ -1977,16 +2068,17 @@ function drawLegend(parent, W, H, entries, attrLegends){
   const boxH=pad*2 + headerH + Math.max(0,...colH);
 
   // position
+  // Second character picks the horizontal edge, first the vertical one;
+  // "c" centres on that axis.
+  const at=p=>{
+    const m=14, hx=p[1], vy=p[0];
+    return [hx==="r" ? W-boxW-m : hx==="l" ? m : (W-boxW)/2,
+            vy==="t" ? m+(opts.title?30:0) : vy==="b" ? H-boxH-m : (H-boxH)/2];
+  };
   let bx,by;
   if(legendDrag){ bx=legendDrag.x*W; by=legendDrag.y*H; }
-  else {
-    const m=14, p=opts.legPos;
-    // Second character picks the horizontal edge, first the vertical one;
-    // "c" centres on that axis.
-    const hx=p[1], vy=p[0];
-    bx = hx==="r" ? W-boxW-m : hx==="l" ? m : (W-boxW)/2;
-    by = vy==="t" ? m+(opts.title?30:0) : vy==="b" ? H-boxH-m : (H-boxH)/2;
-  }
+  else if(opts.legPos==="best") [bx,by]=at(bestLegendSpot(at, boxW, boxH));
+  else [bx,by]=at(opts.legPos);
   bx=Math.max(2,Math.min(bx,W-boxW-2)); by=Math.max(2,Math.min(by,H-boxH-2));
 
   if(opts.legShadow){
@@ -2063,7 +2155,24 @@ function drawLegend(parent, W, H, entries, attrLegends){
   return {x:bx, y:by, w:boxW, h:boxH};
 }
 
+// matplotlib's loc="best", which PyMappr offers: of the nine spots, the one
+// that covers the fewest points, trying them in matplotlib's order so a tie
+// goes the same way.
+const BEST_ORDER=["tr","tl","bl","br","cr","cl","bc","tc","cc"];
+function bestLegendSpot(at, w, h){
+  let best=BEST_ORDER[0], fewest=Infinity;
+  for(const spot of BEST_ORDER){
+    const [x,y]=at(spot);
+    let n=0;
+    for(const [px,py] of pointXY) if(px>=x && px<=x+w && py>=y && py<=y+h) n++;
+    if(n<fewest){ fewest=n; best=spot; }
+    if(!n) break;
+  }
+  return best;
+}
+
 function updateStagebar(){
+  if(flash && Date.now()<flash.until){ setStagebar(flash.text); return; }
   // While the filter hides anything, say how much, as PyMappr's status does.
   const fds=datasets.find(d=>d.id===filter.dsId);
   if(fds && filterSig()){
@@ -2620,32 +2729,47 @@ function renderFilterValues(ds){
 
 // Every legend row of a dataset, as {key, value, style, depth} - groups in
 // group-by mode, or colour values, symbol values and nested pairs in the
-// two-attribute modes. Mirrors PyMapprApp._legend_rows.
+// two-attribute modes - in the order the legend draws them under manual
+// order. Mirrors layout.editor_rows.
 function legendRowsFor(ds){
   const res=resolveGroups(ds);
   if(res.mode!=="attr"){
-    return res.groups.map(g=>({key:rowKey("group",g.label), value:g.label,
-                               style:g.style, depth:0}));
+    return inManualOrder(ds, res.groups.map(g=>({key:rowKey("group",g.label), value:g.label,
+                                                 style:g.style, depth:0})));
   }
-  const rows=[];
   if(res.nested){
-    const kidsOf=childrenByOwner(res);
+    const kidsOf=childrenByOwner(res), rows=[];
     for(const [cv,color] of Object.entries(res.colorMap)){
       rows.push({key:rowKey("color",cv), value:cv, depth:0,
                  style:{color,marker:"Circle",size:ds.base.size}});
-      for(const sv of kidsOf.get(cv)||[])
-        rows.push({key:rowKey("pair",cv,sv), value:sv, depth:1,
-                   style:{color,marker:res.symbolMap[sv],size:ds.base.size}});
+      rows.push(...inManualOrder(ds, (kidsOf.get(cv)||[]).map(sv=>
+        ({key:rowKey("pair",cv,sv), value:sv, depth:1,
+          style:{color,marker:res.symbolMap[sv],size:ds.base.size}}))));
     }
-    return rows;
+    return inManualOrder(ds, rows, true);
   }
-  for(const [cv,color] of Object.entries(res.colorMap))
-    rows.push({key:rowKey("color",cv), value:cv, depth:0,
-               style:{color,marker:"Circle",size:ds.base.size}});
-  for(const [sv,marker] of Object.entries(res.symbolMap))
-    rows.push({key:rowKey("symbol",sv), value:sv, depth:0,
-               style:{color:opts.legSymbolColor,marker,size:ds.base.size}});
-  return rows;
+  return inManualOrder(ds, Object.entries(res.colorMap).map(([cv,color])=>
+      ({key:rowKey("color",cv), value:cv, depth:0, style:{color,marker:"Circle",size:ds.base.size}})))
+    .concat(inManualOrder(ds, Object.entries(res.symbolMap).map(([sv,marker])=>
+      ({key:rowKey("symbol",sv), value:sv, depth:0,
+        style:{color:opts.legSymbolColor,marker,size:ds.base.size}}))));
+}
+// Rows sorted by their manual position, rows never placed keeping the order
+// the data gave them. With `blocks`, each depth-0 row carries the children
+// under it, so moving a genus moves its species too. Mirrors layout._ordered.
+function inManualOrder(ds, rows, blocks){
+  const items=blocks ? rowBlocks(rows) : rows;
+  const position=blocks ? b=>manualOrder(ds.overrides[b[0].key]) : r=>manualOrder(ds.overrides[r.key]);
+  const sorted=items.map((item,i)=>[item,i])
+    .sort((a,b)=>(position(a[0])-position(b[0])) || (a[1]-b[1]))
+    .map(([item])=>item);
+  return blocks ? sorted.flat() : sorted;
+}
+// A list of rows cut into blocks: each depth-0 row with the depth-1 rows under it.
+function rowBlocks(rows){
+  const blocks=[];
+  for(const r of rows){ if(r.depth===0 || !blocks.length) blocks.push([r]); else blocks[blocks.length-1].push(r); }
+  return blocks;
 }
 
 function renderGroupOverrides(ds){
@@ -2701,13 +2825,23 @@ function renderGroupOverrides(ds){
 
 // Moving writes a position for every row, not just the two that swapped: a
 // partial ordering would let untouched rows fall to the end. A nested child
-// may only move inside its own parent's block.
+// may only move inside its own parent's block, and a parent moves with its
+// children. Colour rows and symbol rows are separate keys and never swap.
 function moveRow(ds, rows, index, step){
-  const target=index+step;
-  if(target<0 || target>=rows.length) return;
-  if(rows[index].depth!==rows[target].depth) return;
-  const reordered=[...rows];
-  [reordered[index],reordered[target]]=[reordered[target],reordered[index]];
+  const kind=r=>r.key.split(ROW_SEP)[0], row=rows[index];
+  let reordered;
+  if(row.depth===0){
+    const blocks=rowBlocks(rows);
+    const at=blocks.findIndex(b=>b[0]===row), to=at+step;
+    if(to<0 || to>=blocks.length || kind(blocks[to][0])!==kind(row)) return;
+    [blocks[at],blocks[to]]=[blocks[to],blocks[at]];
+    reordered=blocks.flat();
+  } else {
+    const target=index+step;
+    if(target<0 || target>=rows.length || rows[target].depth!==row.depth) return;
+    reordered=[...rows];
+    [reordered[index],reordered[target]]=[reordered[target],reordered[index]];
+  }
   reordered.forEach((r,position)=>setOverride(ds,r.key,{order:position}));
   // Moving is meaningless while the legend sorts itself, so switch it over.
   opts.legOrder="manual";
@@ -2922,8 +3056,14 @@ function updateFromMapping(id, parsed, mapping, name){
   renderDatasetList(); syncStylePanel(); render(); scheduleSave();
   return true;
 }
-function flashStage(msg){ $("#stagebar").textContent=msg;
-  setTimeout(()=>updateStagebar(),3000); }
+// A message in the status line for three seconds. It outlives the render
+// that usually follows it, which would otherwise wipe it at once.
+let flash=null, flashTimer=0;
+function flashStage(msg){
+  flash={text:msg, until:Date.now()+3000};
+  updateStagebar();
+  clearTimeout(flashTimer); flashTimer=setTimeout(updateStagebar, 3000);
+}
 
 // manual entry
 $("#btnManual").addEventListener("click",()=>{ editingId=null; fillSelect($("#mMarker"),MARKERS,"Circle");
@@ -3015,7 +3155,28 @@ $("#varySymbols").addEventListener("change",e=>{ const ds=selectedDataset(); ds.
   ds.overrides={}; render(); });
 // The palette is map-wide: clearing every dataset's overrides would throw
 // away colours the user pinned, so only the auto-assigned styles change.
-$("#paletteSel").addEventListener("change",e=>{ opts.palette=e.target.value; render(); });
+// White points vanish inside a white outline, so a palette with white in it
+// brings a black outline along, as in PyMappr.
+$("#paletteSel").addEventListener("change",e=>{
+  opts.palette=e.target.value;
+  if(palette().includes("#ffffff") && /^(#ffffff|white)$/i.test(opts.pointEdgeColor)){
+    opts.pointEdgeColor="#000000"; $("#pointEdgeColor").value="#000000";
+    flashStage("Point outline set to black so white points stay visible.");
+  }
+  render();
+});
+// One click for a journal figure: black and white points with black
+// outlines and varied shapes, and a plain boxed legend with italic names.
+// Rows restyled by hand keep their styling. Mirrors on_publication_style.
+$("#btnPublication").addEventListener("click",()=>{
+  opts.palette="Black & white";
+  [opts.pointEdgeColor, opts.pointEdgeWidth]=PUBLICATION_POINT_EDGE;
+  Object.assign(opts, PUBLICATION_LEGEND);
+  // three shades alone cannot tell more than three groups apart
+  for(const ds of datasets){ ds.opacity=1; ds.varySymbols=true; }
+  syncMapControls(); syncStylePanel(); render();
+  flashStage("Applied the publication style.");
+});
 $("#baseMarker").addEventListener("change",e=>{ const ds=selectedDataset(); ds.base.marker=e.target.value; render(); });
 $("#baseColor").addEventListener("input",e=>{ const ds=selectedDataset(); ds.base.color=e.target.value; render(); });
 $("#sizeRange").addEventListener("input",e=>{ const ds=selectedDataset(); ds.base.size=+e.target.value;

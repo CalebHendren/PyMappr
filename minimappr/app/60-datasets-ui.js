@@ -277,32 +277,47 @@ function renderFilterValues(ds){
 
 // Every legend row of a dataset, as {key, value, style, depth} - groups in
 // group-by mode, or colour values, symbol values and nested pairs in the
-// two-attribute modes. Mirrors PyMapprApp._legend_rows.
+// two-attribute modes - in the order the legend draws them under manual
+// order. Mirrors layout.editor_rows.
 function legendRowsFor(ds){
   const res=resolveGroups(ds);
   if(res.mode!=="attr"){
-    return res.groups.map(g=>({key:rowKey("group",g.label), value:g.label,
-                               style:g.style, depth:0}));
+    return inManualOrder(ds, res.groups.map(g=>({key:rowKey("group",g.label), value:g.label,
+                                                 style:g.style, depth:0})));
   }
-  const rows=[];
   if(res.nested){
-    const kidsOf=childrenByOwner(res);
+    const kidsOf=childrenByOwner(res), rows=[];
     for(const [cv,color] of Object.entries(res.colorMap)){
       rows.push({key:rowKey("color",cv), value:cv, depth:0,
                  style:{color,marker:"Circle",size:ds.base.size}});
-      for(const sv of kidsOf.get(cv)||[])
-        rows.push({key:rowKey("pair",cv,sv), value:sv, depth:1,
-                   style:{color,marker:res.symbolMap[sv],size:ds.base.size}});
+      rows.push(...inManualOrder(ds, (kidsOf.get(cv)||[]).map(sv=>
+        ({key:rowKey("pair",cv,sv), value:sv, depth:1,
+          style:{color,marker:res.symbolMap[sv],size:ds.base.size}}))));
     }
-    return rows;
+    return inManualOrder(ds, rows, true);
   }
-  for(const [cv,color] of Object.entries(res.colorMap))
-    rows.push({key:rowKey("color",cv), value:cv, depth:0,
-               style:{color,marker:"Circle",size:ds.base.size}});
-  for(const [sv,marker] of Object.entries(res.symbolMap))
-    rows.push({key:rowKey("symbol",sv), value:sv, depth:0,
-               style:{color:opts.legSymbolColor,marker,size:ds.base.size}});
-  return rows;
+  return inManualOrder(ds, Object.entries(res.colorMap).map(([cv,color])=>
+      ({key:rowKey("color",cv), value:cv, depth:0, style:{color,marker:"Circle",size:ds.base.size}})))
+    .concat(inManualOrder(ds, Object.entries(res.symbolMap).map(([sv,marker])=>
+      ({key:rowKey("symbol",sv), value:sv, depth:0,
+        style:{color:opts.legSymbolColor,marker,size:ds.base.size}}))));
+}
+// Rows sorted by their manual position, rows never placed keeping the order
+// the data gave them. With `blocks`, each depth-0 row carries the children
+// under it, so moving a genus moves its species too. Mirrors layout._ordered.
+function inManualOrder(ds, rows, blocks){
+  const items=blocks ? rowBlocks(rows) : rows;
+  const position=blocks ? b=>manualOrder(ds.overrides[b[0].key]) : r=>manualOrder(ds.overrides[r.key]);
+  const sorted=items.map((item,i)=>[item,i])
+    .sort((a,b)=>(position(a[0])-position(b[0])) || (a[1]-b[1]))
+    .map(([item])=>item);
+  return blocks ? sorted.flat() : sorted;
+}
+// A list of rows cut into blocks: each depth-0 row with the depth-1 rows under it.
+function rowBlocks(rows){
+  const blocks=[];
+  for(const r of rows){ if(r.depth===0 || !blocks.length) blocks.push([r]); else blocks[blocks.length-1].push(r); }
+  return blocks;
 }
 
 function renderGroupOverrides(ds){
@@ -358,13 +373,23 @@ function renderGroupOverrides(ds){
 
 // Moving writes a position for every row, not just the two that swapped: a
 // partial ordering would let untouched rows fall to the end. A nested child
-// may only move inside its own parent's block.
+// may only move inside its own parent's block, and a parent moves with its
+// children. Colour rows and symbol rows are separate keys and never swap.
 function moveRow(ds, rows, index, step){
-  const target=index+step;
-  if(target<0 || target>=rows.length) return;
-  if(rows[index].depth!==rows[target].depth) return;
-  const reordered=[...rows];
-  [reordered[index],reordered[target]]=[reordered[target],reordered[index]];
+  const kind=r=>r.key.split(ROW_SEP)[0], row=rows[index];
+  let reordered;
+  if(row.depth===0){
+    const blocks=rowBlocks(rows);
+    const at=blocks.findIndex(b=>b[0]===row), to=at+step;
+    if(to<0 || to>=blocks.length || kind(blocks[to][0])!==kind(row)) return;
+    [blocks[at],blocks[to]]=[blocks[to],blocks[at]];
+    reordered=blocks.flat();
+  } else {
+    const target=index+step;
+    if(target<0 || target>=rows.length || rows[target].depth!==row.depth) return;
+    reordered=[...rows];
+    [reordered[index],reordered[target]]=[reordered[target],reordered[index]];
+  }
   reordered.forEach((r,position)=>setOverride(ds,r.key,{order:position}));
   // Moving is meaningless while the legend sorts itself, so switch it over.
   opts.legOrder="manual";

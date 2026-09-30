@@ -12,6 +12,11 @@ const BLACK_AND_WHITE = ["#000000","#ffffff","#808080"];
 const PALETTES = {"Default": DEFAULT_PALETTE,
   "Colourblind safe (Okabe-Ito)": OKABE_ITO,
   "Black & white": BLACK_AND_WHITE};
+// The outline filled markers get by default, and the one the publication
+// style sets. Match POINT_EDGE_COLOR / POINT_EDGE_WIDTH and
+// PUBLICATION_POINT_EDGE in styles.py.
+const POINT_EDGE_COLOR="#ffffff", POINT_EDGE_WIDTH=0.5;
+const PUBLICATION_POINT_EDGE=["#000000", 0.6];
 // The palette in use is a map-wide setting (opts.palette), not a per-dataset one.
 function palette(){ return PALETTES[opts.palette] || DEFAULT_PALETTE; }
 const BASE_MARKERS = ["Circle","Square","Triangle","Triangle down","Triangle left",

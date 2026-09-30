@@ -5,6 +5,7 @@ function el(tag, attrs){ const e=document.createElementNS(svgNS,tag); return att
 function clearNode(node){ while(node.firstChild) node.removeChild(node.firstChild); }
 let sceneSize={w:0,h:0};
 let stageNotes=[];
+let pointXY=[];   // screen positions of the drawn points, for the "Best" legend spot
 
 // Follow one pointer (mouse, pen or finger) from pointerdown until it lifts.
 // Capturing it keeps the moves coming to `node` when the pointer leaves it.
@@ -129,7 +130,10 @@ function renderNow(){
   // points: one <g> per style carries the colour, opacity and stroke, and the
   // marker outline is built once per group; each point is a translated path.
   const visible=datasets.filter(d=>d.visible);
-  const resolved=visible.map(ds=>({ds, res:resolveGroups(ds)}));
+  const offsets=paletteOffsets();
+  const resolved=visible.map(ds=>({ds, res:resolveGroups(ds, offsets.get(ds.id))}));
+  const warning=legendWarning(visible.filter(d=>d.rows.length));
+  if(warning) stageNotes.push(warning);
   const edge=opts.pointEdgeWidth>0 ? opts.pointEdgeColor : null;
   const pKey=JSON.stringify([projKey, opts.labels, edge, opts.pointEdgeWidth, filterSig(), resolved.map(({ds,res})=>[
     rowsId(ds.rows), ds.rows.length, ds.groupBy, ds.colorBy, ds.symbolBy, ds.opacity ?? 1,
@@ -137,6 +141,7 @@ function renderNow(){
   if(pKey!==pointsKey){
     pointsKey=pKey;
     const ptsG=layers.points; clearNode(ptsG);
+    pointXY=[];
     // Labels sit on a white halo (a stroked copy underneath, which every SVG
     // editor draws, unlike paint-order) so they read over borders and coasts.
     const haloG=el("g",{"font-family":"sans-serif","font-size":10,fill:"#ffffff",stroke:"#ffffff",
@@ -160,6 +165,7 @@ function renderNow(){
           // than draw them under the clip.
           if(xy[0]<rx0-r_ || xy[0]>rx1+r_ || xy[1]<ry0-r_ || xy[1]>ry1+r_) continue;
           g.appendChild(el("path",{d, transform:`translate(${xy[0].toFixed(2)},${xy[1].toFixed(2)})`}));
+          pointXY.push(xy);
           if(opts.labels && r.label){
             const t=el("text",{x:(xy[0]+r_+2).toFixed(2), y:(xy[1]+3).toFixed(2)});
             t.textContent=r.label; labelsG.appendChild(t);
@@ -484,7 +490,7 @@ function drawLegend(parent, W, H, entries, attrLegends){
   const font=opts.legFontFamily||"sans-serif";
   const titleFs=opts.legTitleFont||fs;
   const pad=opts.legPad, gap=opts.legSwatchGap;
-  const rowH=fs*(1.05+opts.legRowSpacing), swW=fs*1.7*scale;
+  const rowH=fs*(1.05+opts.legRowSpacing), swW=fs*opts.legSwatchWidth*scale;
   const g=el("g"); g.style.cursor="move";
 
   // A nested key's group rows head a block of children, so they take the
@@ -492,7 +498,7 @@ function drawLegend(parent, W, H, entries, attrLegends){
   // when every swatch sits in the same column.
   const indent=fs*0.3*opts.legIndent;
   const titleH=Math.max(rowH, titleFs*(1.05+opts.legRowSpacing));
-  const gapH=rowH*0.4, colGap=16;
+  const gapH=rowH*0.4, colGap=opts.legColSpacing;
   const cols=Math.max(1,Math.round(opts.legCols));
   const titleW=text=>textWidth(text, titleFs, font, opts.legTitleBold, opts.legTitleItalic);
   // Across several columns, a title that names the whole legend (the typed
@@ -528,16 +534,17 @@ function drawLegend(parent, W, H, entries, attrLegends){
   const boxH=pad*2 + headerH + Math.max(0,...colH);
 
   // position
+  // Second character picks the horizontal edge, first the vertical one;
+  // "c" centres on that axis.
+  const at=p=>{
+    const m=14, hx=p[1], vy=p[0];
+    return [hx==="r" ? W-boxW-m : hx==="l" ? m : (W-boxW)/2,
+            vy==="t" ? m+(opts.title?30:0) : vy==="b" ? H-boxH-m : (H-boxH)/2];
+  };
   let bx,by;
   if(legendDrag){ bx=legendDrag.x*W; by=legendDrag.y*H; }
-  else {
-    const m=14, p=opts.legPos;
-    // Second character picks the horizontal edge, first the vertical one;
-    // "c" centres on that axis.
-    const hx=p[1], vy=p[0];
-    bx = hx==="r" ? W-boxW-m : hx==="l" ? m : (W-boxW)/2;
-    by = vy==="t" ? m+(opts.title?30:0) : vy==="b" ? H-boxH-m : (H-boxH)/2;
-  }
+  else if(opts.legPos==="best") [bx,by]=at(bestLegendSpot(at, boxW, boxH));
+  else [bx,by]=at(opts.legPos);
   bx=Math.max(2,Math.min(bx,W-boxW-2)); by=Math.max(2,Math.min(by,H-boxH-2));
 
   if(opts.legShadow){
@@ -614,7 +621,24 @@ function drawLegend(parent, W, H, entries, attrLegends){
   return {x:bx, y:by, w:boxW, h:boxH};
 }
 
+// matplotlib's loc="best", which PyMappr offers: of the nine spots, the one
+// that covers the fewest points, trying them in matplotlib's order so a tie
+// goes the same way.
+const BEST_ORDER=["tr","tl","bl","br","cr","cl","bc","tc","cc"];
+function bestLegendSpot(at, w, h){
+  let best=BEST_ORDER[0], fewest=Infinity;
+  for(const spot of BEST_ORDER){
+    const [x,y]=at(spot);
+    let n=0;
+    for(const [px,py] of pointXY) if(px>=x && px<=x+w && py>=y && py<=y+h) n++;
+    if(n<fewest){ fewest=n; best=spot; }
+    if(!n) break;
+  }
+  return best;
+}
+
 function updateStagebar(){
+  if(flash && Date.now()<flash.until){ setStagebar(flash.text); return; }
   // While the filter hides anything, say how much, as PyMappr's status does.
   const fds=datasets.find(d=>d.id===filter.dsId);
   if(fds && filterSig()){

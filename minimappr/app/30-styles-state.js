@@ -16,13 +16,15 @@ function groupPoints(rows, groupBy){
   if(!groupBy) return [["All points", rows]];
   return [...bucketBy(rows, r=>r._attr[groupBy]??"")].map(([lab,sub])=>[lab||"(blank)", sub]);
 }
-function defaultStyles(labels, colorKeys, varySymbols, base){
+// `offset` starts the colours further into the palette, so several datasets
+// on one map get distinct default colours. Mirrors styles.default_styles.
+function defaultStyles(labels, colorKeys, varySymbols, base, offset=0){
   const styles={}, pal=palette();
   if(!colorKeys){
     labels.forEach((lab,i)=>{
       styles[lab]= labels.length===1
         ? {color:base.color, marker:base.marker, size:base.size}
-        : {color:pal[i%pal.length],
+        : {color:pal[(i+offset)%pal.length],
            marker:varySymbols?MARKER_CYCLE[i%MARKER_CYCLE.length]:base.marker, size:base.size};
     });
     return styles;
@@ -31,10 +33,64 @@ function defaultStyles(labels, colorKeys, varySymbols, base){
   for(const key of colorKeys) if(!order.has(key)) order.set(key, order.size);
   labels.forEach((lab,i)=>{
     const key=colorKeys[i]; const s=seen[key]||0; seen[key]=s+1;
-    styles[lab]={color:pal[order.get(key)%pal.length],
+    styles[lab]={color:pal[(order.get(key)+offset)%pal.length],
       marker:MARKER_CYCLE[s%MARKER_CYCLE.length], size:base.size};
   });
   return styles;
+}
+// Where each dataset's colours start in the palette: group-by datasets pick
+// up where the last visible one stopped, advancing by their number of
+// groups, so a second dataset is not red again. Symbol-by datasets colour by
+// value and take no part. Mirrors layout.layout_points' palette_offset.
+function paletteOffsets(){
+  const out=new Map(); let offset=0;
+  for(const ds of datasets){
+    out.set(ds.id, offset);
+    if(ds.visible && ds.rows.length && !ds.symbolBy) offset+=groupPoints(ds.rows, ds.groupBy).length;
+  }
+  return out;
+}
+
+// More shapes than this stop being easy to tell apart. Matches
+// LEGIBLE_MARKER_LIMIT in styles.py.
+const LEGIBLE_MARKER_LIMIT=6;
+// How many shapes a reader has to tell apart: under nesting, the most
+// symbol values inside one colour group (shapes restart per group);
+// otherwise every symbol value. Mirrors styles.marker_load.
+function markerLoad(rows, colorKey, symbolKey, hierarchy){
+  if(!symbolKey || !rows.length) return 0;
+  if(!resolveNesting(rows, colorKey, symbolKey, hierarchy))
+    return new Set(rows.map(r=>r._attr[symbolKey]??"")).size;
+  const per=new Map();
+  for(const r of rows){
+    const c=r._attr[colorKey]??"";
+    if(!per.has(c)) per.set(c, new Set());
+    per.get(c).add(r._attr[symbolKey]??"");
+  }
+  return Math.max(...[...per.values()].map(s=>s.size));
+}
+// A warning for the status line when the map asks too much of its shapes,
+// or when forced nesting leaves the key not describing the map; null when
+// all is well. Mirrors PyMapprApp._warn_marker_load, wording included.
+function legendWarning(visible){
+  if(opts.legHierarchy==="always"){
+    for(const ds of visible){
+      if(!ds.symbolBy || !ds.colorBy) continue;
+      if(resolveNesting(ds.rows, ds.colorBy, ds.symbolBy, "auto")) continue;
+      return `${ds.name}: “${ds.symbolBy}” does not nest inside “${ds.colorBy}”, so each `
+        + "shape is listed under the first colour it appears in. Set Hierarchy to Auto for "
+        + "two independent keys.";
+    }
+  }
+  let worst=0, worstDs=null;
+  for(const ds of visible){
+    const load=markerLoad(ds.rows, ds.colorBy, ds.symbolBy, opts.legHierarchy);
+    if(load>worst){ worst=load; worstDs=ds; }
+  }
+  if(worst<=LEGIBLE_MARKER_LIMIT) return null;
+  return `${worstDs.name}: “${worstDs.symbolBy}” needs ${worst} shapes, more than the `
+    + `${LEGIBLE_MARKER_LIMIT} that stay easy to tell apart. Consider a Color by column that `
+    + "groups them, or filtering to fewer values.";
 }
 // True when every value of symbolKey sits under exactly one value of colorKey -
 // a hierarchy (genus/species) rather than a cross-product. Nesting is what makes
@@ -194,6 +250,8 @@ const LEGEND_CONTROLS = [
   // layout
   ["legCols", "num", 1],
   ["legScale", "num", 1],
+  ["legSwatchWidth", "num", 1.7],        // in font sizes
+  ["legColSpacing", "num", 16],          // px between columns
   ["legRowSpacing", "num", 0.5],
   ["legSwatchGap", "num", 8],
   ["legPad", "num", 9],
@@ -235,6 +293,13 @@ const MAP_CONTROLS = [
 ];
 // Changing one of these re-derives the rows; the rest only restyle. Kept for
 // readability - MiniMappr rebuilds the whole SVG either way.
+// The legend half of the publication style: a plain white box with a thin
+// black border, and italic entries because taxon names are set in italics.
+// Mirrors legend.PUBLICATION_LEGEND; its 9/10 pt text is a step up from
+// PyMappr's 8/9 pt defaults, and so is 13/14 px from MiniMappr's 12/13.
+const PUBLICATION_LEGEND = {legFrame:true, legFrameColor:"#ffffff", legFrameAlpha:1,
+  legFrameEdge:"#000000", legFrameWidth:0.5, legRadius:0, legShadow:false,
+  legLabelItalic:true, legFont:13, legTitleFont:14};
 const LEGEND_CONTENT_KEYS = new Set(["legHierarchy", "legOrder", "legCounts",
   "legCountFormat", "legBlankLabel", "legSectionTitles", "legTitleSeparator",
   "legDatasetPrefix", "legEmptyGroups", "legGroupSwatch"]);
@@ -246,8 +311,7 @@ const opts = {
   matColor:"#ffffff", lineWidth:1, palette:"Default", scaleBar:false,
   // The outline drawn around filled markers (open markers outline in their
   // own colour). White keeps overlapping points apart; width 0 turns it off.
-  // Matches POINT_EDGE_COLOR / POINT_EDGE_WIDTH in styles.py.
-  pointEdgeColor:"#ffffff", pointEdgeWidth:0.6,
+  pointEdgeColor:POINT_EDGE_COLOR, pointEdgeWidth:POINT_EDGE_WIDTH,
 };
 for(const [id,,value] of [...LEGEND_CONTROLS, ...MAP_CONTROLS]) opts[id]=value;
 // Where the scale bar was dragged to, as frame fractions; null = its corner.
@@ -298,7 +362,7 @@ function shownRows(ds){
 // Colours and shapes are worked out from the whole dataset, so a group keeps
 // its look while the filter hides others; only the drawn rows are filtered.
 // Mirrors layout.group_styles / layout._attribute_layout.
-function resolveGroups(ds){
+function resolveGroups(ds, offset){
   // returns {mode, groups:[{label,style,rows}], shown, filtering, ...}
   const rows = ds.rows;
   const shown = shownRows(ds), filtering = shown!==rows;
@@ -330,7 +394,8 @@ function resolveGroups(ds){
   const grp = groupPoints(rows, ds.groupBy);
   const labels = grp.map(g=>g[0]);
   const colorKeys = ds.colorBy ? grp.map(g=>{ const r=g[1][0]; return r?(r._attr[ds.colorBy]??""):""; }) : null;
-  const styles = defaultStyles(labels, colorKeys, ds.varySymbols, ds.base);
+  if(offset===undefined) offset=paletteOffsets().get(ds.id)||0;
+  const styles = defaultStyles(labels, colorKeys, ds.varySymbols, ds.base, offset);
   // A group the filter empties keeps its place and style, with no rows.
   const shownBy = filtering ? new Map(groupPoints(shown, ds.groupBy)) : null;
   const groups = grp.map(([label,sub])=>({label, rows:shownBy ? (shownBy.get(label)||[]) : sub,

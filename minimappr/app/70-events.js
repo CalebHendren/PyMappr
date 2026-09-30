@@ -198,8 +198,14 @@ function updateFromMapping(id, parsed, mapping, name){
   renderDatasetList(); syncStylePanel(); render(); scheduleSave();
   return true;
 }
-function flashStage(msg){ $("#stagebar").textContent=msg;
-  setTimeout(()=>updateStagebar(),3000); }
+// A message in the status line for three seconds. It outlives the render
+// that usually follows it, which would otherwise wipe it at once.
+let flash=null, flashTimer=0;
+function flashStage(msg){
+  flash={text:msg, until:Date.now()+3000};
+  updateStagebar();
+  clearTimeout(flashTimer); flashTimer=setTimeout(updateStagebar, 3000);
+}
 
 // manual entry
 $("#btnManual").addEventListener("click",()=>{ editingId=null; fillSelect($("#mMarker"),MARKERS,"Circle");
@@ -291,7 +297,28 @@ $("#varySymbols").addEventListener("change",e=>{ const ds=selectedDataset(); ds.
   ds.overrides={}; render(); });
 // The palette is map-wide: clearing every dataset's overrides would throw
 // away colours the user pinned, so only the auto-assigned styles change.
-$("#paletteSel").addEventListener("change",e=>{ opts.palette=e.target.value; render(); });
+// White points vanish inside a white outline, so a palette with white in it
+// brings a black outline along, as in PyMappr.
+$("#paletteSel").addEventListener("change",e=>{
+  opts.palette=e.target.value;
+  if(palette().includes("#ffffff") && /^(#ffffff|white)$/i.test(opts.pointEdgeColor)){
+    opts.pointEdgeColor="#000000"; $("#pointEdgeColor").value="#000000";
+    flashStage("Point outline set to black so white points stay visible.");
+  }
+  render();
+});
+// One click for a journal figure: black and white points with black
+// outlines and varied shapes, and a plain boxed legend with italic names.
+// Rows restyled by hand keep their styling. Mirrors on_publication_style.
+$("#btnPublication").addEventListener("click",()=>{
+  opts.palette="Black & white";
+  [opts.pointEdgeColor, opts.pointEdgeWidth]=PUBLICATION_POINT_EDGE;
+  Object.assign(opts, PUBLICATION_LEGEND);
+  // three shades alone cannot tell more than three groups apart
+  for(const ds of datasets){ ds.opacity=1; ds.varySymbols=true; }
+  syncMapControls(); syncStylePanel(); render();
+  flashStage("Applied the publication style.");
+});
 $("#baseMarker").addEventListener("change",e=>{ const ds=selectedDataset(); ds.base.marker=e.target.value; render(); });
 $("#baseColor").addEventListener("input",e=>{ const ds=selectedDataset(); ds.base.color=e.target.value; render(); });
 $("#sizeRange").addEventListener("input",e=>{ const ds=selectedDataset(); ds.base.size=+e.target.value;
