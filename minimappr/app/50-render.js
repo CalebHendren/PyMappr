@@ -86,7 +86,7 @@ function renderNow(){
   const useRect = silhouetteIsRect();
   const pd = currentProjDef();
   const projKey = JSON.stringify([opts.projection, opts.extent, opts.centerLon, opts.centerLat,
-    opts.orientation, W, H, view]);
+    opts.orientation, W, H, view, rect]);
   const sphereD = useRect ? "" : cachedPath(projKey, "sphere", ()=>path({type:"Sphere"}));
 
   // background (mat), and the clip for everything inside the map rectangle
@@ -105,9 +105,10 @@ function renderNow(){
       ? el("rect",{x:rx0,y:ry0,width:rw,height:rh,fill:oceanFill,stroke:"none"})
       : el("path",{d:sphereD, fill:oceanFill, stroke:"none"}));
     if(opts.graticule>0){
-      const step=opts.graticule;
+      // Lines run to the projection's latitude limit, not d3's default 80.
+      const step=opts.graticule, ml=pd.maxLat;
       base.appendChild(el("path",{d:cachedPath(projKey, "grat"+step,
-          ()=>path(d3.geoGraticule().step([step,step])())),
+          ()=>path(d3.geoGraticule().extentMinor([[-180,-ml],[180,ml]]).step([step,step])())),
         fill:"none", stroke:"#9aa3ac", "stroke-width":0.5, "stroke-opacity":0.7}));
     }
     if(opts.showLand){
@@ -220,6 +221,7 @@ function renderNow(){
   overlay.appendChild(useRect || isZoomed()
     ? el("rect",{x:rx0,y:ry0,width:rw,height:rh,fill:"none",stroke:"#5a6068","stroke-width":1})
     : el("path",{d:sphereD, fill:"none", stroke:"#5a6068","stroke-width":1}));
+  if(gridLabelsShown()) drawGridLabels(overlay, proj, rect);
   if(opts.title){
     const t=el("text",{x:W/2, y:26, "text-anchor":"middle","font-family":"sans-serif",
       "font-size":19,"font-weight":700,fill:"#1d2127"});
@@ -236,6 +238,48 @@ function renderNow(){
   $("#emptyHint").style.display = visible.some(d=>d.rows.length) ? "none":"block";
   updateStagebar();
   scheduleSave();
+}
+
+// PyMappr's tick labels: 30°W, 10°S, 0°, 180°. Mirrors format_lon/format_lat.
+function formatLon(v){
+  v=((v+180)%360+360)%360-180;
+  const a=Number(Math.abs(v).toFixed(6));
+  return (v===0 || a===180) ? `${a}°` : `${a}°${v<0?"W":"E"}`;
+}
+function formatLat(v){
+  const a=Number(Math.abs(v).toFixed(6));
+  return v===0 ? "0°" : `${a}°${v<0?"S":"N"}`;
+}
+// Degree labels and ticks along the bottom and left of the frame: a tick on
+// every grid line, and a label on every line when they fit, otherwise on a
+// round multiple of the spacing (every 30° on a 1° grid, say).
+const LABEL_STEPS=[1,2,5,10,15,20,30,45,60,90,180];
+function drawGridLabels(parent, proj, rect){
+  const [[x0,y0],[x1,y1]]=rect, step=opts.graticule, fs=10;
+  const g=el("g",{"font-family":"sans-serif","font-size":fs, fill:"#3d444b"});
+  const ticks=[];
+  const pxPerDeg=Math.abs(proj([1,0])[0]-proj([0,0])[0]);
+  const labelStep=needPx=>LABEL_STEPS.find(s=>s%step===0 && s*pxPerDeg>=needPx) || 180;
+  const lonStep=labelStep(textWidth("180°W", fs, "sans-serif")+8);
+  for(let lon=-180; lon<=180+1e-9; lon+=step){
+    const x=proj([lon,0])[0];
+    if(x<x0-0.5 || x>x1+0.5) continue;
+    ticks.push(`M${x.toFixed(2)},${y1}v4`);
+    if(Math.round(lon)%lonStep!==0) continue;
+    const t=el("text",{x:x.toFixed(2), y:(y1+4+fs).toFixed(2), "text-anchor":"middle"});
+    t.textContent=formatLon(lon); g.appendChild(t);
+  }
+  const latStep=labelStep(fs+4);
+  for(let lat=-90; lat<=90+1e-9; lat+=step){
+    const y=proj([0,lat])[1];
+    if(y<y0-0.5 || y>y1+0.5) continue;
+    ticks.push(`M${x0},${y.toFixed(2)}h-4`);
+    if(Math.round(lat)%latStep!==0) continue;
+    const t=el("text",{x:x0-6, y:(y+fs*0.35).toFixed(2), "text-anchor":"end"});
+    t.textContent=formatLat(lat); g.appendChild(t);
+  }
+  g.appendChild(el("path",{d:ticks.join(""), stroke:"#5a6068", "stroke-width":1, fill:"none"}));
+  parent.appendChild(g);
 }
 
 // Whether two {x,y,w,h} boxes overlap.

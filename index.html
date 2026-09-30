@@ -78,6 +78,13 @@
   svg#map{position:absolute;inset:0;width:100%;height:100%;display:block;cursor:grab;touch-action:none;
     user-select:none;-webkit-user-select:none}
   svg#map.panning{cursor:grabbing}
+  /* zoom buttons over the map's top left corner; they are not exported */
+  #zoomctl{position:absolute;left:18px;top:18px;display:flex;flex-direction:column;
+    border:1px solid var(--line);border-radius:7px;overflow:hidden;box-shadow:var(--shadow);z-index:2}
+  #zoomctl button{width:30px;height:30px;border:none;border-top:1px solid var(--line);
+    background:var(--panel);color:var(--ink);font-size:17px;line-height:1;padding:0}
+  #zoomctl button:first-child{border-top:none}
+  #zoomctl button:hover{background:var(--hover)}
   #stage .hint{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
     color:var(--stage-muted);text-align:center;max-width:340px;pointer-events:none}
   #stage .hint .lead{font-size:15px;font-weight:600;color:var(--stage-ink)}
@@ -332,7 +339,8 @@
                   <input type="number" id="centerLon" step="5" style="width:96px"></div>
                 <div class="row"><label class="lbl grow">Centre latitude</label>
                   <input type="number" id="centerLat" step="5" style="width:96px"></div>
-                <p class="hintline">Centre for the Globe and Lambert projections.</p>
+                <p class="hintline">Centre for the Globe and Lambert projections. Scroll or
+                use + and − to zoom; drag to pan.</p>
               </div>
               <label class="block">Orientation</label>
               <div class="seg" id="orientSeg">
@@ -358,10 +366,15 @@
               <label class="block">Graticule (grid)</label>
               <div class="seg" id="gratSeg">
                 <button data-grat="0" class="on">Off</button>
+                <button data-grat="1">1°</button>
+                <button data-grat="5">5°</button>
                 <button data-grat="10">10°</button>
                 <button data-grat="20">20°</button>
                 <button data-grat="30">30°</button>
               </div>
+              <label class="check"><input type="checkbox" id="gridHideLabels"> Hide grid labels</label>
+              <p class="hintline">Degree labels are drawn on Equirectangular only; other
+                projections curve the grid.</p>
             </div>
           </details>
 
@@ -619,6 +632,11 @@
     <div id="stage">
       <div id="mapwrap">
         <svg id="map" xmlns="http://www.w3.org/2000/svg"></svg>
+        <div id="zoomctl" role="group" aria-label="Zoom">
+          <button id="zoomIn" title="Zoom in (+)" aria-label="Zoom in">+</button>
+          <button id="zoomOut" title="Zoom out (−)" aria-label="Zoom out">−</button>
+          <button id="zoomReset" title="Whole map (0)" aria-label="Show the whole map">⤢</button>
+        </div>
         <div class="hint" id="emptyHint">
           <div class="lead">A blank world, ready for points</div>
           <div style="margin-top:6px">Add a CSV, paste a table, type coordinates, or load a sample dataset
@@ -1170,6 +1188,8 @@ const PROJ_DEFS = {
   "Lambert: Asia":{make:()=>d3.geoConicConformal().parallels([15,65]), maxLat:90, origin:[95,30], lambert:true, region:"Asia"},
   "Lambert: S. America":{make:()=>d3.geoConicConformal().parallels([-42,-5]), maxLat:90, origin:[-60,-32], lambert:true, region:"South America"},
   "Lambert: Africa":{make:()=>d3.geoAzimuthalEqualArea(), maxLat:90, origin:[20,5], lambert:true, azimuthal:true, region:"Africa"},
+  // Centred wherever the user puts it; no region of its own.
+  "Lambert Azimuthal (custom)":{make:()=>d3.geoAzimuthalEqualArea(), maxLat:90, origin:[0,0], lambert:true, azimuthal:true},
 };
 const OCEAN_COLORS = {none:null, grey:"#dcdcdc", blue:"#d4e6f4"};
 // Every legend control, as [element id, kind, default]. One table drives the
@@ -1239,6 +1259,7 @@ const MAP_CONTROLS = [
   ["scaleStyle", "str", "segmented"],      // segmented | plain
   ["scaleLengthMode", "str", "auto"],      // auto | fixed
   ["scaleFixed", "num", 100],              // in scaleUnits, for a fixed length
+  ["gridHideLabels", "bool", false],       // degree labels on Equirectangular
 ];
 // Changing one of these re-derives the rows; the rest only restyle. Kept for
 // readability - MiniMappr rebuilds the whole SVG either way.
@@ -1380,16 +1401,25 @@ function silhouetteIsRect(){
   if(pd.maxLat<90) return true;
   return false;
 }
+// Degree labels along the left and bottom edges, as PyMappr's axis ticks
+// are: only on the plain lon/lat projection, where a meridian is a straight
+// vertical line. They sit outside the frame, which gives up room for them.
+function gridLabelsShown(){
+  return opts.graticule>0 && !opts.gridHideLabels && opts.projection==="Equirectangular";
+}
+const GRID_LABEL_W=36, GRID_LABEL_H=16;
 function drawRect(W,H){
   const pad=12;
+  const left=pad+(gridLabelsShown()?GRID_LABEL_W:0), bottom=pad+(gridLabelsShown()?GRID_LABEL_H:0);
+  const aw=W-left-pad, ah=H-pad-bottom;
   if(opts.orientation==="portrait"){
     const aspect=6.5/9;
-    let h=H-2*pad, w=h*aspect;
-    if(w>W-2*pad){ w=W-2*pad; h=w/aspect; }
-    const x=(W-w)/2, y=(H-h)/2;
+    let h=ah, w=h*aspect;
+    if(w>aw){ w=aw; h=w/aspect; }
+    const x=left+(aw-w)/2, y=pad+(ah-h)/2;
     return [[x,y],[x+w,y+h]];
   }
-  return [[pad,pad],[W-pad,H-pad]];
+  return [[left,pad],[W-pad,H-bottom]];
 }
 function buildProjection(W,H){
   const pd=currentProjDef();
@@ -1505,7 +1535,7 @@ function renderNow(){
   const useRect = silhouetteIsRect();
   const pd = currentProjDef();
   const projKey = JSON.stringify([opts.projection, opts.extent, opts.centerLon, opts.centerLat,
-    opts.orientation, W, H, view]);
+    opts.orientation, W, H, view, rect]);
   const sphereD = useRect ? "" : cachedPath(projKey, "sphere", ()=>path({type:"Sphere"}));
 
   // background (mat), and the clip for everything inside the map rectangle
@@ -1524,9 +1554,10 @@ function renderNow(){
       ? el("rect",{x:rx0,y:ry0,width:rw,height:rh,fill:oceanFill,stroke:"none"})
       : el("path",{d:sphereD, fill:oceanFill, stroke:"none"}));
     if(opts.graticule>0){
-      const step=opts.graticule;
+      // Lines run to the projection's latitude limit, not d3's default 80.
+      const step=opts.graticule, ml=pd.maxLat;
       base.appendChild(el("path",{d:cachedPath(projKey, "grat"+step,
-          ()=>path(d3.geoGraticule().step([step,step])())),
+          ()=>path(d3.geoGraticule().extentMinor([[-180,-ml],[180,ml]]).step([step,step])())),
         fill:"none", stroke:"#9aa3ac", "stroke-width":0.5, "stroke-opacity":0.7}));
     }
     if(opts.showLand){
@@ -1639,6 +1670,7 @@ function renderNow(){
   overlay.appendChild(useRect || isZoomed()
     ? el("rect",{x:rx0,y:ry0,width:rw,height:rh,fill:"none",stroke:"#5a6068","stroke-width":1})
     : el("path",{d:sphereD, fill:"none", stroke:"#5a6068","stroke-width":1}));
+  if(gridLabelsShown()) drawGridLabels(overlay, proj, rect);
   if(opts.title){
     const t=el("text",{x:W/2, y:26, "text-anchor":"middle","font-family":"sans-serif",
       "font-size":19,"font-weight":700,fill:"#1d2127"});
@@ -1655,6 +1687,48 @@ function renderNow(){
   $("#emptyHint").style.display = visible.some(d=>d.rows.length) ? "none":"block";
   updateStagebar();
   scheduleSave();
+}
+
+// PyMappr's tick labels: 30°W, 10°S, 0°, 180°. Mirrors format_lon/format_lat.
+function formatLon(v){
+  v=((v+180)%360+360)%360-180;
+  const a=Number(Math.abs(v).toFixed(6));
+  return (v===0 || a===180) ? `${a}°` : `${a}°${v<0?"W":"E"}`;
+}
+function formatLat(v){
+  const a=Number(Math.abs(v).toFixed(6));
+  return v===0 ? "0°" : `${a}°${v<0?"S":"N"}`;
+}
+// Degree labels and ticks along the bottom and left of the frame: a tick on
+// every grid line, and a label on every line when they fit, otherwise on a
+// round multiple of the spacing (every 30° on a 1° grid, say).
+const LABEL_STEPS=[1,2,5,10,15,20,30,45,60,90,180];
+function drawGridLabels(parent, proj, rect){
+  const [[x0,y0],[x1,y1]]=rect, step=opts.graticule, fs=10;
+  const g=el("g",{"font-family":"sans-serif","font-size":fs, fill:"#3d444b"});
+  const ticks=[];
+  const pxPerDeg=Math.abs(proj([1,0])[0]-proj([0,0])[0]);
+  const labelStep=needPx=>LABEL_STEPS.find(s=>s%step===0 && s*pxPerDeg>=needPx) || 180;
+  const lonStep=labelStep(textWidth("180°W", fs, "sans-serif")+8);
+  for(let lon=-180; lon<=180+1e-9; lon+=step){
+    const x=proj([lon,0])[0];
+    if(x<x0-0.5 || x>x1+0.5) continue;
+    ticks.push(`M${x.toFixed(2)},${y1}v4`);
+    if(Math.round(lon)%lonStep!==0) continue;
+    const t=el("text",{x:x.toFixed(2), y:(y1+4+fs).toFixed(2), "text-anchor":"middle"});
+    t.textContent=formatLon(lon); g.appendChild(t);
+  }
+  const latStep=labelStep(fs+4);
+  for(let lat=-90; lat<=90+1e-9; lat+=step){
+    const y=proj([0,lat])[1];
+    if(y<y0-0.5 || y>y1+0.5) continue;
+    ticks.push(`M${x0},${y.toFixed(2)}h-4`);
+    if(Math.round(lat)%latStep!==0) continue;
+    const t=el("text",{x:x0-6, y:(y+fs*0.35).toFixed(2), "text-anchor":"end"});
+    t.textContent=formatLat(lat); g.appendChild(t);
+  }
+  g.appendChild(el("path",{d:ticks.join(""), stroke:"#5a6068", "stroke-width":1, fill:"none"}));
+  parent.appendChild(g);
 }
 
 // Whether two {x,y,w,h} boxes overlap.
@@ -2827,7 +2901,7 @@ function addFromMapping(parsed, mapping, name, baseMarker, groupBy){
   ds.groupBy = groupBy || attrCols[0] || null;
   ds._import={columns:parsed.columns, rows:parsed.rows, mapping:{...mapping}};
   datasets.push(ds); selId=ds.id;
-  renderDatasetList(); syncStylePanel(); render(); scheduleSave();
+  renderDatasetList(); syncStylePanel(); zoomToData(); scheduleSave();
   return true;
 }
 // Re-apply an edited table/mapping to an existing dataset, keeping its styling
@@ -2879,6 +2953,7 @@ $("#mOk").addEventListener("click",()=>{
     ds.groupBy=null; ds.source="manual";
     ds._manual={legend, text:$("#mText").value, order, base};
     datasets.push(ds); selId=ds.id;
+    zoomToData();
   }
   closeModal("manualModal"); renderDatasetList(); syncStylePanel(); render();
   reportSkipped(points.length, skipped);
@@ -3061,17 +3136,78 @@ function downloadBlob(blob,name){ const a=document.createElement("a"); a.href=UR
 
 /* zoom + pan over the map */
 const mapWrap=$("#mapwrap");
+// Zoom by `factor` keeping the screen point (sx, sy) where it is.
+function zoomAbout(factor, sx, sy){
+  const oldK=view.k;
+  const newK=clamp(oldK*factor, 1, 12);
+  if(newK===oldK) return;
+  const lx=(sx-view.x)/oldK, ly=(sy-view.y)/oldK; // that point, in scene coords
+  view.k=newK; view.x=sx-newK*lx; view.y=sy-newK*ly;
+  clampView(); render();
+}
+// The buttons and keys zoom about the middle of the frame, x1.5 a step as
+// PyMappr's buttons do.
+function zoomStep(factor){
+  const [[x0,y0],[x1,y1]]=frameRect;
+  zoomAbout(factor, (x0+x1)/2, (y0+y1)/2);
+}
+function resetZoom(){ view={k:1,x:0,y:0}; render(); }
 mapWrap.addEventListener("wheel",e=>{
   e.preventDefault();
   const r=svg.getBoundingClientRect();
-  const sx=e.clientX-r.left, sy=e.clientY-r.top;
-  const oldK=view.k;
-  const newK=clamp(oldK*Math.exp(-e.deltaY*0.0015), 1, 12);
-  if(newK===oldK) return;
-  const lx=(sx-view.x)/oldK, ly=(sy-view.y)/oldK; // point under cursor, in scene coords
-  view.k=newK; view.x=sx-newK*lx; view.y=sy-newK*ly;
-  clampView(); render();
+  zoomAbout(Math.exp(-e.deltaY*0.0015), e.clientX-r.left, e.clientY-r.top);
 },{passive:false});
+$("#zoomIn").addEventListener("click",()=>zoomStep(1.5));
+$("#zoomOut").addEventListener("click",()=>zoomStep(1/1.5));
+$("#zoomReset").addEventListener("click",resetZoom);
+// + / - / 0 zoom from the keyboard, except while typing or in a dialog;
+// with Ctrl or Cmd they stay the browser's own page zoom.
+document.addEventListener("keydown",e=>{
+  if(e.ctrlKey || e.metaKey || e.altKey || e.defaultPrevented) return;
+  if(e.target.closest && e.target.closest("input,select,textarea,[contenteditable]")) return;
+  if($$(".modal-bg.on").length) return;
+  if(e.key==="+" || e.key==="=") zoomStep(1.5);
+  else if(e.key==="-" || e.key==="_") zoomStep(1/1.5);
+  else if(e.key==="0") resetZoom();
+  else return;
+  e.preventDefault();
+});
+// Frame the data after an import, as PyMappr does: the box around every
+// visible point plus 15% (at least 2 degrees), clamped to the world. The
+// zoom is within the region's own frame, so data wider than the region
+// leaves the region as it is; the globe is left alone.
+function zoomToData(){
+  const rows=datasets.filter(d=>d.visible).flatMap(d=>d.rows);
+  if(!rows.length || currentProjDef().globe){ render(); return; }
+  let lo0=Infinity, lo1=-Infinity, la0=Infinity, la1=-Infinity;
+  for(const r of rows){ lo0=Math.min(lo0,r.lon); lo1=Math.max(lo1,r.lon);
+    la0=Math.min(la0,r.lat); la1=Math.max(la1,r.lat); }
+  const px=Math.max((lo1-lo0)*0.15, 2), py=Math.max((la1-la0)*0.15, 2);
+  lo0=Math.max(lo0-px,-180); lo1=Math.min(lo1+px,180);
+  la0=Math.max(la0-py,-90); la1=Math.min(la1+py,90);
+  view={k:1,x:0,y:0};
+  const W=mapWrap.clientWidth, H=mapWrap.clientHeight;
+  const rect=drawRect(W,H), proj=buildProjection(W,H);
+  let bx0=Infinity, bx1=-Infinity, by0=Infinity, by1=-Infinity;
+  for(const pt of boxSample(lo0,lo1,la0,la1).coordinates){
+    const xy=proj(pt);
+    if(!xy || !Number.isFinite(xy[0]) || !Number.isFinite(xy[1])) continue;
+    bx0=Math.min(bx0,xy[0]); bx1=Math.max(bx1,xy[0]); by0=Math.min(by0,xy[1]); by1=Math.max(by1,xy[1]);
+  }
+  const [[rx0,ry0],[rx1,ry1]]=rect;
+  if(!(bx1>bx0) || !(by1>by0)){ render(); return; }
+  const k=clamp(Math.min((rx1-rx0)/(bx1-bx0), (ry1-ry0)/(by1-by0)), 1, 12);
+  // A whole world is shorter than a landscape frame; zoomed in too little
+  // to fill the frame, it would show blank bands where its round outline
+  // used to be. Nearly global data keeps the whole map instead.
+  const sb=d3.geoPath(proj).bounds({type:"Sphere"});
+  const fill=Math.max((rx1-rx0)/(sb[1][0]-sb[0][0]), (ry1-ry0)/(sb[1][1]-sb[0][1]));
+  if(k>1.05 && k>=fill-1e-6){
+    view={k, x:(rx0+rx1)/2-k*(bx0+bx1)/2, y:(ry0+ry1)/2-k*(by0+by1)/2};
+    frameRect=rect; clampView();
+  }
+  render();
+}
 // Pointer events, so a finger or a pen drags, spins and places like a mouse.
 svg.addEventListener("pointerdown",e=>{
   if(e.button!==0 || !e.isPrimary) return;

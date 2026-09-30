@@ -160,6 +160,8 @@ const PROJ_DEFS = {
   "Lambert: Asia":{make:()=>d3.geoConicConformal().parallels([15,65]), maxLat:90, origin:[95,30], lambert:true, region:"Asia"},
   "Lambert: S. America":{make:()=>d3.geoConicConformal().parallels([-42,-5]), maxLat:90, origin:[-60,-32], lambert:true, region:"South America"},
   "Lambert: Africa":{make:()=>d3.geoAzimuthalEqualArea(), maxLat:90, origin:[20,5], lambert:true, azimuthal:true, region:"Africa"},
+  // Centred wherever the user puts it; no region of its own.
+  "Lambert Azimuthal (custom)":{make:()=>d3.geoAzimuthalEqualArea(), maxLat:90, origin:[0,0], lambert:true, azimuthal:true},
 };
 const OCEAN_COLORS = {none:null, grey:"#dcdcdc", blue:"#d4e6f4"};
 // Every legend control, as [element id, kind, default]. One table drives the
@@ -229,6 +231,7 @@ const MAP_CONTROLS = [
   ["scaleStyle", "str", "segmented"],      // segmented | plain
   ["scaleLengthMode", "str", "auto"],      // auto | fixed
   ["scaleFixed", "num", 100],              // in scaleUnits, for a fixed length
+  ["gridHideLabels", "bool", false],       // degree labels on Equirectangular
 ];
 // Changing one of these re-derives the rows; the rest only restyle. Kept for
 // readability - MiniMappr rebuilds the whole SVG either way.

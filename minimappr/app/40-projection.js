@@ -31,16 +31,25 @@ function silhouetteIsRect(){
   if(pd.maxLat<90) return true;
   return false;
 }
+// Degree labels along the left and bottom edges, as PyMappr's axis ticks
+// are: only on the plain lon/lat projection, where a meridian is a straight
+// vertical line. They sit outside the frame, which gives up room for them.
+function gridLabelsShown(){
+  return opts.graticule>0 && !opts.gridHideLabels && opts.projection==="Equirectangular";
+}
+const GRID_LABEL_W=36, GRID_LABEL_H=16;
 function drawRect(W,H){
   const pad=12;
+  const left=pad+(gridLabelsShown()?GRID_LABEL_W:0), bottom=pad+(gridLabelsShown()?GRID_LABEL_H:0);
+  const aw=W-left-pad, ah=H-pad-bottom;
   if(opts.orientation==="portrait"){
     const aspect=6.5/9;
-    let h=H-2*pad, w=h*aspect;
-    if(w>W-2*pad){ w=W-2*pad; h=w/aspect; }
-    const x=(W-w)/2, y=(H-h)/2;
+    let h=ah, w=h*aspect;
+    if(w>aw){ w=aw; h=w/aspect; }
+    const x=left+(aw-w)/2, y=pad+(ah-h)/2;
     return [[x,y],[x+w,y+h]];
   }
-  return [[pad,pad],[W-pad,H-pad]];
+  return [[left,pad],[W-pad,H-bottom]];
 }
 function buildProjection(W,H){
   const pd=currentProjDef();

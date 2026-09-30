@@ -177,7 +177,7 @@ function addFromMapping(parsed, mapping, name, baseMarker, groupBy){
   ds.groupBy = groupBy || attrCols[0] || null;
   ds._import={columns:parsed.columns, rows:parsed.rows, mapping:{...mapping}};
   datasets.push(ds); selId=ds.id;
-  renderDatasetList(); syncStylePanel(); render(); scheduleSave();
+  renderDatasetList(); syncStylePanel(); zoomToData(); scheduleSave();
   return true;
 }
 // Re-apply an edited table/mapping to an existing dataset, keeping its styling
@@ -229,6 +229,7 @@ $("#mOk").addEventListener("click",()=>{
     ds.groupBy=null; ds.source="manual";
     ds._manual={legend, text:$("#mText").value, order, base};
     datasets.push(ds); selId=ds.id;
+    zoomToData();
   }
   closeModal("manualModal"); renderDatasetList(); syncStylePanel(); render();
   reportSkipped(points.length, skipped);
