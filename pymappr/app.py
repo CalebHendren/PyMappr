@@ -16,8 +16,7 @@ matplotlib.use("TkAgg")
 
 import pandas as pd  # noqa: E402
 
-from matplotlib.backends.backend_tkagg import (FigureCanvasTkAgg,  # noqa: E402
-                                               NavigationToolbar2Tk)
+from matplotlib.backends.backend_tkagg import NavigationToolbar2Tk  # noqa: E402
 from matplotlib.figure import Figure  # noqa: E402
 
 from pymappr import __version__, projects, updates  # noqa: E402
@@ -47,6 +46,7 @@ from pymappr.ui.control_panel import ControlPanel, name_for  # noqa: E402
 from pymappr.ui.filter_bar import FilterBar  # noqa: E402
 from pymappr.ui.legend_editor import LegendEditorDialog  # noqa: E402
 from pymappr.ui.manual_entry import ManualEntryDialog  # noqa: E402
+from pymappr.ui.map_canvas import DebouncedFigureCanvasTkAgg  # noqa: E402
 from pymappr.ui.projects_dialog import ProjectsDialog  # noqa: E402
 
 MAX_SKIPPED_SHOWN = 12
@@ -97,7 +97,7 @@ class PyMapprApp:
         map_frame.pack(side="right", fill="both", expand=True)
 
         figure = Figure(figsize=(9, 6.5), dpi=100, facecolor="white")
-        self.canvas = FigureCanvasTkAgg(figure, master=map_frame)
+        self.canvas = DebouncedFigureCanvasTkAgg(figure, master=map_frame)
         self.renderer = MapRenderer(figure, store)
 
         toolbar_row = ttk.Frame(map_frame)
