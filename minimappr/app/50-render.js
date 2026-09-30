@@ -229,7 +229,7 @@ function renderNow(){
     : el("path",{d:sphereD, fill:"none", stroke:"#5a6068","stroke-width":1}));
   if(gridLabelsShown()) drawGridLabels(overlay, proj, rect);
   if(opts.title){
-    const t=el("text",{x:W/2, y:26, "text-anchor":"middle","font-family":"sans-serif",
+    const t=el("text",{x:(rx0+rx1)/2, y:26, "text-anchor":"middle","font-family":"sans-serif",
       "font-size":19,"font-weight":700,fill:"#1d2127"});
     t.textContent=opts.title; overlay.appendChild(t);
   }
@@ -536,10 +536,14 @@ function drawLegend(parent, W, H, entries, attrLegends){
   // position
   // Second character picks the horizontal edge, first the vertical one;
   // "c" centres on that axis.
+  // Spots are inside the map frame, as PyMappr's legend is inside its axes;
+  // placed against the window, a portrait map's legend sat out on the side
+  // bar, which the export crop then had to keep.
+  const [[fx0,fy0],[fx1,fy1]]=frameRect;
   const at=p=>{
-    const m=14, hx=p[1], vy=p[0];
-    return [hx==="r" ? W-boxW-m : hx==="l" ? m : (W-boxW)/2,
-            vy==="t" ? m+(opts.title?30:0) : vy==="b" ? H-boxH-m : (H-boxH)/2];
+    const m=2, hx=p[1], vy=p[0];
+    return [hx==="r" ? fx1-boxW-m : hx==="l" ? fx0+m : (fx0+fx1-boxW)/2,
+            vy==="t" ? fy0+m+(opts.title?30:0) : vy==="b" ? fy1-boxH-m : (fy0+fy1-boxH)/2];
   };
   let bx,by;
   if(legendDrag){ bx=legendDrag.x*W; by=legendDrag.y*H; }

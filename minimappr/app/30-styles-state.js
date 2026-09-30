@@ -277,8 +277,8 @@ const LEGEND_CONTROLS = [
   ["legTitleItalic", "bool", false],
   ["legTitleUnderline", "bool", false],
 ];
-// Map settings that are a plain control each, in the same form: the compass
-// and scale bar options. The legend table's listener and restore serve these
+// Map settings that are a plain control each, in the same form: the compass,
+// scale bar, grid label and export options. The legend table's listener and restore serve these
 // too.
 const MAP_CONTROLS = [
   ["compassPos", "str", "upper right"],
@@ -290,6 +290,10 @@ const MAP_CONTROLS = [
   ["scaleLengthMode", "str", "auto"],      // auto | fixed
   ["scaleFixed", "num", 100],              // in scaleUnits, for a fixed length
   ["gridHideLabels", "bool", false],       // degree labels on Equirectangular
+  ["exportFormat", "str", "png"],          // png | jpeg | webp | tiff | pdf | svg
+  ["exportWidth", "num", 9],               // print width; PyMappr's figure is 9 in
+  ["exportUnit", "str", "in"],             // in | cm
+  ["exportDpi", "num", 200],               // PyMappr's default export DPI
 ];
 // Changing one of these re-derives the rows; the rest only restyle. Kept for
 // readability - MiniMappr rebuilds the whole SVG either way.

@@ -316,8 +316,9 @@ $("#btnPublication").addEventListener("click",()=>{
   Object.assign(opts, PUBLICATION_LEGEND);
   // three shades alone cannot tell more than three groups apart
   for(const ds of datasets){ ds.opacity=1; ds.varySymbols=true; }
+  opts.exportDpi=PUBLICATION_DPI;
   syncMapControls(); syncStylePanel(); render();
-  flashStage("Applied the publication style.");
+  flashStage(`Applied the publication style. Export below at ${PUBLICATION_DPI} DPI.`);
 });
 $("#baseMarker").addEventListener("change",e=>{ const ds=selectedDataset(); ds.base.marker=e.target.value; render(); });
 $("#baseColor").addEventListener("input",e=>{ const ds=selectedDataset(); ds.base.color=e.target.value; render(); });
@@ -351,8 +352,11 @@ $("#filterVals").addEventListener("wheel",e=>{
 // map controls
 fillSelect($("#extent"), Object.keys(CONTINENT_EXTENTS), "World");
 fillSelect($("#projection"), Object.keys(PROJ_DEFS), "Equirectangular");
-$("#extent").addEventListener("change",e=>{ opts.extent=e.target.value; render(); });
-$("#projection").addEventListener("change",e=>{ opts.projection=e.target.value; syncOrigin(); render(); });
+// A zoom is kept in screen terms, so it means nothing once the region, the
+// projection or the orientation changes; each of those shows the whole map.
+$("#extent").addEventListener("change",e=>{ opts.extent=e.target.value; view={k:1,x:0,y:0}; render(); });
+$("#projection").addEventListener("change",e=>{ opts.projection=e.target.value; syncOrigin();
+  view={k:1,x:0,y:0}; render(); });
 function syncOrigin(reset=true){
   const pd=currentProjDef();
   const show = pd.globe||pd.lambert;
@@ -364,7 +368,7 @@ function syncOrigin(reset=true){
 $("#centerLon").addEventListener("input",e=>{ opts.centerLon=parseFloat(e.target.value)||0; render(); });
 $("#centerLat").addEventListener("input",e=>{ opts.centerLat=parseFloat(e.target.value)||0; render(); });
 $("#orientSeg").addEventListener("click",e=>{ const b=e.target.closest("button"); if(!b) return;
-  opts.orientation=b.dataset.orient; setSeg("#orientSeg",b); render(); });
+  opts.orientation=b.dataset.orient; setSeg("#orientSeg",b); view={k:1,x:0,y:0}; render(); });
 $("#oceanSeg").addEventListener("click",e=>{ const b=e.target.closest("button"); if(!b) return;
   opts.ocean=b.dataset.ocean; setSeg("#oceanSeg",b); render(); });
 $("#gratSeg").addEventListener("click",e=>{ const b=e.target.closest("button"); if(!b) return;
@@ -400,6 +404,11 @@ for(const [id,kind,fallback] of [...LEGEND_CONTROLS, ...MAP_CONTROLS]){
     // Choosing a preset position discards any manual (dragged) placement.
     if(id==="legPos") legendDrag=null;
     if(id==="scalePos") opts.scaleAnchor=null;
+    // Switching units keeps the print size, not the number.
+    if(id==="exportUnit"){
+      opts.exportWidth=Number((opts.exportWidth*(opts.exportUnit==="cm" ? 2.54 : 1/2.54)).toFixed(2));
+      $("#exportWidth").value=opts.exportWidth;
+    }
     render();
   });
 }
@@ -408,32 +417,8 @@ $("#scaleReset").addEventListener("click",()=>{ opts.scaleAnchor=null; render();
 function syncControlStates(){
   $("#scaleFixed").disabled = opts.scaleLengthMode!=="fixed";
   $("#scaleReset").disabled = !opts.scaleAnchor;
+  $("#exportDpi").disabled = opts.exportFormat==="svg";
+  updateExportReadout();
 }
 
-// export
-$("#btnSvg").addEventListener("click",()=>{
-  flushRender();
-  const s=new XMLSerializer().serializeToString(svg);
-  const blob=new Blob(['<?xml version="1.0" encoding="UTF-8"?>\n'+s],{type:"image/svg+xml"});
-  downloadBlob(blob, "minimappr.svg");
-});
-$("#btnPng").addEventListener("click",()=>{
-  flushRender();
-  const outW=Math.max(600,Math.min(8000,parseInt($("#pngWidth").value)||2000));
-  const W=sceneSize.w, H=sceneSize.h, outH=Math.round(outW*H/W);
-  const s=new XMLSerializer().serializeToString(svg);
-  const img=new Image();
-  const url="data:image/svg+xml;charset=utf-8,"+encodeURIComponent(s);
-  img.onload=()=>{
-    const cv=document.createElement("canvas"); cv.width=outW; cv.height=outH;
-    const ctx=cv.getContext("2d"); ctx.fillStyle=opts.matColor; ctx.fillRect(0,0,outW,outH);
-    ctx.drawImage(img,0,0,outW,outH);
-    cv.toBlob(b=>downloadBlob(b,"minimappr.png"),"image/png");
-  };
-  img.onerror=()=>alert("PNG export failed in this browser. Try the SVG export instead.");
-  img.src=url;
-});
-function downloadBlob(blob,name){ const a=document.createElement("a"); a.href=URL.createObjectURL(blob);
-  a.download=name; document.body.appendChild(a); a.click(); a.remove();
-  setTimeout(()=>URL.revokeObjectURL(a.href),1000); }
 

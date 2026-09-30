@@ -417,20 +417,37 @@
             <div class="body">
               <button class="btn full" id="btnPublication">Apply publication style</button>
               <p class="hintline">Black &amp; white points with black outlines and varied shapes,
-                and a plain boxed legend with italic names. Entries restyled under
+                a plain boxed legend with italic names, and 600 DPI export. Entries restyled under
                 <b>Per-group overrides</b> keep their styling.</p>
             </div>
           </details>
           <details class="sec" open>
             <summary>Export image</summary>
             <div class="body">
-              <div class="row"><label class="lbl grow">PNG width (px)</label>
-                <input type="number" id="pngWidth" min="600" max="8000" step="100" value="2000" style="width:96px"></div>
-              <div class="btnrow" style="margin-top:6px">
-                <button class="btn pri" id="btnPng">Download PNG</button>
-                <button class="btn" id="btnSvg">Download SVG</button>
-              </div>
-              <p class="hintline">The image is cropped to the map frame and its decorations.</p>
+              <div class="row"><label class="lbl grow">Format</label>
+                <select id="exportFormat" class="grow">
+                  <option value="png">PNG</option>
+                  <option value="jpeg">JPEG</option>
+                  <option value="webp">WebP</option>
+                  <option value="tiff">TIFF</option>
+                  <option value="pdf">PDF (the map as an image)</option>
+                  <option value="svg">SVG (vector)</option>
+                </select></div>
+              <div class="row"><label class="lbl grow">Width</label>
+                <input type="number" id="exportWidth" min="0.5" max="200" step="0.5" value="9" style="width:80px">
+                <select id="exportUnit" style="width:auto" aria-label="Width unit">
+                  <option value="in">in</option>
+                  <option value="cm">cm</option>
+                </select></div>
+              <div class="row"><label class="lbl grow">DPI</label>
+                <input type="number" id="exportDpi" list="dpiChoices" min="50" max="2400" step="1" value="200" style="width:80px">
+                <datalist id="dpiChoices"><option value="100"></option><option value="150"></option>
+                  <option value="200"></option><option value="300"></option><option value="600"></option></datalist></div>
+              <p class="muted" id="exportSize"></p>
+              <button class="btn pri full" id="btnExport">Download</button>
+              <p class="err" id="exportErr"></p>
+              <p class="hintline">The image is cropped to the map frame and its decorations. PNG, JPEG,
+                TIFF and PDF carry the DPI, so they open at their print size.</p>
             </div>
           </details>
           <details class="sec">
