@@ -230,6 +230,7 @@ function fillSelect(sel, values, current){
 }
 function syncStylePanel(){
   const ds=selectedDataset();
+  syncFilterBar(ds);
   if(!ds){ $("#styleControls").style.display="none"; $("#styleFor").textContent="Select a dataset to style it."; return; }
   $("#styleControls").style.display="block";
   $("#styleFor").innerHTML="Styling <b>"+escapeHtml(ds.name)+"</b>";
@@ -244,6 +245,36 @@ function syncStylePanel(){
   $("#opacityRange").value=ds.opacity; $("#opacityVal").textContent=Number(ds.opacity).toFixed(2);
   renderGroupOverrides(ds);
 }
+// The filter bar follows the selected dataset. Moving to another dataset, or
+// losing the filtered column to an edit, starts it over with nothing hidden.
+function syncFilterBar(ds){
+  const bar=$("#filterbar");
+  if(!ds || filter.dsId!==ds.id || (filter.column && !ds.columns.includes(filter.column)))
+    filter={dsId:ds?ds.id:null, column:null, hidden:new Set()};
+  const show=!!ds && ds.columns.length>0;
+  if(bar.hidden===show){ bar.hidden=!show; render(); }   // the map's height changes
+  if(!show) return;
+  fillSelect($("#filterCol"), [{value:"",label:"None"}].concat(ds.columns), filter.column||"");
+  renderFilterValues(ds);
+}
+// One checkbox per value of the filtered column, in order of appearance.
+function renderFilterValues(ds){
+  const box=$("#filterVals"); box.innerHTML="";
+  const on=!!(ds && filter.column);
+  $("#filterAll").disabled=!on; $("#filterNone").disabled=!on;
+  if(!on) return;
+  for(const v of uniqueInOrder(ds.rows.map(r=>r._attr[filter.column]??""))){
+    const lab=document.createElement("label");
+    const cb=document.createElement("input"); cb.type="checkbox"; cb.checked=!filter.hidden.has(v);
+    cb.addEventListener("change",()=>{
+      if(cb.checked) filter.hidden.delete(v); else filter.hidden.add(v);
+      render();
+    });
+    lab.appendChild(cb); lab.appendChild(document.createTextNode(v||"(blank)"));
+    box.appendChild(lab);
+  }
+}
+
 // Every legend row of a dataset, as {key, value, style, depth} - groups in
 // group-by mode, or colour values, symbol values and nested pairs in the
 // two-attribute modes. Mirrors PyMapprApp._legend_rows.

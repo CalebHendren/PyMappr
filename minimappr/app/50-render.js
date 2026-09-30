@@ -66,8 +66,8 @@ const rowsIds=new WeakMap(); let nextRowsId=1;
 function rowsId(rows){ let id=rowsIds.get(rows); if(!id) rowsIds.set(rows, id=nextRowsId++); return id; }
 
 function renderNow(){
-  const stage=$("#stage");
-  const W=stage.clientWidth, H=stage.clientHeight;
+  const wrap=$("#mapwrap");
+  const W=wrap.clientWidth, H=wrap.clientHeight;
   sceneSize={w:W,h:H};
   svg.setAttribute("viewBox",`0 0 ${W} ${H}`);
   svg.setAttribute("width",W); svg.setAttribute("height",H);
@@ -127,7 +127,7 @@ function renderNow(){
   const visible=datasets.filter(d=>d.visible);
   const resolved=visible.map(ds=>({ds, res:resolveGroups(ds)}));
   const edge=opts.pointEdgeWidth>0 ? opts.pointEdgeColor : null;
-  const pKey=JSON.stringify([projKey, opts.labels, edge, opts.pointEdgeWidth, resolved.map(({ds,res})=>[
+  const pKey=JSON.stringify([projKey, opts.labels, edge, opts.pointEdgeWidth, filterSig(), resolved.map(({ds,res})=>[
     rowsId(ds.rows), ds.rows.length, ds.groupBy, ds.colorBy, ds.symbolBy, ds.opacity ?? 1,
     res.groups.map(g=>[g.rows.length, g.style.color, g.style.marker, g.style.size])])]);
   if(pKey!==pointsKey){
@@ -179,10 +179,13 @@ function renderNow(){
     }
     // Counts belong on the row text here too - reading opts.legCounts only
     // in the attribute branch is what used to make "Show point counts" do
-    // nothing at all in plain Group-by mode.
+    // nothing at all in plain Group-by mode. They count what is drawn, so
+    // they follow the filter.
     const total=res.groups.reduce((a,g)=>a+g.rows.length,0);
     const sizes={}, place={}, first={};
     let rows=res.groups.map((grp,i)=>{
+      // A group the filter emptied has nothing on the map to describe.
+      if(!grp.rows.length) return null;
       const o=ds.overrides[rowKey("group",grp.label)];
       // Hidden rows keep their points on the map but leave the legend.
       if(isHidden(o)) return null;
@@ -301,8 +304,14 @@ function legendItems(entries, attrLegends){
   for(const {ds,res} of attrLegends){
     const prefix=(manyDatasets && opts.legDatasetPrefix) ? ds.name+": " : "";
     // Ordering by count needs the numbers even when they are not shown.
+    // Like the rows, they follow the filter.
     const counts=(opts.legCounts||ordersByCount())
-      ? legendCounts(ds.rows,res.colorKey,res.symbolKey) : null;
+      ? legendCounts(res.shown,res.colorKey,res.symbolKey) : null;
+    // The values still on the map under a filter; null means no filtering,
+    // which the nested key treats differently from "all happen to show".
+    const shownOf=key=>(res.filtering && key) ? new Set(res.shown.map(r=>r._attr[key]??"")) : null;
+    const shownColors=shownOf(res.colorKey), shownSymbols=shownOf(res.symbolKey);
+    const isShown=(set,v)=>!set || set.has(v);
     const total=counts?counts["_total"]:0;
     const countOf=key=>(counts&&counts[key])||0;
     const lab=(v,key,o)=>legendLabel(overrideLabel(o)||v, counts?counts[key]:null, total);
@@ -325,20 +334,24 @@ function legendItems(entries, attrLegends){
       // to work out which colour each symbol goes with by hunting the map.
       const kidsOf=childrenByOwner(res);
       const rows=[];
-      // Every colour group is listed. MiniMappr has no filter, so the only
-      // way a group ends up childless is forced nesting, where each symbol
-      // is claimed by the first group it appears under - and dropping those
-      // would take colours off the legend that are still drawn on the map.
       const parents=ordered(Object.keys(res.colorMap),
         cv=>rowKey("color",cv), v=>countKey("c",v));
       for(const cv of parents){
         const color=res.colorMap[cv];
         const parentOverride=ov(rowKey("color",cv));
+        if(!isShown(shownColors,cv)) continue;
+        const shownKids=(kidsOf.get(cv)||[]).filter(sv=>isShown(shownSymbols,sv));
+        // A childless group means the filter hid everything inside it, so it
+        // goes too - but only while a filter is running. Forcing nesting onto
+        // crossed columns also leaves groups childless, because each symbol
+        // is claimed by the first group it appears under; dropping those
+        // would take colours off the legend that are still drawn on the map.
+        if(!shownKids.length && shownSymbols && !opts.legEmptyGroups) continue;
         // Hiding a group hides the block it heads: its children are drawn in
         // its colour, so leaving them behind would orphan them.
         if(isHidden(parentOverride)) continue;
         const kids=ordered(
-          kidsOf.get(cv)||[],
+          shownKids,
           sv=>rowKey("pair",cv,sv), k=>countKey("p",cv,k))
           .filter(sv=>!isHidden(ov(rowKey("pair",cv,sv))));
         rows.push({label:lab(cv,countKey("c",cv),parentOverride), depth:0,
@@ -355,7 +368,8 @@ function legendItems(entries, attrLegends){
     // Genuinely crossed: a shape really does appear in every colour here, so
     // the neutral symbol swatches are honest and the two keys stay separate.
     if(Object.keys(res.colorMap).length){
-      const values=ordered(Object.keys(res.colorMap), v=>rowKey("color",v), v=>countKey("c",v))
+      const values=ordered(Object.keys(res.colorMap).filter(v=>isShown(shownColors,v)),
+        v=>rowKey("color",v), v=>countKey("c",v))
         .filter(v=>!isHidden(ov(rowKey("color",v))));
       const rows=values.map(v=>({label:lab(v,countKey("c",v),ov(rowKey("color",v))), colorOnly:true,
         style:applyOverride({color:res.colorMap[v],marker:"Circle",size:ds.base.size},
@@ -363,7 +377,8 @@ function legendItems(entries, attrLegends){
       if(rows.length) sections.push({title:sectionTitle(prefix,res.colorKey||"Colour"), rows});
     }
     if(Object.keys(res.symbolMap).length){
-      const values=ordered(Object.keys(res.symbolMap), v=>rowKey("symbol",v), v=>countKey("s",v))
+      const values=ordered(Object.keys(res.symbolMap).filter(v=>isShown(shownSymbols,v)),
+        v=>rowKey("symbol",v), v=>countKey("s",v))
         .filter(v=>!isHidden(ov(rowKey("symbol",v))));
       const rows=values.map(v=>({label:lab(v,countKey("s",v),ov(rowKey("symbol",v))), symbolOnly:true,
         style:applyOverride({color:opts.legSymbolColor,marker:res.symbolMap[v],size:ds.base.size},
@@ -603,6 +618,15 @@ function drawLegend(parent, W, H, entries, attrLegends){
 }
 
 function updateStagebar(){
+  // While the filter hides anything, say how much, as PyMappr's status does.
+  const fds=datasets.find(d=>d.id===filter.dsId);
+  if(fds && filterSig()){
+    const shown=shownRows(fds).length;
+    if(shown!==fds.rows.length){
+      $("#stagebar").textContent=`Filter: showing ${shown} of ${fds.rows.length} points of ${fds.name}.`;
+      return;
+    }
+  }
   const n=datasets.reduce((a,d)=>a+(d.visible?d.rows.length:0),0);
   const shown=datasets.filter(d=>d.visible).length;
   $("#stagebar").textContent = n ? `${n} point${n!==1?"s":""} · ${shown} dataset${shown!==1?"s":""} · ${opts.projection}` : opts.projection;

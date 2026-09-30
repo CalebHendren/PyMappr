@@ -62,11 +62,20 @@
   .tabpage.active{display:block}
 
   #stage{flex:1 1 auto;min-width:0;position:relative;background:var(--stage);display:flex;
-    align-items:center;justify-content:center;overflow:hidden}
-  #mapwrap{position:absolute;inset:0}
+    flex-direction:column;overflow:hidden}
+  #mapwrap{position:relative;flex:1 1 auto;min-height:0}
+  /* the filter bar sits under the map, as in PyMappr; its values scroll sideways */
+  #filterbar{flex:0 0 auto;display:flex;align-items:center;gap:8px;padding:6px 10px;
+    background:var(--panel);border-top:1px solid var(--line);min-width:0}
+  #filterbar[hidden]{display:none}
+  #filterbar .lbl{color:var(--muted);font-size:12.5px;white-space:nowrap}
+  #filterbar select{width:auto;max-width:170px;padding:5px 7px}
+  #filterbar .btn{flex:0 0 auto}
+  #filterVals{flex:1 1 auto;min-width:0;display:flex;gap:12px;overflow-x:auto;white-space:nowrap;padding:2px 0}
+  #filterVals label{display:inline-flex;align-items:center;gap:5px;font-size:12.5px;flex:0 0 auto;cursor:pointer}
   /* touch-action:none hands touch drags to the map (pan, spin, place, move
      the legend) instead of scrolling the page. */
-  svg#map{width:100%;height:100%;display:block;cursor:grab;touch-action:none;
+  svg#map{position:absolute;inset:0;width:100%;height:100%;display:block;cursor:grab;touch-action:none;
     user-select:none;-webkit-user-select:none}
   svg#map.panning{cursor:grabbing}
   #stage .hint{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
@@ -429,6 +438,9 @@
               <div class="row"><label class="lbl grow">Title separator</label>
                 <input type="text" id="legTitleSeparator" value=" / " style="width:74px"></div>
               <label class="check"><input type="checkbox" id="legDatasetPrefix" checked> Prefix sections with the dataset name</label>
+              <label class="check"><input type="checkbox" id="legEmptyGroups"> Keep groups with no visible rows</label>
+              <p class="hintline">Only matters while the filter bar below the map hides
+                every entry inside a group.</p>
             </div>
           </details>
 
@@ -555,13 +567,23 @@
     </aside>
 
     <div id="stage">
-      <div id="mapwrap"><svg id="map" xmlns="http://www.w3.org/2000/svg"></svg></div>
-      <div class="hint" id="emptyHint">
-        <div class="lead">A blank world, ready for points</div>
-        <div style="margin-top:6px">Add a CSV, paste a table, type coordinates, or load a sample dataset
-          from the <b>Data</b> tab.</div>
+      <div id="mapwrap">
+        <svg id="map" xmlns="http://www.w3.org/2000/svg"></svg>
+        <div class="hint" id="emptyHint">
+          <div class="lead">A blank world, ready for points</div>
+          <div style="margin-top:6px">Add a CSV, paste a table, type coordinates, or load a sample dataset
+            from the <b>Data</b> tab.</div>
+        </div>
+        <div id="stagebar"></div>
       </div>
-      <div id="stagebar"></div>
+      <!-- filter bar: which values of the selected dataset are drawn -->
+      <div id="filterbar" hidden>
+        <label for="filterCol" class="lbl">Filter by</label>
+        <select id="filterCol"></select>
+        <button class="btn sm" id="filterAll" disabled>All</button>
+        <button class="btn sm" id="filterNone" disabled>None</button>
+        <div id="filterVals" aria-label="Values to show"></div>
+      </div>
     </div>
   </main>
 </div>
@@ -1119,8 +1141,8 @@ const LEGEND_CONTROLS = [
   ["legSectionTitles", "bool", true],
   ["legTitleSeparator", "str", " / "],
   ["legDatasetPrefix", "bool", true],
-  // No "keep empty groups" here: PyMappr needs it because its filter bar can
-  // hide every row inside a group, and MiniMappr has no filter.
+  // Only matters while the filter bar hides every row inside a group.
+  ["legEmptyGroups", "bool", false],
   // nested keys
   ["legIndent", "num", 3],
   ["legBoldGroups", "bool", true],
@@ -1191,16 +1213,43 @@ function clampView(){
   view.y=clamp(view.y, ry1*(1-view.k), ry0*(1-view.k));
 }
 
+/* filter bar */
+// Which values of one column of the selected dataset the filter bar hides.
+// Not saved, as in PyMappr, and dropped when the selection moves to another
+// dataset. Hidden values are kept rather than shown ones, so a point placed
+// with a new value shows up instead of being filtered out unseen.
+let filter={dsId:null, column:null, hidden:new Set()};
+function filterSig(){
+  return filter.column && filter.hidden.size
+    ? JSON.stringify([filter.dsId, filter.column, [...filter.hidden]]) : "";
+}
+// The rows the map draws. Remembered per row array and filter, since the
+// render, the legend and the status line all ask.
+const shownCache=new WeakMap();
+function shownRows(ds){
+  if(filter.dsId!==ds.id || !filter.column || !filter.hidden.size) return ds.rows;
+  const sig=filterSig(), hit=shownCache.get(ds.rows);
+  if(hit && hit.sig===sig) return hit.rows;
+  const col=filter.column;
+  const rows=ds.rows.filter(r=>!filter.hidden.has(r._attr[col]??""));
+  shownCache.set(ds.rows, {sig, rows});
+  return rows;
+}
+
 /* dataset styling resolution */
+// Colours and shapes are worked out from the whole dataset, so a group keeps
+// its look while the filter hides others; only the drawn rows are filtered.
+// Mirrors layout.group_styles / layout._attribute_layout.
 function resolveGroups(ds){
-  // returns {mode, groups:[{label,style,rows}], legend:{...}}
+  // returns {mode, groups:[{label,style,rows}], shown, filtering, ...}
   const rows = ds.rows;
+  const shown = shownRows(ds), filtering = shown!==rows;
   if(ds.symbolBy){
     const nestedNow = resolveNesting(rows, ds.colorBy, ds.symbolBy, opts.legHierarchy);
     const owner = nestedNow ? ownerMap(rows, ds.symbolBy, ds.colorBy) : null;
     const {colorMap,symbolMap} = attributeStyleMaps(rows, ds.colorBy, ds.symbolBy, nestedNow, owner);
     const defColor = Object.values(colorMap)[0]||palette()[0];
-    const combos = bucketBy(rows, r=>(r._attr[ds.colorBy]??"")+ROW_SEP+(r._attr[ds.symbolBy]??""));
+    const combos = bucketBy(shown, r=>(r._attr[ds.colorBy]??"")+ROW_SEP+(r._attr[ds.symbolBy]??""));
     const groups = [...combos.values()].map(sub=>{
       const cv=sub[0]._attr[ds.colorBy]??"", sv=sub[0]._attr[ds.symbolBy]??"";
       const label = [cv,sv].filter(Boolean).join(" / ") || "All points";
@@ -1218,16 +1267,19 @@ function resolveGroups(ds){
       return {label, rows:sub, style};
     });
     return {mode:"attr", groups, colorMap, symbolMap, colorKey:ds.colorBy, symbolKey:ds.symbolBy,
-            nested:nestedNow, owner};
+            nested:nestedNow, owner, shown, filtering};
   }
   const grp = groupPoints(rows, ds.groupBy);
   const labels = grp.map(g=>g[0]);
   const colorKeys = ds.colorBy ? grp.map(g=>{ const r=g[1][0]; return r?(r._attr[ds.colorBy]??""):""; }) : null;
   const styles = defaultStyles(labels, colorKeys, ds.varySymbols, ds.base);
-  const groups = grp.map(([label,sub])=>({label, rows:sub, style:{...styles[label]}}));
+  // A group the filter empties keeps its place and style, with no rows.
+  const shownBy = filtering ? new Map(groupPoints(shown, ds.groupBy)) : null;
+  const groups = grp.map(([label,sub])=>({label, rows:shownBy ? (shownBy.get(label)||[]) : sub,
+                                          style:{...styles[label]}}));
   if(!ds.groupBy && groups.length===1) groups[0].label = ds.name;
   for(const g of groups) g.style=applyOverride(g.style, ds.overrides[rowKey("group",g.label)]);
-  return {mode:"group", groups};
+  return {mode:"group", groups, shown, filtering};
 }
 
 /* projection + frame */
@@ -1368,8 +1420,8 @@ const rowsIds=new WeakMap(); let nextRowsId=1;
 function rowsId(rows){ let id=rowsIds.get(rows); if(!id) rowsIds.set(rows, id=nextRowsId++); return id; }
 
 function renderNow(){
-  const stage=$("#stage");
-  const W=stage.clientWidth, H=stage.clientHeight;
+  const wrap=$("#mapwrap");
+  const W=wrap.clientWidth, H=wrap.clientHeight;
   sceneSize={w:W,h:H};
   svg.setAttribute("viewBox",`0 0 ${W} ${H}`);
   svg.setAttribute("width",W); svg.setAttribute("height",H);
@@ -1429,7 +1481,7 @@ function renderNow(){
   const visible=datasets.filter(d=>d.visible);
   const resolved=visible.map(ds=>({ds, res:resolveGroups(ds)}));
   const edge=opts.pointEdgeWidth>0 ? opts.pointEdgeColor : null;
-  const pKey=JSON.stringify([projKey, opts.labels, edge, opts.pointEdgeWidth, resolved.map(({ds,res})=>[
+  const pKey=JSON.stringify([projKey, opts.labels, edge, opts.pointEdgeWidth, filterSig(), resolved.map(({ds,res})=>[
     rowsId(ds.rows), ds.rows.length, ds.groupBy, ds.colorBy, ds.symbolBy, ds.opacity ?? 1,
     res.groups.map(g=>[g.rows.length, g.style.color, g.style.marker, g.style.size])])]);
   if(pKey!==pointsKey){
@@ -1481,10 +1533,13 @@ function renderNow(){
     }
     // Counts belong on the row text here too - reading opts.legCounts only
     // in the attribute branch is what used to make "Show point counts" do
-    // nothing at all in plain Group-by mode.
+    // nothing at all in plain Group-by mode. They count what is drawn, so
+    // they follow the filter.
     const total=res.groups.reduce((a,g)=>a+g.rows.length,0);
     const sizes={}, place={}, first={};
     let rows=res.groups.map((grp,i)=>{
+      // A group the filter emptied has nothing on the map to describe.
+      if(!grp.rows.length) return null;
       const o=ds.overrides[rowKey("group",grp.label)];
       // Hidden rows keep their points on the map but leave the legend.
       if(isHidden(o)) return null;
@@ -1603,8 +1658,14 @@ function legendItems(entries, attrLegends){
   for(const {ds,res} of attrLegends){
     const prefix=(manyDatasets && opts.legDatasetPrefix) ? ds.name+": " : "";
     // Ordering by count needs the numbers even when they are not shown.
+    // Like the rows, they follow the filter.
     const counts=(opts.legCounts||ordersByCount())
-      ? legendCounts(ds.rows,res.colorKey,res.symbolKey) : null;
+      ? legendCounts(res.shown,res.colorKey,res.symbolKey) : null;
+    // The values still on the map under a filter; null means no filtering,
+    // which the nested key treats differently from "all happen to show".
+    const shownOf=key=>(res.filtering && key) ? new Set(res.shown.map(r=>r._attr[key]??"")) : null;
+    const shownColors=shownOf(res.colorKey), shownSymbols=shownOf(res.symbolKey);
+    const isShown=(set,v)=>!set || set.has(v);
     const total=counts?counts["_total"]:0;
     const countOf=key=>(counts&&counts[key])||0;
     const lab=(v,key,o)=>legendLabel(overrideLabel(o)||v, counts?counts[key]:null, total);
@@ -1627,20 +1688,24 @@ function legendItems(entries, attrLegends){
       // to work out which colour each symbol goes with by hunting the map.
       const kidsOf=childrenByOwner(res);
       const rows=[];
-      // Every colour group is listed. MiniMappr has no filter, so the only
-      // way a group ends up childless is forced nesting, where each symbol
-      // is claimed by the first group it appears under - and dropping those
-      // would take colours off the legend that are still drawn on the map.
       const parents=ordered(Object.keys(res.colorMap),
         cv=>rowKey("color",cv), v=>countKey("c",v));
       for(const cv of parents){
         const color=res.colorMap[cv];
         const parentOverride=ov(rowKey("color",cv));
+        if(!isShown(shownColors,cv)) continue;
+        const shownKids=(kidsOf.get(cv)||[]).filter(sv=>isShown(shownSymbols,sv));
+        // A childless group means the filter hid everything inside it, so it
+        // goes too - but only while a filter is running. Forcing nesting onto
+        // crossed columns also leaves groups childless, because each symbol
+        // is claimed by the first group it appears under; dropping those
+        // would take colours off the legend that are still drawn on the map.
+        if(!shownKids.length && shownSymbols && !opts.legEmptyGroups) continue;
         // Hiding a group hides the block it heads: its children are drawn in
         // its colour, so leaving them behind would orphan them.
         if(isHidden(parentOverride)) continue;
         const kids=ordered(
-          kidsOf.get(cv)||[],
+          shownKids,
           sv=>rowKey("pair",cv,sv), k=>countKey("p",cv,k))
           .filter(sv=>!isHidden(ov(rowKey("pair",cv,sv))));
         rows.push({label:lab(cv,countKey("c",cv),parentOverride), depth:0,
@@ -1657,7 +1722,8 @@ function legendItems(entries, attrLegends){
     // Genuinely crossed: a shape really does appear in every colour here, so
     // the neutral symbol swatches are honest and the two keys stay separate.
     if(Object.keys(res.colorMap).length){
-      const values=ordered(Object.keys(res.colorMap), v=>rowKey("color",v), v=>countKey("c",v))
+      const values=ordered(Object.keys(res.colorMap).filter(v=>isShown(shownColors,v)),
+        v=>rowKey("color",v), v=>countKey("c",v))
         .filter(v=>!isHidden(ov(rowKey("color",v))));
       const rows=values.map(v=>({label:lab(v,countKey("c",v),ov(rowKey("color",v))), colorOnly:true,
         style:applyOverride({color:res.colorMap[v],marker:"Circle",size:ds.base.size},
@@ -1665,7 +1731,8 @@ function legendItems(entries, attrLegends){
       if(rows.length) sections.push({title:sectionTitle(prefix,res.colorKey||"Colour"), rows});
     }
     if(Object.keys(res.symbolMap).length){
-      const values=ordered(Object.keys(res.symbolMap), v=>rowKey("symbol",v), v=>countKey("s",v))
+      const values=ordered(Object.keys(res.symbolMap).filter(v=>isShown(shownSymbols,v)),
+        v=>rowKey("symbol",v), v=>countKey("s",v))
         .filter(v=>!isHidden(ov(rowKey("symbol",v))));
       const rows=values.map(v=>({label:lab(v,countKey("s",v),ov(rowKey("symbol",v))), symbolOnly:true,
         style:applyOverride({color:opts.legSymbolColor,marker:res.symbolMap[v],size:ds.base.size},
@@ -1905,6 +1972,15 @@ function drawLegend(parent, W, H, entries, attrLegends){
 }
 
 function updateStagebar(){
+  // While the filter hides anything, say how much, as PyMappr's status does.
+  const fds=datasets.find(d=>d.id===filter.dsId);
+  if(fds && filterSig()){
+    const shown=shownRows(fds).length;
+    if(shown!==fds.rows.length){
+      $("#stagebar").textContent=`Filter: showing ${shown} of ${fds.rows.length} points of ${fds.name}.`;
+      return;
+    }
+  }
   const n=datasets.reduce((a,d)=>a+(d.visible?d.rows.length:0),0);
   const shown=datasets.filter(d=>d.visible).length;
   $("#stagebar").textContent = n ? `${n} point${n!==1?"s":""} · ${shown} dataset${shown!==1?"s":""} · ${opts.projection}` : opts.projection;
@@ -2142,6 +2218,7 @@ function fillSelect(sel, values, current){
 }
 function syncStylePanel(){
   const ds=selectedDataset();
+  syncFilterBar(ds);
   if(!ds){ $("#styleControls").style.display="none"; $("#styleFor").textContent="Select a dataset to style it."; return; }
   $("#styleControls").style.display="block";
   $("#styleFor").innerHTML="Styling <b>"+escapeHtml(ds.name)+"</b>";
@@ -2156,6 +2233,36 @@ function syncStylePanel(){
   $("#opacityRange").value=ds.opacity; $("#opacityVal").textContent=Number(ds.opacity).toFixed(2);
   renderGroupOverrides(ds);
 }
+// The filter bar follows the selected dataset. Moving to another dataset, or
+// losing the filtered column to an edit, starts it over with nothing hidden.
+function syncFilterBar(ds){
+  const bar=$("#filterbar");
+  if(!ds || filter.dsId!==ds.id || (filter.column && !ds.columns.includes(filter.column)))
+    filter={dsId:ds?ds.id:null, column:null, hidden:new Set()};
+  const show=!!ds && ds.columns.length>0;
+  if(bar.hidden===show){ bar.hidden=!show; render(); }   // the map's height changes
+  if(!show) return;
+  fillSelect($("#filterCol"), [{value:"",label:"None"}].concat(ds.columns), filter.column||"");
+  renderFilterValues(ds);
+}
+// One checkbox per value of the filtered column, in order of appearance.
+function renderFilterValues(ds){
+  const box=$("#filterVals"); box.innerHTML="";
+  const on=!!(ds && filter.column);
+  $("#filterAll").disabled=!on; $("#filterNone").disabled=!on;
+  if(!on) return;
+  for(const v of uniqueInOrder(ds.rows.map(r=>r._attr[filter.column]??""))){
+    const lab=document.createElement("label");
+    const cb=document.createElement("input"); cb.type="checkbox"; cb.checked=!filter.hidden.has(v);
+    cb.addEventListener("change",()=>{
+      if(cb.checked) filter.hidden.delete(v); else filter.hidden.add(v);
+      render();
+    });
+    lab.appendChild(cb); lab.appendChild(document.createTextNode(v||"(blank)"));
+    box.appendChild(lab);
+  }
+}
+
 // Every legend row of a dataset, as {key, value, style, depth} - groups in
 // group-by mode, or colour values, symbol values and nested pairs in the
 // two-attribute modes. Mirrors PyMapprApp._legend_rows.
@@ -2562,6 +2669,26 @@ $("#opacityRange").addEventListener("input",e=>{ const ds=selectedDataset(); ds.
 $("#resetStyles").addEventListener("click",()=>{ const ds=selectedDataset(); if(!ds) return;
   ds.overrides={}; renderGroupOverrides(ds); render(); });
 
+// filter bar
+$("#filterCol").addEventListener("change",e=>{
+  const ds=selectedDataset(); if(!ds) return;
+  filter={dsId:ds.id, column:e.target.value||null, hidden:new Set()};
+  renderFilterValues(ds); render();
+});
+function setAllFilterValues(show){
+  const ds=selectedDataset(); if(!ds || !filter.column) return;
+  filter.hidden = show ? new Set()
+    : new Set(ds.rows.map(r=>r._attr[filter.column]??""));
+  renderFilterValues(ds); render();
+}
+$("#filterAll").addEventListener("click",()=>setAllFilterValues(true));
+$("#filterNone").addEventListener("click",()=>setAllFilterValues(false));
+// A mouse wheel has no sideways motion, so it scrolls the value strip.
+$("#filterVals").addEventListener("wheel",e=>{
+  if(Math.abs(e.deltaY)<=Math.abs(e.deltaX)) return;
+  e.preventDefault(); e.currentTarget.scrollLeft+=e.deltaY;
+},{passive:false});
+
 // map controls
 fillSelect($("#extent"), Object.keys(CONTINENT_EXTENTS), "World");
 fillSelect($("#projection"), Object.keys(PROJ_DEFS), "Equirectangular");
@@ -2644,8 +2771,8 @@ function downloadBlob(blob,name){ const a=document.createElement("a"); a.href=UR
   setTimeout(()=>URL.revokeObjectURL(a.href),1000); }
 
 /* zoom + pan over the map */
-const stageEl=$("#stage");
-stageEl.addEventListener("wheel",e=>{
+const mapWrap=$("#mapwrap");
+mapWrap.addEventListener("wheel",e=>{
   e.preventDefault();
   const r=svg.getBoundingClientRect();
   const sx=e.clientX-r.left, sy=e.clientY-r.top;
@@ -2805,7 +2932,7 @@ darkMQ.addEventListener("change",()=>{ if(themeSel.value==="system") applyTheme(
 const restored=loadState();
 applyTheme();
 if(restored) syncMapControls();
-let rt; new ResizeObserver(()=>{ clearTimeout(rt); rt=setTimeout(render,60); }).observe($("#stage"));
+let rt; new ResizeObserver(()=>{ clearTimeout(rt); rt=setTimeout(render,60); }).observe(mapWrap);
 syncOrigin(!restored);   // keep any restored centre/extent when reloading
 syncStylePanel();
 renderDatasetList();

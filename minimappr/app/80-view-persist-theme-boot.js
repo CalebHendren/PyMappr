@@ -1,6 +1,6 @@
 /* zoom + pan over the map */
-const stageEl=$("#stage");
-stageEl.addEventListener("wheel",e=>{
+const mapWrap=$("#mapwrap");
+mapWrap.addEventListener("wheel",e=>{
   e.preventDefault();
   const r=svg.getBoundingClientRect();
   const sx=e.clientX-r.left, sy=e.clientY-r.top;
@@ -160,7 +160,7 @@ darkMQ.addEventListener("change",()=>{ if(themeSel.value==="system") applyTheme(
 const restored=loadState();
 applyTheme();
 if(restored) syncMapControls();
-let rt; new ResizeObserver(()=>{ clearTimeout(rt); rt=setTimeout(render,60); }).observe($("#stage"));
+let rt; new ResizeObserver(()=>{ clearTimeout(rt); rt=setTimeout(render,60); }).observe(mapWrap);
 syncOrigin(!restored);   // keep any restored centre/extent when reloading
 syncStylePanel();
 renderDatasetList();

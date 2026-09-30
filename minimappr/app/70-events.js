@@ -300,6 +300,26 @@ $("#opacityRange").addEventListener("input",e=>{ const ds=selectedDataset(); ds.
 $("#resetStyles").addEventListener("click",()=>{ const ds=selectedDataset(); if(!ds) return;
   ds.overrides={}; renderGroupOverrides(ds); render(); });
 
+// filter bar
+$("#filterCol").addEventListener("change",e=>{
+  const ds=selectedDataset(); if(!ds) return;
+  filter={dsId:ds.id, column:e.target.value||null, hidden:new Set()};
+  renderFilterValues(ds); render();
+});
+function setAllFilterValues(show){
+  const ds=selectedDataset(); if(!ds || !filter.column) return;
+  filter.hidden = show ? new Set()
+    : new Set(ds.rows.map(r=>r._attr[filter.column]??""));
+  renderFilterValues(ds); render();
+}
+$("#filterAll").addEventListener("click",()=>setAllFilterValues(true));
+$("#filterNone").addEventListener("click",()=>setAllFilterValues(false));
+// A mouse wheel has no sideways motion, so it scrolls the value strip.
+$("#filterVals").addEventListener("wheel",e=>{
+  if(Math.abs(e.deltaY)<=Math.abs(e.deltaX)) return;
+  e.preventDefault(); e.currentTarget.scrollLeft+=e.deltaY;
+},{passive:false});
+
 // map controls
 fillSelect($("#extent"), Object.keys(CONTINENT_EXTENTS), "World");
 fillSelect($("#projection"), Object.keys(PROJ_DEFS), "Equirectangular");

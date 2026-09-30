@@ -253,6 +253,9 @@
               <div class="row"><label class="lbl grow">Title separator</label>
                 <input type="text" id="legTitleSeparator" value=" / " style="width:74px"></div>
               <label class="check"><input type="checkbox" id="legDatasetPrefix" checked> Prefix sections with the dataset name</label>
+              <label class="check"><input type="checkbox" id="legEmptyGroups"> Keep groups with no visible rows</label>
+              <p class="hintline">Only matters while the filter bar below the map hides
+                every entry inside a group.</p>
             </div>
           </details>
 
@@ -379,13 +382,23 @@
     </aside>
 
     <div id="stage">
-      <div id="mapwrap"><svg id="map" xmlns="http://www.w3.org/2000/svg"></svg></div>
-      <div class="hint" id="emptyHint">
-        <div class="lead">A blank world, ready for points</div>
-        <div style="margin-top:6px">Add a CSV, paste a table, type coordinates, or load a sample dataset
-          from the <b>Data</b> tab.</div>
+      <div id="mapwrap">
+        <svg id="map" xmlns="http://www.w3.org/2000/svg"></svg>
+        <div class="hint" id="emptyHint">
+          <div class="lead">A blank world, ready for points</div>
+          <div style="margin-top:6px">Add a CSV, paste a table, type coordinates, or load a sample dataset
+            from the <b>Data</b> tab.</div>
+        </div>
+        <div id="stagebar"></div>
       </div>
-      <div id="stagebar"></div>
+      <!-- filter bar: which values of the selected dataset are drawn -->
+      <div id="filterbar" hidden>
+        <label for="filterCol" class="lbl">Filter by</label>
+        <select id="filterCol"></select>
+        <button class="btn sm" id="filterAll" disabled>All</button>
+        <button class="btn sm" id="filterNone" disabled>None</button>
+        <div id="filterVals" aria-label="Values to show"></div>
+      </div>
     </div>
   </main>
 </div>

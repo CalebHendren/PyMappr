@@ -181,8 +181,8 @@ const LEGEND_CONTROLS = [
   ["legSectionTitles", "bool", true],
   ["legTitleSeparator", "str", " / "],
   ["legDatasetPrefix", "bool", true],
-  // No "keep empty groups" here: PyMappr needs it because its filter bar can
-  // hide every row inside a group, and MiniMappr has no filter.
+  // Only matters while the filter bar hides every row inside a group.
+  ["legEmptyGroups", "bool", false],
   // nested keys
   ["legIndent", "num", 3],
   ["legBoldGroups", "bool", true],
@@ -253,16 +253,43 @@ function clampView(){
   view.y=clamp(view.y, ry1*(1-view.k), ry0*(1-view.k));
 }
 
+/* filter bar */
+// Which values of one column of the selected dataset the filter bar hides.
+// Not saved, as in PyMappr, and dropped when the selection moves to another
+// dataset. Hidden values are kept rather than shown ones, so a point placed
+// with a new value shows up instead of being filtered out unseen.
+let filter={dsId:null, column:null, hidden:new Set()};
+function filterSig(){
+  return filter.column && filter.hidden.size
+    ? JSON.stringify([filter.dsId, filter.column, [...filter.hidden]]) : "";
+}
+// The rows the map draws. Remembered per row array and filter, since the
+// render, the legend and the status line all ask.
+const shownCache=new WeakMap();
+function shownRows(ds){
+  if(filter.dsId!==ds.id || !filter.column || !filter.hidden.size) return ds.rows;
+  const sig=filterSig(), hit=shownCache.get(ds.rows);
+  if(hit && hit.sig===sig) return hit.rows;
+  const col=filter.column;
+  const rows=ds.rows.filter(r=>!filter.hidden.has(r._attr[col]??""));
+  shownCache.set(ds.rows, {sig, rows});
+  return rows;
+}
+
 /* dataset styling resolution */
+// Colours and shapes are worked out from the whole dataset, so a group keeps
+// its look while the filter hides others; only the drawn rows are filtered.
+// Mirrors layout.group_styles / layout._attribute_layout.
 function resolveGroups(ds){
-  // returns {mode, groups:[{label,style,rows}], legend:{...}}
+  // returns {mode, groups:[{label,style,rows}], shown, filtering, ...}
   const rows = ds.rows;
+  const shown = shownRows(ds), filtering = shown!==rows;
   if(ds.symbolBy){
     const nestedNow = resolveNesting(rows, ds.colorBy, ds.symbolBy, opts.legHierarchy);
     const owner = nestedNow ? ownerMap(rows, ds.symbolBy, ds.colorBy) : null;
     const {colorMap,symbolMap} = attributeStyleMaps(rows, ds.colorBy, ds.symbolBy, nestedNow, owner);
     const defColor = Object.values(colorMap)[0]||palette()[0];
-    const combos = bucketBy(rows, r=>(r._attr[ds.colorBy]??"")+ROW_SEP+(r._attr[ds.symbolBy]??""));
+    const combos = bucketBy(shown, r=>(r._attr[ds.colorBy]??"")+ROW_SEP+(r._attr[ds.symbolBy]??""));
     const groups = [...combos.values()].map(sub=>{
       const cv=sub[0]._attr[ds.colorBy]??"", sv=sub[0]._attr[ds.symbolBy]??"";
       const label = [cv,sv].filter(Boolean).join(" / ") || "All points";
@@ -280,15 +307,18 @@ function resolveGroups(ds){
       return {label, rows:sub, style};
     });
     return {mode:"attr", groups, colorMap, symbolMap, colorKey:ds.colorBy, symbolKey:ds.symbolBy,
-            nested:nestedNow, owner};
+            nested:nestedNow, owner, shown, filtering};
   }
   const grp = groupPoints(rows, ds.groupBy);
   const labels = grp.map(g=>g[0]);
   const colorKeys = ds.colorBy ? grp.map(g=>{ const r=g[1][0]; return r?(r._attr[ds.colorBy]??""):""; }) : null;
   const styles = defaultStyles(labels, colorKeys, ds.varySymbols, ds.base);
-  const groups = grp.map(([label,sub])=>({label, rows:sub, style:{...styles[label]}}));
+  // A group the filter empties keeps its place and style, with no rows.
+  const shownBy = filtering ? new Map(groupPoints(shown, ds.groupBy)) : null;
+  const groups = grp.map(([label,sub])=>({label, rows:shownBy ? (shownBy.get(label)||[]) : sub,
+                                          style:{...styles[label]}}));
   if(!ds.groupBy && groups.length===1) groups[0].label = ds.name;
   for(const g of groups) g.style=applyOverride(g.style, ds.overrides[rowKey("group",g.label)]);
-  return {mode:"group", groups};
+  return {mode:"group", groups, shown, filtering};
 }
 
