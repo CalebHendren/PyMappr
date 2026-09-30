@@ -62,6 +62,11 @@
                 <button class="btn sm" id="btnRemove" disabled>Remove</button>
                 <button class="btn sm" id="btnClear">Clear all</button>
               </div>
+              <div class="btnrow" style="margin-top:7px">
+                <button class="btn sm" id="btnCombine" disabled>Combine columns…</button>
+              </div>
+              <p class="hintline">Combine columns joins e.g. Genus and Species into one
+                column and groups by it, so a legend row reads <i>Eleusis chapadensis</i>.</p>
             </div>
           </details>
         </section>
@@ -398,7 +403,8 @@
           <option value="lonlat">Longitude, Latitude</option>
         </select></div>
       <label class="block">One point per line: <code>38, -100</code>. Add a label with
-        <code>38, -100, Site A</code>. Decimal degrees or DMS.</label>
+        <code>38, -100, Site A</code>. Separate with commas, semicolons or tabs;
+        decimal degrees or DMS.</label>
       <textarea id="mText" placeholder="38.9, -77.0, Washington&#10;51.5, -0.12, London&#10;-33.9, 151.2, Sydney"></textarea>
       <div class="row wrap" style="margin-top:8px">
         <label class="lbl">Shape</label><select id="mMarker" style="flex:0 0 130px"></select>
@@ -437,6 +443,7 @@
     <div class="mbody">
       <div class="row"><label class="lbl" style="flex:0 0 96px">Dataset name</label>
         <input type="text" id="mapName" class="grow"></div>
+      <label class="check"><input type="checkbox" id="mapHeaders" checked> First row contains column headers</label>
       <p class="muted" style="margin:10px 0 6px">Tell MiniMappr which columns hold the coordinates.
         The rest become attributes you can group, colour, or symbolise by.</p>
       <table class="maptbl"><thead><tr><th>Column</th><th>Sample</th><th>Role</th></tr></thead>
@@ -446,6 +453,24 @@
     <div class="mfoot">
       <button class="btn" data-close="mapModal">Cancel</button>
       <button class="btn pri" id="mapOk">Add dataset</button>
+    </div>
+  </div>
+</div>
+
+<!-- Combine columns modal -->
+<div class="modal-bg" id="combineModal">
+  <div class="modal">
+    <h3>Combine columns</h3>
+    <div class="mbody">
+      <label class="block">Join these columns, in this order:</label>
+      <div id="cCols"></div>
+      <div class="row"><label class="lbl" style="flex:0 0 96px">Separator</label>
+        <input type="text" id="cSep" value=" " style="width:74px"></div>
+      <p class="muted" id="cPreview"></p>
+    </div>
+    <div class="mfoot">
+      <button class="btn" data-close="combineModal">Cancel</button>
+      <button class="btn pri" id="cOk">Add column</button>
     </div>
   </div>
 </div>
@@ -479,3 +504,14 @@
   </div>
 </div>
 
+<!-- Notice modal (skipped rows); last, so it opens above any other modal -->
+<div class="modal-bg" id="noticeModal">
+  <div class="modal">
+    <h3 id="noticeTitle">Notice</h3>
+    <div class="mbody">
+      <p id="noticeLead"></p>
+      <ul id="noticeList" class="notice"></ul>
+    </div>
+    <div class="mfoot"><button class="btn pri" data-close="noticeModal">OK</button></div>
+  </div>
+</div>

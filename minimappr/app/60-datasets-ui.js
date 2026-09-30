@@ -5,8 +5,75 @@ function makeDataset(name, columns, rows, base){
     id:nextId++, name, visible:true, columns, rows,
     base: base || {color:"#d62728", marker:"Circle", size:30},
     groupBy: columns[0]||null, colorBy:null, symbolBy:null, varySymbols:false,
-    overrides:{}, opacity:1, source:"csv",
+    overrides:{}, opacity:1, source:"csv", combined:[],
   };
+}
+
+// Combine columns: join attribute columns (Genus + Species) into one more
+// column, so a legend row reads "Eleusis chapadensis" without editing the
+// file. Blank parts are skipped rather than leaving a stray separator.
+// Mirrors data_loader.combine_name_columns.
+function combinedValue(attr, parts, sep){
+  return parts.map(p=>String(attr[p]??"").trim()).filter(Boolean).join(sep);
+}
+function combinedName(existing, parts, sep){
+  const base=parts.join(sep).trim()||"Combined";
+  let name=base, k=2;
+  while(existing.includes(name)) name=`${base} (${k++})`;
+  return name;
+}
+// The columns a dataset has before any combining: its table's attribute
+// columns, or, with no table, whatever is not a combined column.
+function baseColumns(ds){
+  const imp=ds._import;
+  if(imp && Array.isArray(imp.columns) && imp.mapping)
+    return imp.columns.filter(c=>imp.mapping[c]==="attr");
+  const made=new Set((ds.combined||[]).map(c=>c && c.name));
+  return ds.columns.filter(c=>!made.has(c));
+}
+// Combined columns are kept as recipes and worked out again whenever the
+// rows are rebuilt - an imported dataset's rows come back from its table on
+// load and on edit, which would otherwise lose them. A recipe whose parts
+// are gone, or whose name a real column has since taken, is dropped.
+function applyCombined(ds){
+  ds.columns=baseColumns(ds);
+  const kept=[];
+  for(const c of Array.isArray(ds.combined) ? ds.combined : []){
+    if(!c || typeof c.name!=="string" || !Array.isArray(c.parts) || c.parts.length<2) continue;
+    if(ds.columns.includes(c.name) || !c.parts.every(p=>ds.columns.includes(p))) continue;
+    const sep=typeof c.sep==="string" ? c.sep : " ";
+    for(const r of ds.rows) r._attr[c.name]=combinedValue(r._attr, c.parts, sep);
+    ds.columns.push(c.name);
+    kept.push({name:c.name, parts:[...c.parts], sep});
+  }
+  ds.combined=kept;
+}
+
+// Rows that could not be read, listed the way PyMappr lists them: the first
+// dozen, then how many more.
+const MAX_SKIPPED_SHOWN=12;
+function showNotice(title, lead, lines){
+  $("#noticeTitle").textContent=title;
+  $("#noticeLead").textContent=lead;
+  const list=$("#noticeList"); list.innerHTML="";
+  for(const line of lines.slice(0,MAX_SKIPPED_SHOWN)){
+    const li=document.createElement("li"); li.textContent=line; list.appendChild(li);
+  }
+  const more=lines.length-MAX_SKIPPED_SHOWN;
+  if(more>0){ const li=document.createElement("li"); li.className="muted";
+    li.textContent=`… and ${more} more`; list.appendChild(li); }
+  openModal("noticeModal");
+}
+function reportSkipped(imported, skipped){
+  if(!imported){
+    showNotice("No usable rows", "No rows had valid coordinates."
+      + (skipped.length ? " First problems:" : ""), skipped);
+    return false;
+  }
+  if(skipped.length)
+    showNotice("Some rows skipped",
+      `Imported ${imported} row${imported!==1?"s":""}; skipped ${skipped.length}:`, skipped);
+  return true;
 }
 // The manual dataset that placed points are appended to: the selected one
 // if it is manual, otherwise a fresh "Placed points" set.
@@ -54,16 +121,18 @@ function pointsFromMapping(parsed, mapping){
   const labelCol = columns.find(c=>mapping[c]==="label");
   const lonCol = columns.find(c=>mapping[c]==="lon");
   const latCol = columns.find(c=>mapping[c]==="lat");
-  const out=[]; let bad=0;
-  for(const row of rows){
+  // Problems name the row as the file numbers it, header row included.
+  const first = parsed.headers===false ? 1 : 2;
+  const out=[], skipped=[];
+  rows.forEach((row,i)=>{
     try{
       const lon=parseCoordinate(row[lonCol], "longitude");
       const lat=parseCoordinate(row[latCol], "latitude");
       const attr={}; attrCols.forEach(c=>attr[c]=row[c]);
       out.push({lon,lat,label:labelCol?row[labelCol]:null,_attr:attr});
-    }catch(e){ bad++; }
-  }
-  return {points:out, attrCols, bad};
+    }catch(e){ skipped.push(`row ${i+first}: ${e.message}`); }
+  });
+  return {points:out, attrCols, skipped};
 }
 
 /* UI: datasets panel */
@@ -110,6 +179,7 @@ function renderDatasetList(){
   // imported ones reopen their table (as CSV text) and column mapping.
   $("#btnEdit").disabled = !selectedDataset();
   $("#btnRemove").disabled = !selectedDataset();
+  $("#btnCombine").disabled = !(selectedDataset() && selectedDataset().columns.length>=2);
 }
 // The list's colour chip: the first group's colour.
 function swatchColor(res){ return res.groups[0] ? res.groups[0].style.color : "#888"; }

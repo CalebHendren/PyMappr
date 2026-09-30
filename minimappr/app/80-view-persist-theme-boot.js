@@ -85,13 +85,16 @@ function normalizeDataset(d){
   ds.opacity = typeof ds.opacity==="number" && isFinite(ds.opacity) ? ds.opacity : 1;
   ds.visible = ds.visible!==false;
   ds.varySymbols = !!ds.varySymbols;
-  for(const k of ["groupBy","colorBy","symbolBy"])
-    if(ds[k]!=null && !ds.columns.includes(ds[k])) ds[k]=null;
   if(!Array.isArray(ds.rows) && ds._import && Array.isArray(ds._import.rows) && ds._import.mapping)
     ds.rows = pointsFromMapping(ds._import, ds._import.mapping).points;
   if(!Array.isArray(ds.rows)) return null;
   ds.rows = ds.rows.filter(r=>r && isFinite(r.lon) && isFinite(r.lat))
                    .map(r=>r._attr ? r : {...r, _attr:{}});
+  // Rows rebuilt from the table lack the combined columns; work them out
+  // again before checking which columns the choices below may name.
+  applyCombined(ds);
+  for(const k of ["groupBy","colorBy","symbolBy"])
+    if(ds[k]!=null && !ds.columns.includes(ds[k])) ds[k]=null;
   if(ds.source==="manual" && !ds._manual){
     ds._manual={legend:ds.name, order:"latlon", base:ds.base,
       text:ds.rows.map(r=>`${r.lat.toFixed(5)}, ${r.lon.toFixed(5)}`+(r.label?", "+r.label:"")).join("\n")};
