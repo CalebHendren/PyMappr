@@ -249,15 +249,13 @@ class PyMapprApp:
 
     def zoom_step(self, factor: float) -> None:
         """Zoom about the view center (buttons, Ctrl+= / Ctrl+-)."""
-        self.renderer.zoom(factor)
-        self.renderer.redraw()
+        self.renderer.zoom_interactive(factor)
 
     def _on_scroll_zoom(self, event) -> None:
-        if event.inaxes is None or event.xdata is None:
+        if event.inaxes is None or event.x is None:
             return
         factor = 1.25 if event.button == "up" else 1 / 1.25
-        self.renderer.zoom(factor, (event.xdata, event.ydata))
-        self.renderer.redraw()
+        self.renderer.zoom_interactive(factor, (event.x, event.y))
 
     def _apply_theme(self) -> None:
         theme = self._theme_var.get()

@@ -211,6 +211,10 @@ class MouseMixin:
     # ends on one, so what the user stops on is a full render either way.
 
     def _pan_press(self, event) -> None:
+        # A scroll zoom still waiting on its timer is applied first: the drag
+        # moves the snapshot of the last render, which has to show the view
+        # being dragged.
+        self._finish_zoom()
         # The snapshot of the last render is already the map alone, so the
         # press itself draws nothing.
         if self._map_background() is None:

@@ -17,7 +17,9 @@ from __future__ import annotations
 import math
 import weakref
 
+import numpy as np
 from matplotlib.artist import Artist
+from PIL import Image
 
 from pymappr.renderer.tables import Z_SNAPSHOT
 
@@ -119,6 +121,50 @@ class BlitMixin:
             self.ax.draw_artist(artist)
         self._draw_legend_underlines(canvas.get_renderer())
         canvas.blit(bbox)
+
+    def _blit_scaled(self, background, scale: float,
+                     shift: tuple[float, float]) -> None:
+        """Show the map snapshot scaled by *scale* and moved by *shift*, so
+        that the display point x lands on ``scale * x + shift``, with the
+        pinned overlays at their corners on top.
+
+        Display coordinates count upwards; the region's are the canvas
+        buffer's, whose rows count down from the top, and the image handed
+        to the renderer is drawn bottom row first."""
+        renderer = self.fig.canvas.get_renderer()
+        left, top, right, bottom = background.get_extents()
+        height = renderer.height
+        inset = self._frame_inset()
+        # The snapshot less the frame line at its edges, in display
+        # coordinates; _composite redraws the frame in place.
+        sx0, sx1 = left + inset, right - inset
+        sy0, sy1 = height - bottom + inset, height - top - inset
+        tx, ty = shift
+        # Where it lands, cut to that same box: zoomed in, the part of the
+        # snapshot still in view fills it; zoomed out, the shrunken snapshot
+        # sits inside it.
+        x0 = max(round(scale * sx0 + tx), sx0)
+        x1 = min(round(scale * sx1 + tx), sx1)
+        y0 = max(round(scale * sy0 + ty), sy0)
+        y1 = min(round(scale * sy1 + ty), sy1)
+        # What a zoom out uncovers shows the axes background.
+        self.ax.draw_artist(self.ax.patch)
+        if x0 < x1 and y0 < y1:
+            image = Image.fromarray(np.asarray(background))
+            # The part of the snapshot that lands there, in its own pixels
+            # (rows down from its top edge). Pillow resamples a fractional
+            # box exactly, so the preview does not jitter between notches.
+            box = ((x0 - tx) / scale - left,
+                   (height - top) - (y1 - ty) / scale,
+                   (x1 - tx) / scale - left,
+                   (height - top) - (y0 - ty) / scale)
+            box = tuple(min(max(v, 0.0), limit) for v, limit in
+                        zip(box, (image.width, image.height) * 2))
+            scaled = image.resize((x1 - x0, y1 - y0), Image.BILINEAR, box=box)
+            gc = renderer.new_gc()
+            renderer.draw_image(gc, x0, y0, np.asarray(scaled)[::-1])
+            gc.restore()
+        self._composite(self.ax.bbox)
 
     def _single_shot_timer(self, interval_ms: int, callback):
         """A GUI timer that runs *callback* once, *interval_ms* after it is

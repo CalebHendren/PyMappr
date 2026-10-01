@@ -14,9 +14,9 @@ from matplotlib.ticker import AutoLocator, FuncFormatter, MultipleLocator
 
 from pymappr.layers import CONTINENT_EXTENTS, LayerStore
 from pymappr.projections import get_projection
-from pymappr.renderer.geometry import (export_geometry, format_lat,
-                                       format_lon, oriented_axes_rect,
-                                       refit_xlim)
+from pymappr.renderer.geometry import (clamp_zoom_factor, export_geometry,
+                                       format_lat, format_lon,
+                                       oriented_axes_rect, refit_xlim)
 from pymappr.renderer.tables import (MARGINS_PLAIN, MARGINS_WITH_TICKS,
                                      ORIENTATION_ASPECT, Z_GRID)
 
@@ -26,6 +26,12 @@ _WRAP_OFFSETS = (-1, 0, 1)
 # Fraction of the shorter side of the map box the globe's disk spans, so it
 # sits centred with a margin instead of running the full length of the canvas.
 _GLOBE_FILL = 0.88
+
+# A scroll-wheel or zoom-button zoom renders for real once no notch has come
+# for this long (milliseconds). Until then each notch only rescales the map
+# snapshot, which costs a few milliseconds against ~0.5 s for a render of a
+# raster basemap with several vector layers.
+_ZOOM_PAUSE_MS = 150
 
 
 class ViewMixin:
@@ -65,6 +71,8 @@ class ViewMixin:
         # While the figure is temporarily resized for export, the resize
         # handler must not re-fit the on-screen view to the export size.
         self._suspend_resize = False
+        # The scroll-wheel zoom waiting on its timer (see zoom_interactive).
+        self._zoom_gesture: dict | None = None
 
     @contextmanager
     def _preserving_view(self):
@@ -266,12 +274,7 @@ class ViewMixin:
         view zooms about its middle."""
         x0, x1 = self.ax.get_xlim()
         y0, y1 = self.ax.get_ylim()
-        width = x1 - x0
-        world_w = self.proj.world_width
-        # Keep the zoom inside sane bounds: no further out than ~1.5
-        # world-widths, no further in than a millionth of the world.
-        factor = max(factor, width / (world_w * 1.5))
-        factor = min(factor, width / (world_w * 1e-6))
+        factor = clamp_zoom_factor(factor, x1 - x0, self.proj.world_width)
         if abs(factor - 1.0) < 1e-9:
             return
         if self.proj.hemisphere:
@@ -286,6 +289,98 @@ class ViewMixin:
                              cx + (x1 - cx) / factor)
             self.ax.set_ylim(cy - (cy - y0) / factor,
                              cy + (y1 - cy) / factor)
+
+    # A scroll-wheel notch or a zoom button zooms through zoom_interactive.
+    # A render with a raster basemap and a few layers takes most of a second,
+    # so rendering every notch would stall a quick spin of the wheel for
+    # seconds. Instead each notch scales the map snapshot the last render
+    # left behind (blit.py), and the view changes, with one render, once the
+    # wheel has rested for _ZOOM_PAUSE_MS.
+    #
+    # The notches are kept as one scaling of the display, x -> scale * x +
+    # shift, with each notch scaling about its own cursor position. Every
+    # preview resamples the original snapshot by that, never the previous
+    # preview, so a burst blurs no more than a single notch does. Nothing
+    # renders in between, so the snapshot stays the original.
+
+    def zoom_interactive(self, factor: float,
+                         center_px: tuple[float, float] | None = None) -> None:
+        """Zoom by *factor* (>1 zooms in) about the display point
+        *center_px* - the cursor - showing a scaled snapshot of the map now
+        and rendering the zoom once no further call has come for
+        _ZOOM_PAUSE_MS. Without a centre, and always on the globe, the zoom
+        is about the middle of the map box, as with :meth:`zoom`."""
+        if self._map_background() is None:
+            # No snapshot of the screen as it is - nothing rendered since
+            # start-up, or the map box has changed size. Finishing a zoom in
+            # progress renders one, as does a plain render otherwise.
+            if self._zoom_gesture is not None:
+                self._finish_zoom()
+            else:
+                self.fig.canvas.draw()
+        background = self._map_background()
+        bbox = self.ax.bbox
+        if center_px is None or self.proj.hemisphere:
+            center_px = ((bbox.x0 + bbox.x1) / 2.0, (bbox.y0 + bbox.y1) / 2.0)
+        if background is None:
+            # A canvas that cannot cache pixels: no preview to show.
+            self.zoom(factor,
+                      tuple(self.ax.transData.inverted().transform(center_px)))
+            self.redraw()
+            return
+        gesture = self._zoom_gesture
+        if gesture is None:
+            gesture = self._zoom_gesture = {
+                "scale": 1.0, "shift": (0.0, 0.0),
+                "timer": self._single_shot_timer(_ZOOM_PAUSE_MS,
+                                                 self._finish_zoom)}
+        # Clamped as a whole, as zoom() will clamp it, so the preview never
+        # shows a zoom the render then refuses.
+        x0, x1 = self.ax.get_xlim()
+        scale = clamp_zoom_factor(gesture["scale"] * factor, x1 - x0,
+                                  self.proj.world_width)
+        step = scale / gesture["scale"]
+        (tx, ty), (px, py) = gesture["shift"], center_px
+        gesture["scale"] = scale
+        gesture["shift"] = (step * tx + (1.0 - step) * px,
+                            step * ty + (1.0 - step) * py)
+        self._blit_scaled(background, scale, gesture["shift"])
+        timer = gesture["timer"]
+        if timer is not None:
+            # Re-armed on every notch, so it fires only once the wheel rests.
+            timer.stop()
+            timer.start()
+
+    def _finish_zoom(self) -> None:
+        """Apply the zoom the notches so far add up to, and render it."""
+        gesture = self._zoom_gesture
+        if gesture is None:
+            return
+        self._zoom_gesture = None
+        if gesture["timer"] is not None:
+            gesture["timer"].stop()
+        scale = gesture["scale"]
+        tx, ty = gesture["shift"]
+        if abs(scale - 1.0) >= 1e-9:
+            # Zoomed about the one display point the scaling leaves where
+            # it was.
+            fixed = (tx / (1.0 - scale), ty / (1.0 - scale))
+            self.zoom(scale, tuple(self.ax.transData.inverted().transform(
+                fixed)))
+        else:
+            # In at one point and out at another: the scales cancel, and
+            # what is left moves the map by *shift* pixels, as a pan would.
+            x0, x1 = self.ax.get_xlim()
+            y0, y1 = self.ax.get_ylim()
+            bbox = self.ax.bbox
+            dx = -(x1 - x0) / bbox.width * tx
+            dy = -(y1 - y0) / bbox.height * ty
+            with self._one_view_change():
+                self.ax.set_xlim(x0 + dx, x1 + dx)
+                self.ax.set_ylim(y0 + dy, y1 + dy)
+        # Drawn now rather than deferred: the next notch or drag scales the
+        # snapshot this render leaves.
+        self.fig.canvas.draw()
 
     def _zoom_level(self) -> float:
         x0, x1 = self.ax.get_xlim()

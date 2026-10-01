@@ -51,6 +51,15 @@ def refit_xlim(box_ratio: float, xlim: tuple[float, float],
     return cx - half, cx + half
 
 
+def clamp_zoom_factor(factor: float, width: float,
+                      world_width: float) -> float:
+    """*factor* limited so that a view *width* wide, zoomed by it, spans
+    no more than one and a half *world_width* and no less than a millionth
+    of it (>1 zooms in)."""
+    factor = max(factor, width / (world_width * 1.5))
+    return min(factor, width / (world_width * 1e-6))
+
+
 def export_geometry(pos_bounds: tuple[float, float, float, float],
                     fig_w: float, fig_h: float,
                     margins: tuple[float, float, float, float]
