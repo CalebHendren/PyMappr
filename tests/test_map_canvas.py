@@ -123,3 +123,26 @@ def test_a_pixel_ratio_resize_cancels_a_waiting_one(tk_root, canvas):
     assert canvas._resize_after_id is None
     _wait(tk_root, 4 * canvas.RESIZE_DELAY_MS)
     assert (420, 310) not in canvas.applied
+
+
+def test_without_the_resize_internals_it_resizes_at_once(tk_root,
+                                                         monkeypatch):
+    # matplotlib before 3.11 has no _resize_figure_for_canvas_size (the
+    # requirement is >= 3.8): the canvas then resizes the plain way, at once.
+    from matplotlib.backends import _backend_tk
+
+    monkeypatch.delattr(_backend_tk.FigureCanvasTk,
+                        "_resize_figure_for_canvas_size")
+    plain = []
+    monkeypatch.setattr(_backend_tk.FigureCanvasTk, "resize",
+                        lambda self, event: plain.append((event.width,
+                                                          event.height)))
+    canvas = DebouncedFigureCanvasTkAgg(Figure(figsize=(3, 2), dpi=100),
+                                        master=tk_root)
+    try:
+        _resize(canvas, 400, 300)
+        _resize(canvas, 420, 310)
+        assert plain == [(400, 300), (420, 310)]
+        assert canvas._resize_after_id is None
+    finally:
+        canvas.get_tk_widget().destroy()

@@ -25,8 +25,9 @@ class DebouncedFigureCanvasTkAgg(FigureCanvasTkAgg):
         super().__init__(*args, **kwargs)
 
     def resize(self, event):
-        # These are matplotlib internals; if a release renames one, fall
-        # back to its plain, immediate resize rather than breaking the map.
+        # These are matplotlib internals, and matplotlib before 3.11 has no
+        # _resize_figure_for_canvas_size. Without them, fall back to the
+        # plain, immediate resize rather than breaking the map.
         if not (hasattr(self, "_resize_figure_for_canvas_size")
                 and hasattr(self, "_tkcanvas_image_region")):
             super().resize(event)
