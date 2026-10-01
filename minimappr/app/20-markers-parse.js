@@ -71,7 +71,7 @@ function toFloat(t){ return parseFloat(String(t).replace(",",".")); }
 function isSecondsMarker(text, m, kind){
   if(m[2].toLowerCase()!=="s" || !/\d/.test(text.charAt(text.length-2))) return false;
   const dms = text.match(DMS_RE);
-  if(!dms || !dms[4]) return false;
+  if(!dms || !dms[2] || !dms[4]) return false;
   return kind==="longitude" || !!dms[3];
 }
 function parseCoordinate(value, kind){

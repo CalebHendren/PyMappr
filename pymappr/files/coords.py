@@ -45,7 +45,7 @@ def _is_seconds_marker(text: str, m: re.Match, kind: str) -> bool:
     if m.group(2).lower() != "s" or not text[-2:-1].isdigit():
         return False
     dms = _DMS_RE.match(text)
-    if not dms or not dms.group("sec"):
+    if not dms or not (dms.group("min") and dms.group("sec")):
         return False
     return kind == "longitude" or bool(dms.group("minmark"))
 
