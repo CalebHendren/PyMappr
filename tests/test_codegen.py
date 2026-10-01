@@ -1664,6 +1664,16 @@ stopifnot(all(load_all_points()$key %in% names(STYLE_COLORS)))
 """)
 
 
+def test_reserved_names_with_a_second_dot_are_guarded():
+    used: set[str] = set()
+    assert codegen._export_filename("NUL.tar", ".csv", used,
+                                    "dataset") == "NUL_.tar.csv"
+    assert codegen._export_filename("con", ".csv", used,
+                                    "dataset") == "con_.csv"
+    assert codegen._export_filename("Console", ".csv", used,
+                                    "dataset") == "Console.csv"
+
+
 # ------------------------------- running whole exported R scripts (opt-in)
 #
 # These run a generated script's main() end to end with real R, sf and

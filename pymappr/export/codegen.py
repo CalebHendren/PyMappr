@@ -381,13 +381,15 @@ def _export_filename(name: str, extension: str, used: set[str],
     which keeps spaces and accented letters. Uniqueness ignores case,
     because Windows and macOS do: "Sites" and "sites" would otherwise write
     one file. A Windows device name such as "CON" gets an underscore, since
-    Windows refuses to create that file under any extension.
+    Windows refuses to create that file under any extension - and only the
+    part before the first dot counts, so "NUL.tar" becomes "NUL_.tar".
     """
     stem = safe_filename(str(name)) if str(name).strip() else fallback
     if extension and stem.lower().endswith(extension.lower()):
         stem = stem[:-len(extension)].rstrip(". ") or fallback
-    if stem.split(".")[0].strip().lower() in _RESERVED_FILENAMES:
-        stem += "_"
+    first, dot, rest = stem.partition(".")
+    if first.strip().lower() in _RESERVED_FILENAMES:
+        stem = f"{first.rstrip()}_{dot}{rest}"
     taken = {item.casefold() for item in used}
     candidate = f"{stem}{extension}"
     counter = 2
