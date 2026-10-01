@@ -393,17 +393,22 @@ class ViewMixin:
         else:
             # In at one point and out at another: the scales cancel, and
             # what is left moves the map by *shift* pixels, as a pan would.
-            x0, x1 = self.ax.get_xlim()
-            y0, y1 = self.ax.get_ylim()
-            bbox = self.ax.bbox
-            dx = -(x1 - x0) / bbox.width * tx
-            dy = -(y1 - y0) / bbox.height * ty
-            with self._one_view_change():
-                self.ax.set_xlim(x0 + dx, x1 + dx)
-                self.ax.set_ylim(y0 + dy, y1 + dy)
+            self._shift_view_px(tx, ty)
         # Drawn now rather than deferred: the next notch or drag scales the
         # snapshot this render leaves.
         self.fig.canvas.draw()
+
+    def _shift_view_px(self, dx: float, dy: float) -> None:
+        """Move the map *dx, dy* display pixels (right and up) across the
+        screen, which moves the view the opposite way."""
+        x0, x1 = self.ax.get_xlim()
+        y0, y1 = self.ax.get_ylim()
+        bbox = self.ax.bbox
+        sx = -(x1 - x0) / bbox.width * dx
+        sy = -(y1 - y0) / bbox.height * dy
+        with self._one_view_change():
+            self.ax.set_xlim(x0 + sx, x1 + sx)
+            self.ax.set_ylim(y0 + sy, y1 + sy)
 
     def _zoom_level(self) -> float:
         x0, x1 = self.ax.get_xlim()
