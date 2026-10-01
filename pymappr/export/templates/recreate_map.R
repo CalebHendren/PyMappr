@@ -451,14 +451,14 @@ basemap_layers <- function() {
 
 lon_label <- function(value) {
   value <- ((value + 180) %% 360) - 180
-  ifelse(value %in% c(0, 180, -180), sprintf("%g°", abs(value)),
-         sprintf("%g°%s", abs(value),
+  ifelse(value %in% c(0, 180, -180), sprintf("%g\u00b0", abs(value)),
+         sprintf("%g\u00b0%s", abs(value),
                  ifelse(value < 0, "W", "E")))
 }
 
 lat_label <- function(value) {
-  ifelse(value == 0, "0°",
-         sprintf("%g°%s", abs(value), ifelse(value < 0, "S", "N")))
+  ifelse(value == 0, "0\u00b0",
+         sprintf("%g\u00b0%s", abs(value), ifelse(value < 0, "S", "N")))
 }
 
 legend_labels <- function(keys) {

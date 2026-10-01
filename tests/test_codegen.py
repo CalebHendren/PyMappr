@@ -1674,6 +1674,14 @@ def test_reserved_names_with_a_second_dot_are_guarded():
                                     "dataset") == "Console.csv"
 
 
+def test_templates_are_plain_ascii():
+    # Non-ASCII characters are written as escapes, so the scripts read the
+    # same in any editor encoding.
+    for name in ("recreate_map.py", "recreate_map.R"):
+        text = codegen._template(name)
+        assert text.isascii(), name
+
+
 # ------------------------------- running whole exported R scripts (opt-in)
 #
 # These run a generated script's main() end to end with real R, sf and
