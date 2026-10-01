@@ -1396,3 +1396,141 @@ def test_the_wheel_is_ignored_during_a_pan_drag():
     r.zoom_interactive(1.25, (cx, cy))
     assert r._zoom_gesture is None
     assert not draws
+
+
+def _start_a_zoom(r):
+    """Scroll twice and leave the gesture waiting on its timer; returns the
+    timer so a test can fire it after the gesture should be gone."""
+    cx, cy = _axes_centre(r)
+    for _ in range(2):
+        r.zoom_interactive(1.25, (cx + 80, cy - 40))
+    assert r._zoom_gesture is not None
+    return r._zoom_gesture["timer"]
+
+
+_VIEW_CHANGES = {
+    "set_view": lambda r, start: r.set_view(*start),
+    "set_extent": lambda r, start: r.set_extent("Africa"),
+    "set_projection": lambda r, start: r.set_projection("Robinson"),
+}
+
+
+@pytest.mark.parametrize("change", _VIEW_CHANGES.values(), ids=_VIEW_CHANGES)
+def test_an_explicit_view_change_cancels_a_pending_zoom(change):
+    # Within the pause after a scroll, a restored session, a preset extent or
+    # a new projection must win: the zoom left waiting would otherwise land
+    # on top of it when its timer fires.
+    reference = _pan_renderer()
+    change(reference, reference.get_view())
+    r = _pan_renderer()
+    start = r.get_view()
+    timer = _start_a_zoom(r)
+    change(r, start)
+    assert r._zoom_gesture is None
+    # Dropped, not applied: the view is the change's alone.
+    assert r.get_view() == reference.get_view()
+    _fire(timer)                      # a timer that already went off
+    assert r.get_view() == reference.get_view()
+
+
+def _toolbar_renderer():
+    from matplotlib.backend_bases import NavigationToolbar2
+
+    r = _renderer(9.0, 6.5)
+    r.set_extent("World")
+    r.fig.canvas.draw()
+    toolbar = NavigationToolbar2(r.fig.canvas)
+    toolbar.push_current()            # Home: the world
+    r.zoom(2.0)
+    toolbar.push_current()
+    return r, toolbar
+
+
+@pytest.mark.parametrize("button", ["home", "back", "forward"])
+def test_the_toolbar_history_cancels_a_pending_zoom(button):
+    r, toolbar = _toolbar_renderer()
+    zoomed = r.get_view()
+    toolbar.back()
+    world = r.get_view()
+    if button == "forward":
+        expected = zoomed
+    else:
+        toolbar.forward()
+        expected = world
+    timer = _start_a_zoom(r)
+    getattr(toolbar, button)()
+    assert r._zoom_gesture is None
+    assert r.get_view() == expected
+    _fire(timer)
+    assert r.get_view() == expected
+
+
+def test_a_fractional_drag_renders_the_whole_pixels_it_previewed():
+    # The preview can only shift the snapshot by whole pixels, so the render
+    # must move the view by the same whole pixels, and the drag re-base on
+    # them, or the map lands up to half a pixel off the preview at each
+    # pause (HiDPI cursors report fractional positions).
+    r = _pan_renderer()
+    x0, x1 = r.ax.get_xlim()
+    y0, y1 = r.ax.get_ylim()
+    bbox = r.ax.bbox
+    cx, cy = _axes_centre(r)
+    r._on_canvas_press(_MouseEvent(r.ax, cx, cy))
+    r._on_canvas_motion(_MouseEvent(r.ax, cx + 40.4, cy + 20.6))
+    _fire_pause(r)
+    assert r.ax.get_xlim()[0] - x0 == pytest.approx(
+        -(x1 - x0) / bbox.width * 40)
+    assert r.ax.get_ylim()[0] - y0 == pytest.approx(
+        -(y1 - y0) / bbox.height * 21)
+    r._on_canvas_motion(_MouseEvent(r.ax, cx + 80.8, cy + 41.2))
+    r._on_canvas_release(_MouseEvent(r.ax, cx + 80.8, cy + 41.2))
+    # The map ends under the cursor to the nearest pixel overall, not off
+    # by the fraction dropped at the pause.
+    assert r.ax.get_xlim()[0] - x0 == pytest.approx(
+        -(x1 - x0) / bbox.width * 81)
+    assert r.ax.get_ylim()[0] - y0 == pytest.approx(
+        -(y1 - y0) / bbox.height * 41)
+
+
+@pytest.mark.parametrize("graticule", [None, 10])
+def test_a_shift_after_the_first_lands_where_the_cursor_went(graticule):
+    # The first motion of a drag used to render, which hid a mis-placed
+    # shift: graticule labels move the axes box off the figure's vertical
+    # centre, and the shift then put the map 22 px off vertically. Only a
+    # motion that shifts without rendering shows it, so this takes two.
+    r = _pan_renderer()
+    r.set_graticule(graticule)
+    r.fig.canvas.draw()
+    before = _red_centre(r.fig.canvas)
+    cx, cy = _axes_centre(r)
+    r._on_canvas_press(_MouseEvent(r.ax, cx, cy))
+    r._on_canvas_motion(_MouseEvent(r.ax, cx + 20, cy + 10))
+    r._on_canvas_motion(_MouseEvent(r.ax, cx + 37, cy + 21))
+    after = _red_centre(r.fig.canvas)
+    assert after[0] - before[0] == pytest.approx(37, abs=1.0)
+    assert after[1] - before[1] == pytest.approx(-21, abs=1.0)
+
+
+def test_the_legend_underline_stays_on_screen_through_a_drag():
+    # As above, the first motion used to render the whole frame, underline
+    # and all; the underline has to survive the shifts that follow it too.
+    r = _pan_renderer()
+    r.set_points([("a", PointStyle(color="#000000"), [100.0], [-40.0])],
+                 None, None,
+                 LegendOptions(location="upper left", label_underline=True))
+    r.fig.canvas.draw()
+    leg = r.ax.get_legend().get_window_extent()
+    height = np.asarray(r.fig.canvas.buffer_rgba()).shape[0]
+    rows = slice(height - int(leg.y1) - 2, height - int(leg.y0) + 2)
+    cols = slice(int(leg.x0) - 2, int(leg.x1) + 2)
+
+    def legend_area():
+        return np.asarray(r.fig.canvas.buffer_rgba())[rows, cols].copy()
+
+    before = legend_area()
+    cx, cy = _axes_centre(r)
+    r._on_canvas_press(_MouseEvent(r.ax, cx, cy))
+    for step in (1, 2, 3):
+        r._on_canvas_motion(_MouseEvent(r.ax, cx + 15 * step,
+                                        cy - 10 * step))
+        assert np.array_equal(legend_area(), before), f"motion {step}"

@@ -241,15 +241,15 @@ class MouseMixin:
             background = self._map_background()
             if background is None:
                 return
-        dx, dy = event.x - drag["x"], event.y - drag["y"]
+        # Whole pixels, as the snapshot can only shift by those: the render
+        # then moves the view by exactly what the preview showed, and the
+        # drag re-bases on that rather than on the fractional cursor.
+        dx = round(event.x - drag["x"])
+        dy = round(event.y - drag["y"])
         self._blit_pan(background, dx, dy)
-        x0, x1 = self.ax.get_xlim()
-        y0, y1 = self.ax.get_ylim()
-        bbox = self.ax.bbox
-        # The map follows the cursor, so the view moves the opposite way.
-        drag["pending"] = (-(x1 - x0) / bbox.width * dx,
-                           -(y1 - y0) / bbox.height * dy)
-        drag["last"] = (event.x, event.y)
+        # The map follows the cursor.
+        drag["pending"] = (dx, dy)
+        drag["last"] = (drag["x"] + dx, drag["y"] + dy)
         timer = drag["timer"]
         if timer is not None:
             # Re-armed on every motion, so it fires only once the cursor rests.
@@ -299,11 +299,7 @@ class MouseMixin:
             return
         dx, dy = drag["pending"]
         drag["pending"] = None
-        x0, x1 = self.ax.get_xlim()
-        y0, y1 = self.ax.get_ylim()
-        with self._one_view_change():
-            self.ax.set_xlim(x0 + dx, x1 + dx)
-            self.ax.set_ylim(y0 + dy, y1 + dy)
+        self._shift_view_px(dx, dy)
         # Drawn now rather than deferred: the next motion event shifts the
         # snapshot this render leaves.
         self.fig.canvas.draw()

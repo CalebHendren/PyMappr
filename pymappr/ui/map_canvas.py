@@ -25,8 +25,9 @@ class DebouncedFigureCanvasTkAgg(FigureCanvasTkAgg):
         super().__init__(*args, **kwargs)
 
     def resize(self, event):
-        # These are matplotlib internals; if a release renames one, fall
-        # back to its plain, immediate resize rather than breaking the map.
+        # These are matplotlib internals, and matplotlib before 3.11 has no
+        # _resize_figure_for_canvas_size. Without them, fall back to the
+        # plain, immediate resize rather than breaking the map.
         if not (hasattr(self, "_resize_figure_for_canvas_size")
                 and hasattr(self, "_tkcanvas_image_region")):
             super().resize(event)
@@ -39,14 +40,28 @@ class DebouncedFigureCanvasTkAgg(FigureCanvasTkAgg):
             self._resize_figure_for_canvas_size(width, height)
             return
 
-        # Keep the stale picture centred in the new window: cheap, and it
-        # stands in for the real redraw until the drag settles.
+        # Keep the stale picture centred in the new window (on whole pixels,
+        # as matplotlib centres it): cheap, and it stands in for the real
+        # redraw until the drag settles.
         self._tkcanvas.coords(self._tkcanvas_image_region,
-                              width / 2, height / 2)
-        if self._resize_after_id is not None:
-            self._tkcanvas.after_cancel(self._resize_after_id)
+                              int(width / 2), int(height / 2))
+        self._cancel_pending_resize()
         self._resize_after_id = self._tkcanvas.after(
             self.RESIZE_DELAY_MS, self._apply_resize, width, height)
+
+    def _set_device_pixel_ratio(self, ratio):
+        # A new pixel ratio (the window mapped on a screen of another scale)
+        # resizes the figure at once, so a resize still waiting would land
+        # afterwards with a stale size.
+        changed = super()._set_device_pixel_ratio(ratio)
+        if changed:
+            self._cancel_pending_resize()
+        return changed
+
+    def _cancel_pending_resize(self):
+        if self._resize_after_id is not None:
+            self._tkcanvas.after_cancel(self._resize_after_id)
+            self._resize_after_id = None
 
     def _apply_resize(self, width, height):
         self._resize_after_id = None

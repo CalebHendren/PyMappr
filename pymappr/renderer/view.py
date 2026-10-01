@@ -73,6 +73,15 @@ class ViewMixin:
         self._suspend_resize = False
         # The scroll-wheel zoom waiting on its timer (see zoom_interactive).
         self._zoom_gesture: dict | None = None
+        # The toolbar's Home, Back and Forward set the view through the
+        # axes' _set_view; a zoom still waiting must not land on top.
+        set_view = self.ax._set_view
+
+        def _set_view(view):
+            self._cancel_zoom()
+            set_view(view)
+
+        self.ax._set_view = _set_view
 
     @contextmanager
     def _preserving_view(self):
@@ -118,6 +127,7 @@ class ViewMixin:
         The globe ignores the extent and always frames its whole disk - see
         :meth:`_frame_globe`.
         """
+        self._cancel_zoom()
         self._extent_request = extent
         if self.proj.hemisphere:
             self._frame_globe()
@@ -264,6 +274,7 @@ class ViewMixin:
 
     def set_view(self, xlim, ylim) -> None:
         """Restore axis limits saved by :meth:`get_view` (same projection)."""
+        self._cancel_zoom()
         with self._one_view_change():
             self.ax.set_xlim(tuple(xlim))
             self.ax.set_ylim(tuple(ylim))
@@ -354,14 +365,23 @@ class ViewMixin:
             timer.stop()
             timer.start()
 
-    def _finish_zoom(self) -> None:
-        """Apply the zoom the notches so far add up to, and render it."""
+    def _cancel_zoom(self) -> dict | None:
+        """Drop the zoom waiting on its timer, unapplied and unrendered, so
+        a view set explicitly is not overridden when the timer fires.
+        Returns the gesture dropped, if any."""
         gesture = self._zoom_gesture
         if gesture is None:
-            return
+            return None
         self._zoom_gesture = None
         if gesture["timer"] is not None:
             gesture["timer"].stop()
+        return gesture
+
+    def _finish_zoom(self) -> None:
+        """Apply the zoom the notches so far add up to, and render it."""
+        gesture = self._cancel_zoom()
+        if gesture is None:
+            return
         scale = gesture["scale"]
         tx, ty = gesture["shift"]
         if abs(scale - 1.0) >= 1e-9:
@@ -373,17 +393,22 @@ class ViewMixin:
         else:
             # In at one point and out at another: the scales cancel, and
             # what is left moves the map by *shift* pixels, as a pan would.
-            x0, x1 = self.ax.get_xlim()
-            y0, y1 = self.ax.get_ylim()
-            bbox = self.ax.bbox
-            dx = -(x1 - x0) / bbox.width * tx
-            dy = -(y1 - y0) / bbox.height * ty
-            with self._one_view_change():
-                self.ax.set_xlim(x0 + dx, x1 + dx)
-                self.ax.set_ylim(y0 + dy, y1 + dy)
+            self._shift_view_px(tx, ty)
         # Drawn now rather than deferred: the next notch or drag scales the
         # snapshot this render leaves.
         self.fig.canvas.draw()
+
+    def _shift_view_px(self, dx: float, dy: float) -> None:
+        """Move the map *dx, dy* display pixels (right and up) across the
+        screen, which moves the view the opposite way."""
+        x0, x1 = self.ax.get_xlim()
+        y0, y1 = self.ax.get_ylim()
+        bbox = self.ax.bbox
+        sx = -(x1 - x0) / bbox.width * dx
+        sy = -(y1 - y0) / bbox.height * dy
+        with self._one_view_change():
+            self.ax.set_xlim(x0 + sx, x1 + sx)
+            self.ax.set_ylim(y0 + sy, y1 + sy)
 
     def _zoom_level(self) -> float:
         x0, x1 = self.ax.get_xlim()
@@ -444,6 +469,7 @@ class ViewMixin:
         proj = get_projection(name, lon_0, lat_0)
         if proj == self.proj:
             return
+        self._cancel_zoom()
         # Spinning the globe only moves its origin: the disk keeps the same
         # size in map coordinates, so the view is re-centred on it at the
         # current zoom rather than rebuilt from the extent request. That keeps
