@@ -1598,3 +1598,33 @@ def test_lambert_labels_sit_on_the_part_of_a_feature_on_the_map():
     # World projections keep the whole-feature anchors.
     r.set_projection("Robinson")
     assert r._label_points("countries") is world
+
+
+def test_label_and_marker_caches_follow_the_region_not_just_the_crs():
+    # Lambert: Africa and Lambert Azimuthal (custom) centred on (20, 5)
+    # share a CRS but not a region: switching between them must not reuse
+    # the other's anchors or out-of-region mask.
+    store = LayerStore()
+    if store.check_data():
+        pytest.skip("map data not downloaded")
+    fig = Figure(figsize=(9, 6.5), dpi=100)
+    FigureCanvasAgg(fig)
+    r = MapRenderer(fig, store)
+    r.set_projection("Lambert: Africa")
+    africa = r.proj
+    r._label_xy("countries")
+    r._point_xy("cities")
+    r.set_projection("Lambert Azimuthal (custom)", 20.0, 5.0)
+    assert r.proj.crs == africa.crs and r.proj != africa
+    points = r._label_points("countries")
+    xs, ys = r._label_xy("countries")
+    assert len(xs) == len(points)
+    ex, ey = r.proj.forward(points["x"].to_numpy(), points["y"].to_numpy(),
+                            clamp=False)
+    np.testing.assert_array_equal(xs, ex)
+    np.testing.assert_array_equal(ys, ey)
+    features = store.point_features("cities")
+    px, _py, _zoom = r._point_xy("cities")
+    fx, _fy = r.proj.forward(features["x"].to_numpy(),
+                             features["y"].to_numpy(), clamp=False)
+    np.testing.assert_array_equal(px, fx)

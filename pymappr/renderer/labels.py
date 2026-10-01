@@ -37,7 +37,10 @@ class LabelsMixin:
                                        region=self.proj.label_region())
 
     def _label_xy(self, source: str) -> tuple[np.ndarray, np.ndarray]:
-        cache_key = (source, self.proj.key)
+        # Keyed on the whole projection, not just its CRS: two Lambert
+        # presets can share a CRS but not a region, and the anchors and
+        # out-of-region mask depend on the region.
+        cache_key = (source, self.proj)
         if cache_key not in self._label_xy_cache:
             points = self._label_points(source)
             # Anchors outside a regional projection are dropped (NaN), not
