@@ -1396,3 +1396,70 @@ def test_the_wheel_is_ignored_during_a_pan_drag():
     r.zoom_interactive(1.25, (cx, cy))
     assert r._zoom_gesture is None
     assert not draws
+
+
+def _start_a_zoom(r):
+    """Scroll twice and leave the gesture waiting on its timer; returns the
+    timer so a test can fire it after the gesture should be gone."""
+    cx, cy = _axes_centre(r)
+    for _ in range(2):
+        r.zoom_interactive(1.25, (cx + 80, cy - 40))
+    assert r._zoom_gesture is not None
+    return r._zoom_gesture["timer"]
+
+
+_VIEW_CHANGES = {
+    "set_view": lambda r, start: r.set_view(*start),
+    "set_extent": lambda r, start: r.set_extent("Africa"),
+    "set_projection": lambda r, start: r.set_projection("Robinson"),
+}
+
+
+@pytest.mark.parametrize("change", _VIEW_CHANGES.values(), ids=_VIEW_CHANGES)
+def test_an_explicit_view_change_cancels_a_pending_zoom(change):
+    # Within the pause after a scroll, a restored session, a preset extent or
+    # a new projection must win: the zoom left waiting would otherwise land
+    # on top of it when its timer fires.
+    reference = _pan_renderer()
+    change(reference, reference.get_view())
+    r = _pan_renderer()
+    start = r.get_view()
+    timer = _start_a_zoom(r)
+    change(r, start)
+    assert r._zoom_gesture is None
+    # Dropped, not applied: the view is the change's alone.
+    assert r.get_view() == reference.get_view()
+    _fire(timer)                      # a timer that already went off
+    assert r.get_view() == reference.get_view()
+
+
+def _toolbar_renderer():
+    from matplotlib.backend_bases import NavigationToolbar2
+
+    r = _renderer(9.0, 6.5)
+    r.set_extent("World")
+    r.fig.canvas.draw()
+    toolbar = NavigationToolbar2(r.fig.canvas)
+    toolbar.push_current()            # Home: the world
+    r.zoom(2.0)
+    toolbar.push_current()
+    return r, toolbar
+
+
+@pytest.mark.parametrize("button", ["home", "back", "forward"])
+def test_the_toolbar_history_cancels_a_pending_zoom(button):
+    r, toolbar = _toolbar_renderer()
+    zoomed = r.get_view()
+    toolbar.back()
+    world = r.get_view()
+    if button == "forward":
+        expected = zoomed
+    else:
+        toolbar.forward()
+        expected = world
+    timer = _start_a_zoom(r)
+    getattr(toolbar, button)()
+    assert r._zoom_gesture is None
+    assert r.get_view() == expected
+    _fire(timer)
+    assert r.get_view() == expected
