@@ -8,7 +8,7 @@ from pymappr.styling.styles import (BLACK_AND_WHITE, BLACK_AND_WHITE_NAME,
                                     OPEN_SUFFIX, PALETTES, PointStyle,
                                     attribute_style_maps, default_styles,
                                     group_points, marker_load, nests_within,
-                                    palette_for, resolve_nesting,
+                                    palette_for, resolve_nesting, row_key,
                                     style_by_attributes)
 
 
@@ -214,3 +214,67 @@ def test_black_and_white_palette_is_offered():
     styles = default_styles(list("abcdef"), vary_symbols=True,
                             palette=BLACK_AND_WHITE)
     assert len({(s.color, s.marker) for s in styles.values()}) == 6
+
+
+def _crossed_frame():
+    # Habitat crosses Sex: both sexes occur in both habitats.
+    return pd.DataFrame({
+        "habitat": ["forest", "forest", "marsh", "marsh"],
+        "sex": ["male", "female", "male", "female"],
+        "lon": [1.0, 2.0, 3.0, 4.0],
+        "lat": [1.0, 2.0, 3.0, 4.0],
+    })
+
+
+def _crossed_styles(color_key, overrides):
+    frame = _crossed_frame()
+    color_map, symbol_map = attribute_style_maps(frame, color_key, "sex")
+    groups = style_by_attributes(frame, color_key, "sex", color_map,
+                                 symbol_map, overrides=overrides)
+    return color_map, {label: style for label, style, _ in groups}
+
+
+def test_crossed_symbol_row_color_does_not_recolor_points():
+    # The colour comes from the colour row; a colour on the symbol row must
+    # not leak into the points of a crossed key.
+    overrides = {row_key("symbol", "male"): {"color": "#ff0000"}}
+    color_map, styles = _crossed_styles("habitat", overrides)
+    assert styles["forest / male"].color == color_map["forest"]
+    assert styles["marsh / male"].color == color_map["marsh"]
+
+
+def test_crossed_color_row_color_still_wins():
+    overrides = {row_key("symbol", "male"): {"color": "#ff0000"},
+                 row_key("color", "forest"): {"color": "#00ff00"}}
+    color_map, styles = _crossed_styles("habitat", overrides)
+    assert styles["forest / male"].color == "#00ff00"
+    assert styles["marsh / male"].color == color_map["marsh"]
+
+
+def test_crossed_symbol_row_keeps_marker_and_size():
+    overrides = {row_key("symbol", "male"): {"color": "#ff0000",
+                                             "marker": "Square",
+                                             "size": 33}}
+    _colors, styles = _crossed_styles("habitat", overrides)
+    assert styles["forest / male"].marker == "Square"
+    assert styles["forest / male"].size == 33.0
+
+
+def test_symbol_only_row_color_still_colors_points():
+    # With no colour key there is no colour row to defer to.
+    overrides = {row_key("symbol", "male"): {"color": "#ff0000"}}
+    _colors, styles = _crossed_styles(None, overrides)
+    assert styles["male"].color == "#ff0000"
+
+
+def test_nested_pair_override_still_governs_the_whole_combination():
+    frame = _insect_frame()
+    color_map, symbol_map = attribute_style_maps(frame, "name1", "name2")
+    overrides = {row_key("pair", "Hemiptera", "Reduviidae"):
+                 {"color": "#ff0000", "marker": "Square"}}
+    groups = style_by_attributes(frame, "name1", "name2", color_map,
+                                 symbol_map, overrides=overrides,
+                                 nested=True)
+    style = next(s for label, s, _ in groups
+                 if label == "Hemiptera / Reduviidae")
+    assert (style.color, style.marker) == ("#ff0000", "Square")

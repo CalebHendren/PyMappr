@@ -386,7 +386,11 @@ function resolveGroups(ds, offset){
       if(nestedNow){
         style=applyOverride(style, ds.overrides[rowKey("pair",cv,sv)]);
       } else {
+        // A colour pinned on the symbol row only reaches the points when no
+        // colour key exists to defer to.
+        const base=style.color;
         style=applyOverride(style, ds.overrides[rowKey("symbol",sv)]);
+        if(ds.colorBy) style={...style, color:base};
         const co=ds.overrides[rowKey("color",cv)];
         if(co&&co.color) style={...style, color:co.color};
       }
