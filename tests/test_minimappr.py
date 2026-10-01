@@ -145,7 +145,7 @@ def test_every_vendor_and_data_file_exists(build_module):
 def test_row_key_scheme_matches_the_python_side(app_js):
     # The two apps write the same project-shaped override keys, so the
     # separator and the tag names have to agree exactly.
-    from pymappr.legend import ROW_SEP
+    from pymappr.styling.legend import ROW_SEP
 
     separator = re.search(r'const ROW_SEP="([^"]*)"', app_js)
     assert separator, "ROW_SEP not found"
@@ -163,8 +163,8 @@ def test_sources_carry_no_nul_bytes():
 
 
 def test_override_helpers_exist_in_the_js(app_js):
-    # These mirror pymappr.styles.apply_override and friends; the render
-    # path and the editor both depend on them.
+    # These mirror pymappr.styling.styles.apply_override and friends; the
+    # render path and the editor both depend on them.
     for name in ("applyOverride", "overrideLabel", "isHidden", "manualOrder",
                  "rowKey", "legendRowsFor", "moveRow", "setOverride"):
         assert f"function {name}(" in app_js, name
@@ -229,14 +229,14 @@ def _js_value(app_js: str, name: str):
 
 
 def test_palettes_match_pymappr(app_js):
-    from pymappr import styles
+    from pymappr.styling import styles
 
     for name in ("DEFAULT_PALETTE", "OKABE_ITO", "BLACK_AND_WHITE"):
         assert _js_value(app_js, name) == getattr(styles, name), name
 
 
 def test_point_outlines_match_pymappr(app_js):
-    from pymappr import styles
+    from pymappr.styling import styles
 
     assert _js_value(app_js, "POINT_EDGE_COLOR") == styles.POINT_EDGE_COLOR
     assert _js_value(app_js, "POINT_EDGE_WIDTH") == styles.POINT_EDGE_WIDTH
@@ -245,13 +245,13 @@ def test_point_outlines_match_pymappr(app_js):
 
 
 def test_shape_limit_matches_pymappr(app_js):
-    from pymappr.styles import LEGIBLE_MARKER_LIMIT
+    from pymappr.styling.styles import LEGIBLE_MARKER_LIMIT
 
     assert _js_value(app_js, "LEGIBLE_MARKER_LIMIT") == LEGIBLE_MARKER_LIMIT
 
 
 def test_scale_bar_maths_matches_pymappr(app_js):
-    from pymappr import decorations
+    from pymappr.styling import decorations
 
     assert _js_value(app_js, "NICE_LENGTHS") == list(decorations._NICE)
     assert _js_value(app_js, "METRES_PER_MILE") == decorations.METRES_PER_MILE
@@ -260,14 +260,14 @@ def test_scale_bar_maths_matches_pymappr(app_js):
 
 
 def test_coordinate_hints_match_pymappr(app_js):
-    from pymappr import data_loader
+    from pymappr.files import data_loader
 
     assert _js_value(app_js, "LON_HINTS") == list(data_loader._LON_HINTS)
     assert _js_value(app_js, "LAT_HINTS") == list(data_loader._LAT_HINTS)
 
 
 def test_every_pymappr_projection_is_offered(app_js):
-    from pymappr.projections import PROJECTIONS
+    from pymappr.geo.projections import PROJECTIONS
 
     table = re.search(r"const PROJ_DEFS = \{(.*?)\n\};", app_js, re.S)
     offered = set(re.findall(r'^\s*"([^"]+)":\{', table.group(1), re.M))
@@ -287,7 +287,7 @@ def test_every_pymappr_grid_spacing_is_offered(body):
 
 
 def test_publication_style_matches_pymappr(app_js):
-    from pymappr.legend import PUBLICATION_LEGEND, LegendOptions
+    from pymappr.styling.legend import PUBLICATION_LEGEND, LegendOptions
 
     source = (ROOT / "pymappr" / "app.py").read_text(encoding="utf-8")
     dpi = re.search(r'PUBLICATION_DPI = "(\d+)"', source).group(1)

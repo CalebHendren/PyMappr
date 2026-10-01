@@ -218,7 +218,7 @@ def default_data_dir() -> Path:
     if getattr(sys, "frozen", False):
         base = Path(getattr(sys, "_MEIPASS", "")) or Path(sys.executable).parent
         return base / "data"
-    return Path(__file__).resolve().parent.parent / "data"
+    return Path(__file__).resolve().parents[2] / "data"
 
 
 class LayerStore:

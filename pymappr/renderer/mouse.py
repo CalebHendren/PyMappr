@@ -7,8 +7,8 @@ import time
 
 import numpy as np
 
-from pymappr.decorations import corner_anchor
-from pymappr.projections import GLOBE
+from pymappr.geo.projections import GLOBE
+from pymappr.styling.decorations import corner_anchor
 
 # The globe re-projects at most this often (seconds) while being dragged;
 # the last position is always applied when the drag ends.

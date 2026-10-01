@@ -22,8 +22,8 @@ import tkinter as tk  # noqa: E402
 import sv_ttk  # noqa: E402
 
 from pymappr.app import PyMapprApp  # noqa: E402
-from pymappr.data_loader import load_csv  # noqa: E402
-from pymappr.layers import LayerStore  # noqa: E402
+from pymappr.files.data_loader import load_csv  # noqa: E402
+from pymappr.geo.layers import LayerStore  # noqa: E402
 
 OUT_DIR = REPO_ROOT / "docs" / "images"
 
@@ -38,7 +38,7 @@ def new_root(geometry: str) -> tk.Tk:
 
 def load_sample(app: PyMapprApp, name: str, group_by: str | None = None) -> None:
     """Load a bundled CSV exactly as the Add data file flow would."""
-    from pymappr.projects import DatasetEntry
+    from pymappr.files.projects import DatasetEntry
 
     dataset = load_csv(str(REPO_ROOT / "sample_data" / name))
     labels = dataset.name_labels
@@ -165,7 +165,7 @@ def shot_publication(store: LayerStore) -> None:
 
 def shot_column_mapper() -> None:
     """The column-mapping dialog shown on every import."""
-    from pymappr.data_loader import guess_mapping, read_table
+    from pymappr.files.data_loader import guess_mapping, read_table
     from pymappr.ui.column_mapper import ColumnMapperDialog
 
     csv = str(REPO_ROOT / "sample_data" / "south_america_beetles.csv")

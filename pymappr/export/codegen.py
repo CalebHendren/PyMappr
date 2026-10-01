@@ -6,19 +6,19 @@ from functools import lru_cache
 from pathlib import Path
 
 from pymappr import __version__
-from pymappr.layers import (BATHYMETRY_STEPS, CONTINENT_EXTENTS,
-                            LAYER_SPECS)
-from pymappr.layout import column_key, layout_points, with_default_title
-from pymappr.legend import LegendOptions
-from pymappr.projections import CAP_CLIP_RADIUS, get_projection, is_globe
+from pymappr.geo.layers import BATHYMETRY_STEPS, CONTINENT_EXTENTS, LAYER_SPECS
+from pymappr.geo.projections import CAP_CLIP_RADIUS, get_projection, is_globe
 from pymappr.renderer.tables import (BATHYMETRY_COLORS, FILL_COLORS,
                                      FILL_LAYERS, LABEL_STYLES, LINE_LAYERS,
                                      MARGINS_PLAIN, MARGINS_WITH_TICKS,
                                      POINT_LAYERS, Z_BATHYMETRY, Z_LAKE_FILL,
                                      Z_OCEAN, Z_POINT_LAYERS)
-from pymappr.decorations import CompassOptions, ScaleBarOptions
-from pymappr.styles import (DEFAULT_PALETTE, POINT_EDGE_COLOR,
-                            POINT_EDGE_WIDTH, PointStyle, palette_for)
+from pymappr.styling.decorations import CompassOptions, ScaleBarOptions
+from pymappr.styling.layout import (column_key, layout_points,
+                                    with_default_title)
+from pymappr.styling.legend import LegendOptions
+from pymappr.styling.styles import (DEFAULT_PALETTE, POINT_EDGE_COLOR,
+                                    POINT_EDGE_WIDTH, PointStyle, palette_for)
 from pymappr.updates import GITHUB_REPO
 
 LANGUAGES = ("Python", "R")

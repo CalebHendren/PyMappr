@@ -1,8 +1,8 @@
 """What the map draws and in which order: the style of every Natural Earth
 layer, the z-order of each kind of artist, and the fixed framing values.
 
-Public because the code export (pymappr.codegen) bakes the same values into
-the scripts it writes, so an exported map looks like the app's."""
+Public because the code export (pymappr.export.codegen) bakes the same values
+into the scripts it writes, so an exported map looks like the app's."""
 
 import matplotlib.patheffects as patheffects
 

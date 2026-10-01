@@ -127,19 +127,19 @@ python scripts/make_app_screenshot.py  # the app screenshots (needs a display)
 
 Project layout:
 
-- `pymappr/coords.py` - decimal/DMS coordinate parsing
-- `pymappr/data_loader.py` - CSV/TSV/Excel reading and column mapping
-- `pymappr/projects.py` - project files, settings, session autosave
-- `pymappr/layers.py` - Natural Earth layer store and on-disk frame cache
-- `pymappr/projections.py` - map projections (pyproj)
+- `pymappr/files/coords.py` - decimal/DMS coordinate parsing
+- `pymappr/files/data_loader.py` - CSV/TSV/Excel reading and column mapping
+- `pymappr/files/projects.py` - project files, settings, session autosave
+- `pymappr/geo/layers.py` - Natural Earth layer store and on-disk frame cache
+- `pymappr/geo/projections.py` - map projections (pyproj)
 - `pymappr/renderer/` - matplotlib map rendering, one module per concern
   (view, layers, overlays, labels, points and legend, mouse), plus the
   layer style tables shared with code export
-- `pymappr/styles.py` - point styles and group/color-by styling
-- `pymappr/legend.py` - legend options and legend rows
-- `pymappr/layout.py` - what every dataset draws (shared by the app and code
+- `pymappr/styling/styles.py` - point styles and group/color-by styling
+- `pymappr/styling/legend.py` - legend options and legend rows
+- `pymappr/styling/layout.py` - what every dataset draws (shared by the app and code
   export)
-- `pymappr/codegen.py`, `pymappr/templates/` - Python/R code export
+- `pymappr/export/codegen.py`, `pymappr/export/templates/` - Python/R code export
 - `pymappr/updates.py` - daily update check against the GitHub releases API
 - `pymappr/app.py`, `pymappr/ui/` - Tkinter application
 - `scripts/fetch_data.py` - downloads and prepares the bundled map data

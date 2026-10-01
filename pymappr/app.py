@@ -19,28 +19,27 @@ import pandas as pd  # noqa: E402
 from matplotlib.backends.backend_tkagg import NavigationToolbar2Tk  # noqa: E402
 from matplotlib.figure import Figure  # noqa: E402
 
-from pymappr import __version__, projects, updates  # noqa: E402
-from pymappr.data_loader import (OPEN_FILETYPES, PointDataset,  # noqa: E402
-                                 build_dataset, build_manual_dataset,
-                                 combine_name_columns, guess_mapping,
-                                 headers_look_like_data, list_sheets,
-                                 read_table)
-from pymappr.decorations import (CompassOptions,  # noqa: E402
-                                 ScaleBarOptions)
-from pymappr.layers import LayerStore  # noqa: E402
-from pymappr.layout import (MapLayout, column_key,  # noqa: E402
-                            editor_rows, layout_points,
-                            organise_publication_legend, with_default_title)
-from pymappr.legend import (ENTRY_ORDERS, PUBLICATION_LEGEND,  # noqa: E402
-                            LegendOptions)
-from pymappr.projects import PROJECT_EXTENSION, DatasetEntry  # noqa: E402
+from pymappr import __version__, updates  # noqa: E402
+from pymappr.files import projects  # noqa: E402
+from pymappr.files.data_loader import (  # noqa: E402
+    OPEN_FILETYPES, PointDataset, build_dataset, build_manual_dataset,
+    combine_name_columns, guess_mapping, headers_look_like_data, list_sheets,
+    read_table)
+from pymappr.files.projects import (  # noqa: E402
+    PROJECT_EXTENSION, DatasetEntry)
+from pymappr.geo.layers import LayerStore  # noqa: E402
 from pymappr.renderer import MapRenderer  # noqa: E402
-from pymappr.styles import (BLACK_AND_WHITE_NAME,  # noqa: E402
-                            DEFAULT_PALETTE_NAME, LEGIBLE_MARKER_LIMIT,
-                            POINT_EDGE_COLOR, POINT_EDGE_WIDTH,
-                            PUBLICATION_POINT_EDGE, PointStyle,
-                            apply_override, marker_load, resolve_nesting,
-                            row_key)
+from pymappr.styling.decorations import (  # noqa: E402
+    CompassOptions, ScaleBarOptions)
+from pymappr.styling.layout import (  # noqa: E402
+    MapLayout, column_key, editor_rows, layout_points,
+    organise_publication_legend, with_default_title)
+from pymappr.styling.legend import (  # noqa: E402
+    ENTRY_ORDERS, PUBLICATION_LEGEND, LegendOptions)
+from pymappr.styling.styles import (  # noqa: E402
+    BLACK_AND_WHITE_NAME, DEFAULT_PALETTE_NAME, LEGIBLE_MARKER_LIMIT,
+    POINT_EDGE_COLOR, POINT_EDGE_WIDTH, PUBLICATION_POINT_EDGE, PointStyle,
+    apply_override, marker_load, resolve_nesting, row_key)
 from pymappr.ui.column_mapper import ColumnMapperDialog  # noqa: E402
 from pymappr.ui.combine_columns import CombineColumnsDialog  # noqa: E402
 from pymappr.ui.control_panel import ControlPanel, name_for  # noqa: E402
@@ -53,8 +52,8 @@ from pymappr.ui.projects_dialog import ProjectsDialog  # noqa: E402
 MAX_SKIPPED_SHOWN = 12
 UNTITLED = "Untitled"
 # The export DPI of the "Publication style" preset (the point and legend
-# halves are pymappr.styles.PUBLICATION_POINT_EDGE and
-# pymappr.legend.PUBLICATION_LEGEND).
+# halves are pymappr.styling.styles.PUBLICATION_POINT_EDGE and
+# pymappr.styling.legend.PUBLICATION_LEGEND).
 PUBLICATION_DPI = "600"
 PROJECT_FILETYPES = [("PyMappr project", "*" + PROJECT_EXTENSION),
                      ("All files", "*.*")]

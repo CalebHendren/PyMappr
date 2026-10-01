@@ -13,7 +13,7 @@ from __future__ import annotations
 import tkinter as tk
 from tkinter import colorchooser, ttk
 
-from pymappr.styles import MARKERS, PointStyle
+from pymappr.styling.styles import MARKERS, PointStyle
 from pymappr.ui.control_panel import TYPING_PAUSE_MS
 
 # Blank means "leave it as the styling rules worked it out", so a row that

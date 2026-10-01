@@ -5,7 +5,8 @@
 
 ``--out`` writes somewhere else (a quick render check without touching the
 docs), and ``--all`` adds a few extra scenes that exercise more layers.
-Points are styled through pymappr.layout, exactly as the app styles them.
+Points are styled through pymappr.styling.layout, exactly as the app styles
+them.
 """
 
 from __future__ import annotations
@@ -23,15 +24,18 @@ from matplotlib.figure import Figure  # noqa: E402
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
-from pymappr.data_loader import combine_name_columns, load_csv  # noqa: E402
-from pymappr.decorations import CompassOptions  # noqa: E402
-from pymappr.layers import LayerStore  # noqa: E402
-from pymappr.layout import layout_points, with_default_title  # noqa: E402
-from pymappr.legend import PUBLICATION_LEGEND, LegendOptions  # noqa: E402
-from pymappr.projects import DatasetEntry  # noqa: E402
+from pymappr.files.data_loader import (  # noqa: E402
+    combine_name_columns, load_csv)
+from pymappr.files.projects import DatasetEntry  # noqa: E402
+from pymappr.geo.layers import LayerStore  # noqa: E402
 from pymappr.renderer import MapRenderer  # noqa: E402
-from pymappr.styles import (BLACK_AND_WHITE, DEFAULT_PALETTE,  # noqa: E402
-                            PUBLICATION_POINT_EDGE)
+from pymappr.styling.decorations import CompassOptions  # noqa: E402
+from pymappr.styling.layout import (  # noqa: E402
+    layout_points, with_default_title)
+from pymappr.styling.legend import (  # noqa: E402
+    PUBLICATION_LEGEND, LegendOptions)
+from pymappr.styling.styles import (  # noqa: E402
+    BLACK_AND_WHITE, DEFAULT_PALETTE, PUBLICATION_POINT_EDGE)
 
 DPI = 110
 SAMPLES = REPO_ROOT / "sample_data"

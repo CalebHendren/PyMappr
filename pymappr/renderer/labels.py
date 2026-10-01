@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from pymappr.layers import LAYER_SPECS, BoundedCache
+from pymappr.geo.layers import LAYER_SPECS, BoundedCache
 from pymappr.renderer.tables import (LABEL_HALO, LABEL_STYLES, POINT_LAYERS,
                                      Z_LABELS)
 

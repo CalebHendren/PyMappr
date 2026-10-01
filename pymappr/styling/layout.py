@@ -11,13 +11,14 @@ from __future__ import annotations
 import dataclasses
 from dataclasses import dataclass, field
 
-from pymappr.legend import (LegendOptions, format_count, is_hidden,
-                            legend_counts, legend_sections, manual_order,
-                            order_labels, override_label)
-from pymappr.projects import DatasetEntry
-from pymappr.styles import (PointStyle, apply_override, attribute_style_maps,
-                            default_styles, group_points, owner_map,
-                            resolve_nesting, row_key, style_by_attributes)
+from pymappr.files.projects import DatasetEntry
+from pymappr.styling.legend import (LegendOptions, format_count, is_hidden,
+                                    legend_counts, legend_sections,
+                                    manual_order, order_labels, override_label)
+from pymappr.styling.styles import (PointStyle, apply_override,
+                                    attribute_style_maps, default_styles,
+                                    group_points, owner_map, resolve_nesting,
+                                    row_key, style_by_attributes)
 
 __all__ = ["DatasetLayout", "MapLayout", "column_key", "group_styles",
            "layout_points", "with_default_title", "editor_rows",

@@ -12,16 +12,18 @@ from __future__ import annotations
 import tkinter as tk
 from tkinter import colorchooser, ttk
 
-from pymappr.layers import CONTINENT_EXTENTS
-from pymappr.legend import (COUNT_FORMATS, ENTRY_ORDERS, FONT_FAMILIES,
-                            GROUP_SWATCHES, HIERARCHY_MODES, LEGEND_LOCATIONS,
-                            TITLE_ALIGNMENTS, LegendOptions)
-from pymappr.decorations import (CORNERS, CompassOptions,
-                                 ScaleBarOptions)
-from pymappr.projections import (PROJECTIONS, default_origin,
-                                 has_custom_origin)
-from pymappr.styles import (DEFAULT_PALETTE_NAME, PALETTES,
-                            POINT_EDGE_COLOR, POINT_EDGE_WIDTH, palette_for)
+from pymappr.geo.layers import CONTINENT_EXTENTS
+from pymappr.geo.projections import (PROJECTIONS, default_origin,
+                                     has_custom_origin)
+from pymappr.styling.decorations import (CORNERS, CompassOptions,
+                                         ScaleBarOptions)
+from pymappr.styling.legend import (COUNT_FORMATS, ENTRY_ORDERS, FONT_FAMILIES,
+                                    GROUP_SWATCHES, HIERARCHY_MODES,
+                                    LEGEND_LOCATIONS, TITLE_ALIGNMENTS,
+                                    LegendOptions)
+from pymappr.styling.styles import (DEFAULT_PALETTE_NAME, PALETTES,
+                                    POINT_EDGE_COLOR, POINT_EDGE_WIDTH,
+                                    palette_for)
 
 PANEL_WIDTH = 320
 # How long typing has to pause before a text or number box redraws the map.

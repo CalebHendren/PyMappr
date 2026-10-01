@@ -2,11 +2,11 @@ import json
 
 import pytest
 
-from pymappr import projects
-from pymappr.data_loader import (build_manual_dataset, combine_name_columns,
-                                 load_csv)
-from pymappr.legend import row_key
-from pymappr.projects import DatasetEntry
+from pymappr.files import projects
+from pymappr.files.data_loader import (build_manual_dataset,
+                                       combine_name_columns, load_csv)
+from pymappr.files.projects import DatasetEntry
+from pymappr.styling.legend import row_key
 
 
 def make_entry():

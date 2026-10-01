@@ -1,16 +1,16 @@
 """The north arrow and the scale bar: small annotations pinned to a
 corner of the map. The options and the maths of a bar's length live in
-pymappr.decorations; this draws them."""
+pymappr.styling.decorations; this draws them."""
 
 from __future__ import annotations
 
 import numpy as np
 from matplotlib.patches import Polygon, Rectangle
 
-from pymappr.decorations import (CompassOptions, ScaleBarOptions,
-                                 corner_anchor, format_length,
-                                 nice_length, unit_metres)
 from pymappr.renderer.tables import LABEL_HALO, Z_COMPASS, Z_SCALE_BAR
+from pymappr.styling.decorations import (CompassOptions, ScaleBarOptions,
+                                         corner_anchor, format_length,
+                                         nice_length, unit_metres)
 
 
 class OverlaysMixin:

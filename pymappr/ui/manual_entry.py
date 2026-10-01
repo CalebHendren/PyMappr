@@ -12,7 +12,7 @@ from __future__ import annotations
 import tkinter as tk
 from tkinter import colorchooser, ttk
 
-from pymappr.styles import MARKERS, PointStyle
+from pymappr.styling.styles import MARKERS, PointStyle
 
 COORD_ORDERS = ["Latitude, Longitude", "Longitude, Latitude"]
 SIZE_CHOICES = ["10", "20", "30", "45", "60", "90", "120"]

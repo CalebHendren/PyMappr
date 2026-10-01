@@ -10,10 +10,11 @@ import tkinter as tk
 
 import pytest
 
-from pymappr.legend import LegendOptions, row_key
-from pymappr.styles import POINT_EDGE_COLOR, POINT_EDGE_WIDTH, PointStyle
-from pymappr.ui.legend_editor import LegendEditorDialog
+from pymappr.styling.legend import LegendOptions, row_key
+from pymappr.styling.styles import (POINT_EDGE_COLOR, POINT_EDGE_WIDTH,
+                                    PointStyle)
 from pymappr.ui.control_panel import ControlPanel
+from pymappr.ui.legend_editor import LegendEditorDialog
 
 
 class _FakeApp:

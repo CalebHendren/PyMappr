@@ -18,7 +18,7 @@ CHECK_INTERVAL = 24 * 60 * 60  # at most one automatic check per day
 
 def _state_path() -> Path:
     """Per-user file holding the time of the last automatic check."""
-    from pymappr.projects import config_dir
+    from pymappr.files.projects import config_dir
 
     return config_dir() / "update_check.json"
 

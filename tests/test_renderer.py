@@ -18,15 +18,15 @@ matplotlib.use("Agg")
 from matplotlib.backends.backend_agg import FigureCanvasAgg  # noqa: E402
 from matplotlib.figure import Figure  # noqa: E402
 
-from pymappr.layers import LayerStore  # noqa: E402
+from pymappr.geo.layers import LayerStore  # noqa: E402
 from pymappr.renderer import MapRenderer  # noqa: E402
-from pymappr.renderer.geometry import (export_geometry,  # noqa: E402
-                                       oriented_axes_rect, refit_xlim)
-from pymappr.renderer.tables import (MARGINS_PLAIN,  # noqa: E402
-                                     MARGINS_WITH_TICKS, ORIENTATION_ASPECT)
-from pymappr.decorations import ScaleBarOptions  # noqa: E402
-from pymappr.legend import LegendOptions  # noqa: E402
-from pymappr.styles import PointStyle  # noqa: E402
+from pymappr.renderer.geometry import (  # noqa: E402
+    export_geometry, oriented_axes_rect, refit_xlim)
+from pymappr.renderer.tables import (  # noqa: E402
+    MARGINS_PLAIN, MARGINS_WITH_TICKS, ORIENTATION_ASPECT)
+from pymappr.styling.decorations import ScaleBarOptions  # noqa: E402
+from pymappr.styling.legend import LegendOptions  # noqa: E402
+from pymappr.styling.styles import PointStyle  # noqa: E402
 
 
 def _box_aspect(rect, fig_w, fig_h):
@@ -334,7 +334,7 @@ def test_legend_underlines_cleared_when_hidden():
 
 
 def test_dragging_the_globe_recentres_the_projection():
-    from pymappr.projections import GLOBE
+    from pymappr.geo.projections import GLOBE
 
     r = _renderer(9.0, 6.5)
     r.set_projection(GLOBE, 0.0, 0.0)
@@ -361,7 +361,7 @@ def test_globe_spins_when_the_pan_tool_is_active():
     # Panning the globe should spin it, not slide the disk: the globe grabs
     # the drag even while the toolbar pan tool is active, and matplotlib's
     # axes pan/zoom is disabled so the two never fight.
-    from pymappr.projections import GLOBE
+    from pymappr.geo.projections import GLOBE
 
     r = _renderer(9.0, 6.5)
     r.set_projection(GLOBE, 0.0, 0.0)
@@ -378,7 +378,7 @@ def test_switching_off_the_globe_restores_the_zoom_tool_only():
     # Pan drags are handled here in every projection - the globe spins, the
     # rest blit - so matplotlib's axes pan stays switched off throughout.
     # Only its rubber-band zoom comes back off the globe.
-    from pymappr.projections import GLOBE
+    from pymappr.geo.projections import GLOBE
 
     r = _renderer(9.0, 6.5)
     r.set_projection(GLOBE, 0.0, 0.0)
@@ -391,7 +391,7 @@ def test_globe_view_is_circular_not_stretched():
     # The globe's projected bounds are a square disk. In the wide map axes the
     # view must be re-fit so map units stay square (aspect == the box aspect),
     # or the disk renders as an ellipse. This guards the "stretched globe" bug.
-    from pymappr.projections import GLOBE
+    from pymappr.geo.projections import GLOBE
 
     r = _renderer(9.0, 6.5)
     r.set_projection(GLOBE, 0.0, 0.0)
@@ -412,7 +412,7 @@ def _disk_frame(renderer):
 
 
 def test_globe_sits_centred_with_a_margin_not_filling_the_canvas():
-    from pymappr.projections import GLOBE
+    from pymappr.geo.projections import GLOBE
     from pymappr.renderer.view import _GLOBE_FILL
 
     r = _renderer(9.0, 6.5)
@@ -430,7 +430,7 @@ def test_spinning_the_globe_never_shifts_or_resizes_it(extent):
     # a lon/lat box's projected bounding box lurches sideways and changes width
     # as parts of it swing behind the horizon - so the globe jumped left and
     # right mid-drag. The disk must stay dead centre at a constant size.
-    from pymappr.projections import GLOBE
+    from pymappr.geo.projections import GLOBE
 
     r = _renderer(9.0, 6.5)
     r.set_extent(extent)
@@ -448,7 +448,7 @@ def test_spinning_the_globe_never_shifts_or_resizes_it(extent):
 
 
 def test_spinning_the_globe_preserves_the_zoom_level():
-    from pymappr.projections import GLOBE
+    from pymappr.geo.projections import GLOBE
 
     r = _renderer(9.0, 6.5)
     r.set_projection(GLOBE, 0.0, 0.0)
@@ -462,7 +462,7 @@ def test_spinning_the_globe_preserves_the_zoom_level():
 def test_zooming_the_globe_keeps_it_centred():
     # Zooming about the cursor would slide the disk off centre and the next
     # spin would snap it back; on the globe the cursor is ignored.
-    from pymappr.projections import GLOBE
+    from pymappr.geo.projections import GLOBE
 
     r = _renderer(9.0, 6.5)
     r.set_projection(GLOBE, 0.0, 0.0)
@@ -472,7 +472,7 @@ def test_zooming_the_globe_keeps_it_centred():
 
 
 def test_globe_stays_centred_and_whole_in_portrait():
-    from pymappr.projections import GLOBE
+    from pymappr.geo.projections import GLOBE
     from pymappr.renderer.view import _GLOBE_FILL
 
     r = _renderer(9.0, 6.5)
@@ -489,7 +489,7 @@ def test_globe_stays_centred_and_whole_in_portrait():
 
 
 def test_globe_survives_a_window_resize():
-    from pymappr.projections import GLOBE
+    from pymappr.geo.projections import GLOBE
     from pymappr.renderer.view import _GLOBE_FILL
 
     r = _renderer(9.0, 6.5)
@@ -530,8 +530,8 @@ def test_plotting_a_layer_leaves_the_axes_unlabelled():
 def _beetle_sections(**kwargs):
     import pandas as pd
 
-    from pymappr.legend import legend_counts, legend_sections
-    from pymappr.styles import attribute_style_maps
+    from pymappr.styling.legend import legend_counts, legend_sections
+    from pymappr.styling.styles import attribute_style_maps
     path = (Path(__file__).resolve().parent.parent / "sample_data"
             / "south_america_beetles.csv")
     frame = pd.read_csv(path).rename(columns={"Genus": "name1",
@@ -578,8 +578,8 @@ def test_nested_legend_bolds_the_genus_rows_only():
 def test_crossed_legend_keeps_every_row_at_one_indent():
     import pandas as pd
 
-    from pymappr.legend import legend_sections
-    from pymappr.styles import attribute_style_maps
+    from pymappr.styling.legend import legend_sections
+    from pymappr.styling.styles import attribute_style_maps
     frame = pd.DataFrame({
         "name1": ["forest", "forest", "scrub", "scrub"],
         "name2": ["male", "female", "male", "female"],
@@ -791,7 +791,7 @@ def test_a_legend_only_change_leaves_the_points_as_drawn():
 
 
 def test_a_globe_drag_reprojects_at_a_limited_rate_and_ends_where_released():
-    from pymappr.projections import GLOBE
+    from pymappr.geo.projections import GLOBE
 
     r = _renderer(9.0, 6.5)
     r.set_projection(GLOBE, 0.0, 0.0)
@@ -1303,7 +1303,7 @@ def test_zooming_out_fills_the_uncovered_border_with_the_facecolour():
 
 
 def test_zooming_the_globe_interactively_keeps_it_centred():
-    from pymappr.projections import GLOBE
+    from pymappr.geo.projections import GLOBE
 
     r = _renderer(9.0, 6.5)
     r.set_projection(GLOBE, 0.0, 0.0)

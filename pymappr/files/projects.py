@@ -10,8 +10,8 @@ from pathlib import Path
 import pandas as pd
 
 from pymappr import __version__
-from pymappr.data_loader import PointDataset
-from pymappr.styles import PointStyle, row_key
+from pymappr.files.data_loader import PointDataset
+from pymappr.styling.styles import PointStyle, row_key
 
 __all__ = ["PROJECT_EXTENSION", "DatasetEntry", "config_dir",
            "load_settings", "save_settings", "projects_dir",
@@ -106,7 +106,7 @@ class DatasetEntry:
     color_by: str = ""
     symbol_by: str = ""
     vary_symbols: bool = False
-    # Per-legend-row customization, keyed by pymappr.styles.row_key: a
+    # Per-legend-row customization, keyed by pymappr.styling.styles.row_key: a
     # replacement label, a hidden flag, a manual position, and pinned
     # color/marker/size. Everything else about a row's look is worked out
     # from the palette each time, so it follows a palette change.

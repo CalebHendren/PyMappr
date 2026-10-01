@@ -12,8 +12,8 @@ import numpy as np
 from matplotlib.collections import LineCollection
 from matplotlib.ticker import AutoLocator, FuncFormatter, MultipleLocator
 
-from pymappr.layers import CONTINENT_EXTENTS, LayerStore
-from pymappr.projections import get_projection
+from pymappr.geo.layers import CONTINENT_EXTENTS, LayerStore
+from pymappr.geo.projections import get_projection
 from pymappr.renderer.geometry import (clamp_zoom_factor, export_geometry,
                                        format_lat, format_lon,
                                        oriented_axes_rect, refit_xlim)

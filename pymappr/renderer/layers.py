@@ -9,7 +9,7 @@ from dataclasses import dataclass
 import matplotlib.transforms as mtransforms
 import numpy as np
 
-from pymappr.layers import BATHYMETRY_STEPS, LAYER_SPECS, BoundedCache
+from pymappr.geo.layers import BATHYMETRY_STEPS, LAYER_SPECS, BoundedCache
 from pymappr.renderer.tables import (BATHYMETRY_COLORS, FILL_COLORS,
                                      FILL_LAYERS, LINE_LAYERS, POINT_LAYERS,
                                      Z_BATHYMETRY, Z_LAKE_FILL, Z_OCEAN,

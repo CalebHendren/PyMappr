@@ -1,19 +1,19 @@
-"""Tests for pymappr.layout: what every dataset draws, shared by the app
-and the code export."""
+"""Tests for pymappr.styling.layout: what every dataset draws, shared by the
+app and the code export."""
 
 from __future__ import annotations
 
 import json
 
-from pymappr import projects
-from pymappr.data_loader import (PointDataset, build_manual_dataset,
-                                 combine_name_columns, load_csv)
-from pymappr.layout import (column_key, editor_rows, layout_points,
-                            organise_publication_legend, parent_name_column,
-                            with_default_title)
-from pymappr.legend import LegendOptions
-from pymappr.projects import DatasetEntry
-from pymappr.styles import DEFAULT_PALETTE, OKABE_ITO, row_key
+from pymappr.files import projects
+from pymappr.files.data_loader import (PointDataset, build_manual_dataset,
+                                       combine_name_columns, load_csv)
+from pymappr.files.projects import DatasetEntry
+from pymappr.styling.layout import (column_key, editor_rows, layout_points,
+                                    organise_publication_legend,
+                                    parent_name_column, with_default_title)
+from pymappr.styling.legend import LegendOptions
+from pymappr.styling.styles import DEFAULT_PALETTE, OKABE_ITO, row_key
 
 SAMPLE = "sample_data/south_america_beetles.csv"
 

@@ -2,7 +2,8 @@ import math
 
 import pytest
 
-from pymappr.coords import CoordinateError, parse_latitude, parse_longitude
+from pymappr.files.coords import (CoordinateError, parse_latitude,
+                                  parse_longitude)
 
 
 def close(a, b):

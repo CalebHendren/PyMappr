@@ -5,10 +5,10 @@ from pathlib import Path
 
 import pandas as pd
 
-from pymappr.legend import (NEUTRAL_MARKER_COLOR, PUBLICATION_LEGEND,
-                            LegendOptions, legend_counts, legend_sections,
-                            order_labels, row_key)
-from pymappr.styles import apply_override, attribute_style_maps
+from pymappr.styling.legend import (NEUTRAL_MARKER_COLOR, PUBLICATION_LEGEND,
+                                    LegendOptions, legend_counts,
+                                    legend_sections, order_labels, row_key)
+from pymappr.styling.styles import apply_override, attribute_style_maps
 
 
 def _beetle_frame():

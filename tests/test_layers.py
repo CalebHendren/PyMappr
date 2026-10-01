@@ -5,8 +5,8 @@ from __future__ import annotations
 import importlib.util
 from pathlib import Path
 
-from pymappr.layers import (BATHYMETRY_STEPS, DERIVED, LAYER_SPECS,
-                            OPTIONAL_LAYERS, BoundedCache)
+from pymappr.geo.layers import (BATHYMETRY_STEPS, DERIVED, LAYER_SPECS,
+                                OPTIONAL_LAYERS, BoundedCache)
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 

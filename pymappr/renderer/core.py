@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pymappr.layers import LayerStore
+from pymappr.geo.layers import LayerStore
 from pymappr.renderer.blit import BlitMixin
 from pymappr.renderer.labels import LabelsMixin
 from pymappr.renderer.layers import LayersMixin
