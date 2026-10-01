@@ -293,14 +293,28 @@ to_map_crs <- function(data) {
   sf::st_transform(data, MAP_CRS)
 }
 
-project_points <- function(data) {
-  # Points like the app: clamped into the projection's usable band rather
-  # than clipped away, and dropped only where the globe's far side hides
-  # them.
+project_points <- function(data, clamp = TRUE) {
+  # Points like the app: longitudes wrapped around a regional centre, then
+  # clamped into the projection's usable band rather than clipped away,
+  # and dropped only where the globe's far side hides them. With
+  # clamp = FALSE (Natural Earth markers) points outside the band are
+  # dropped instead of stacked along its edge.
   if (GEOGRAPHIC || nrow(data) == 0) return(data)
   xy <- sf::st_coordinates(data)
   lon <- xy[, 1]
-  lat <- pmin(pmax(xy[, 2], MIN_LAT), MAX_LAT)
+  lat <- xy[, 2]
+  if (LON_HALFSPAN < 180) {
+    lon <- LON_0 + ((lon - LON_0 + 180) %% 360) - 180
+  }
+  if (!clamp) {
+    inside <- lat >= MIN_LAT & lat <= MAX_LAT
+    if (LON_HALFSPAN < 180) inside <- inside & abs(lon - LON_0) <= LON_HALFSPAN
+    data <- data[inside, ]
+    lon <- lon[inside]
+    lat <- lat[inside]
+    if (nrow(data) == 0) return(sf::st_transform(data, MAP_CRS))
+  }
+  lat <- pmin(pmax(lat, MIN_LAT), MAX_LAT)
   if (LON_HALFSPAN < 180) {
     lon <- pmin(pmax(lon, LON_0 - LON_HALFSPAN), LON_0 + LON_HALFSPAN)
   }
@@ -350,7 +364,7 @@ base_layer_geom <- function(layer) {
     }))
   }
   data <- zoom_filter(data, layer$min_zoom_max)
-  data <- if (layer$kind == "point") project_points(data) else
+  data <- if (layer$kind == "point") project_points(data, clamp = FALSE) else
     to_map_crs(data)
   data <- wrapped(data)
   if (layer$kind == "fill") {

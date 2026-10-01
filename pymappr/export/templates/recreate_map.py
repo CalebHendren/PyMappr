@@ -177,17 +177,28 @@ def _transformer():
     return Transformer.from_crs("EPSG:4326", MAP_CRS, always_xy=True)
 
 
-def proj_forward(lons, lats):
-    """Project lon/lat arrays into map coordinates, like the app: clip to
-    the projection's usable band, NaN out the globe's far hemisphere."""
+def proj_forward(lons, lats, clamp=True):
+    """Project lon/lat arrays into map coordinates, like the app: wrap
+    longitudes around a regional centre, clamp into the projection's
+    usable band (or, with clamp=False, NaN out what lies outside it), and
+    NaN out the globe's far hemisphere."""
     lons = np.asarray(lons, dtype=float)
     lats = np.asarray(lats, dtype=float)
     if MAP_CRS is None:
         return lons, lats
-    lats = np.clip(lats, PROJ["min_lat"], PROJ["max_lat"])
-    if PROJ["lon_halfspan"] < 180.0:
-        lons = np.clip(lons, PROJ["lon_0"] - PROJ["lon_halfspan"],
-                       PROJ["lon_0"] + PROJ["lon_halfspan"])
+    lon_0, halfspan = PROJ["lon_0"], PROJ["lon_halfspan"]
+    if halfspan < 180.0:
+        lons = lon_0 + ((lons - lon_0 + 180.0) % 360.0) - 180.0
+    if not clamp:
+        outside = (lats < PROJ["min_lat"]) | (lats > PROJ["max_lat"])
+        if halfspan < 180.0:
+            outside |= np.abs(lons - lon_0) > halfspan
+        lons = np.where(outside, np.nan, lons)
+        lats = np.where(outside, np.nan, lats)
+    else:
+        lats = np.clip(lats, PROJ["min_lat"], PROJ["max_lat"])
+        if halfspan < 180.0:
+            lons = np.clip(lons, lon_0 - halfspan, lon_0 + halfspan)
     xs, ys = _transformer().transform(lons, lats)
     xs, ys = np.asarray(xs, dtype=float), np.asarray(ys, dtype=float)
     if PROJ["hemisphere"]:
@@ -359,8 +370,10 @@ def add_base_layers(ax):
             threshold = layer.get("min_zoom_max")
             if threshold is not None:
                 gdf = gdf[feature_min_zoom(gdf) <= threshold]
+            # Markers outside a regional projection are dropped, not
+            # stacked along its edge.
             xs, ys = proj_forward(gdf.geometry.x.to_numpy(),
-                                  gdf.geometry.y.to_numpy())
+                                  gdf.geometry.y.to_numpy(), clamp=False)
             offsets = wrap_offsets()
             px = np.concatenate([xs + off for off in offsets])
             py = np.tile(ys, len(offsets))
@@ -421,7 +434,10 @@ def draw_graticule(ax):
         for lat in np.arange(-90, 90 + interval / 2, interval):
             if abs(lat) > max_lat:
                 continue
-            lons = np.linspace(-180, 180, 181)
+            # Across the region around its centre, so a regional
+            # projection never wraps part of the line to its far edge.
+            span = PROJ["lon_halfspan"]
+            lons = PROJ["lon_0"] + np.linspace(-span, span, 181)
             xs, ys = proj_forward(lons, np.full_like(lons, lat))
             segments.append(np.column_stack([xs, ys]))
         for off in wrap_offsets():
@@ -517,7 +533,7 @@ def draw_labels(ax, fig):
     for spec in LABEL_LAYERS:
         points = label_anchors(spec)
         xs, ys = proj_forward(points["x"].to_numpy(),
-                              points["y"].to_numpy())
+                              points["y"].to_numpy(), clamp=False)
         font = dict(spec["font"])
         font["fontsize"] = font["fontsize"] * font_scale
         candidates = []

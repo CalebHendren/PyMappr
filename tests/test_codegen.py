@@ -729,6 +729,55 @@ def test_generated_projection_forward_matches_the_app():
     assert np.allclose(ax, sx) and np.allclose(ay, sy)
 
 
+def test_generated_projection_forward_matches_the_app_on_a_region():
+    import numpy as np
+
+    name = "Lambert: N. America"
+    code = codegen.generate_code(make_state(map={"projection": name}), [],
+                                 "Python")
+    ns = exec_python(code)
+    projection = get_projection(name)
+    # 175E wraps to 185W; 10E and 2N are outside the region.
+    lons = np.array([175.0, -100.0, 10.0, -120.0])
+    lats = np.array([52.0, 45.0, 50.0, 2.0])
+    for clamp in (True, False):
+        ax, ay = projection.forward(lons, lats, clamp=clamp)
+        sx, sy = ns["proj_forward"](lons, lats, clamp=clamp)
+        np.testing.assert_allclose(sx, ax)
+        np.testing.assert_allclose(sy, ay)
+
+
+def test_generated_python_graticule_draws_no_chords_across_the_region():
+    # As in the app, parallels run west to east across a regional
+    # projection instead of wrapping part of the line to its far edge.
+    import numpy as np
+    from matplotlib.figure import Figure
+
+    for name in ("Lambert: Europe", "Lambert: N. America"):
+        code = codegen.generate_code(make_state(map={"projection": name}),
+                                     [], "Python")
+        ns = exec_python(code)
+        ax = Figure().add_subplot()
+        ns["draw_graticule"](ax)
+        lines = ax.collections[0].get_segments()
+        meridians = len(np.arange(-180, 180 + 2.5, 5))
+        for seg in lines[meridians:]:
+            assert (np.diff(seg[:, 0]) >= -1e-6).all(), name
+
+
+def test_generated_python_drops_natural_earth_features_outside_the_region():
+    # Like the app: Natural Earth markers and labels outside a regional
+    # projection are dropped, the user's own points clamped onto its edge.
+    code = codegen.generate_code(make_state(), [], "Python")
+    calls = {re.sub(r"\s+", "", call) for call in
+             re.findall(r"proj_forward\(([^()]*(?:\([^()]*\)[^()]*)*)\)",
+                        code)}
+    assert ("gdf.geometry.x.to_numpy(),gdf.geometry.y.to_numpy(),clamp=False"
+            in calls)
+    assert 'points["x"].to_numpy(),points["y"].to_numpy(),clamp=False' in calls
+    assert 'df["_lon"].to_numpy(),df["_lat"].to_numpy()' in calls
+
+
 # ------------------------------------------------------------ bootstrap
 
 def test_python_script_only_installs_packages_when_asked():
@@ -1208,6 +1257,36 @@ stopifnot(nrow(points) == 3)
 xy <- sf::st_coordinates(points)[points$key == "Cape Town", ]
 stopifnot(abs(xy[["X"]] - ({float(x[0])})) < 1)
 stopifnot(abs(xy[["Y"]] - ({float(y[0])})) < 1)
+""")
+
+
+def test_r_points_wrap_round_the_centre_like_the_app(tmp_path):
+    # Lambert: N. America keeps 186W..6W: a point at 175E is 185W, beside
+    # Alaska, not clamped onto the eastern edge.
+    aleutians = DatasetEntry(dataset=build_manual_dataset(
+        "islands", "52.0,175.0, Attu\n"), name="islands", group_by="Label")
+    state = make_state(map={"projection": "Lambert: N. America"})
+    code = codegen.generate_code(state, [aleutians], "R")
+    x, y = get_projection("Lambert: N. America").forward([175.0], [52.0])
+    run_r_harness(tmp_path, code, f"""
+points <- project_points(load_all_points())
+xy <- sf::st_coordinates(points)
+stopifnot(xy[1, "X"] < 0)
+stopifnot(abs(xy[1, "X"] - ({float(x[0])})) < 1)
+stopifnot(abs(xy[1, "Y"] - ({float(y[0])})) < 1)
+""")
+
+
+def test_r_drops_natural_earth_points_outside_the_region(tmp_path):
+    # Cape Town clamps onto Lambert: Europe's edge as a user point, but a
+    # Natural Earth marker there is dropped, as in the app.
+    state = make_state(map={"projection": "Lambert: Europe"})
+    code = codegen.generate_code(state, [cities_entry()], "R")
+    assert 'project_points(data, clamp = FALSE)' in code
+    run_r_harness(tmp_path, code, """
+points <- project_points(load_all_points(), clamp = FALSE)
+stopifnot(nrow(points) == 2)
+stopifnot(!("Cape Town" %in% points$key))
 """)
 
 

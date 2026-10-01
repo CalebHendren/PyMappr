@@ -34,8 +34,10 @@ class LabelsMixin:
         cache_key = (source, self.proj.key)
         if cache_key not in self._label_xy_cache:
             points = self.store.label_points(source)
+            # Anchors outside a regional projection are dropped (NaN), not
+            # stacked along the region's edge.
             xs, ys = self.proj.forward(points["x"].to_numpy(),
-                                       points["y"].to_numpy())
+                                       points["y"].to_numpy(), clamp=False)
             self._label_xy_cache[cache_key] = (np.asarray(xs, float),
                                                np.asarray(ys, float))
         return self._label_xy_cache[cache_key]

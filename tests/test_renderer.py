@@ -1534,3 +1534,38 @@ def test_the_legend_underline_stays_on_screen_through_a_drag():
         r._on_canvas_motion(_MouseEvent(r.ax, cx + 15 * step,
                                         cy - 10 * step))
         assert np.array_equal(legend_area(), before), f"motion {step}"
+
+
+# ------------------------------------------- features outside a Lambert region
+
+
+def test_natural_earth_features_outside_a_lambert_region_are_dropped():
+    # Lagos (3E, 6N) is south of Lambert: Europe's 30N edge: its label and
+    # marker are dropped, not stacked along the edge with every other
+    # out-of-region feature. Paris stays.
+    import pandas as pd
+
+    r = _renderer(9.0, 6.5)
+    r.set_projection("Lambert: Europe")
+    frame = pd.DataFrame({"x": [3.4, 2.35], "y": [6.45, 48.86],
+                          "text": ["Lagos", "Paris"], "min_label": [1, 1],
+                          "min_zoom": [1, 1]})
+    r.store.label_points = lambda _key: frame
+    r.store.point_features = lambda _key: frame
+    for xs, ys in (r._label_xy("cities"), r._point_xy("cities")[:2]):
+        assert np.isnan(xs[0]) and np.isnan(ys[0])
+        assert np.isfinite(xs[1]) and np.isfinite(ys[1])
+
+
+def test_the_lambert_graticule_draws_no_chords_across_the_region():
+    # Parallels must run west to east around the centre: wrapping longitudes
+    # into lon_0 +/- 180 must not send part of one back to the far edge.
+    r = _renderer(9.0, 6.5)
+    for name in ("Lambert: Europe", "Lambert: N. America"):
+        r.set_projection(name)
+        r.set_graticule(10)
+        # Meridians every 10 degrees from -180 to 180 come first.
+        parallels = r._artists["graticule"][0].get_segments()[37:]
+        assert parallels
+        for seg in parallels:
+            assert (np.diff(seg[:, 0]) >= -1e-6).all(), name

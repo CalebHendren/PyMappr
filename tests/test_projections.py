@@ -116,3 +116,47 @@ def test_globe_project_extent_falls_back_to_the_disk():
     x0, x1, y0, y1 = proj.project_extent((-180.0, 180.0, -90.0, 90.0))
     assert np.isfinite([x0, x1, y0, y1]).all()
     assert x0 < x1 and y0 < y1
+
+
+# ------------------------------------------------ outside a regional view
+
+def test_lambert_drops_features_outside_the_region_when_not_clamping():
+    # Natural Earth labels and markers outside the region are dropped
+    # rather than piled onto its edge; the user's own points still clamp.
+    proj = get_projection("Lambert: Europe")
+    for lon, lat in ((8.0, 9.0),      # Nigeria, south of the 30N edge
+                     (70.0, 50.0)):   # Kazakhstan, east of the 65E edge
+        xs, ys = proj.forward([lon], [lat], clamp=False)
+        assert np.isnan(xs[0]) and np.isnan(ys[0])
+        xs, ys = proj.forward([lon], [lat])
+        assert np.isfinite(xs[0]) and np.isfinite(ys[0])
+
+
+def test_lambert_points_inside_the_region_ignore_clamp():
+    for name in LAMBERT_PROJECTIONS:
+        proj = get_projection(name)
+        lat_mid = (proj.min_lat + proj.max_lat) / 2
+        lons = [proj.lon_0 - 10.0, proj.lon_0, proj.lon_0 + 10.0]
+        lats = [lat_mid, proj.min_lat + 1.0, proj.max_lat - 1.0]
+        clamped = proj.forward(lons, lats)
+        kept = proj.forward(lons, lats, clamp=False)
+        assert np.isfinite(kept).all()
+        np.testing.assert_array_equal(clamped, kept)
+
+
+def test_lambert_wraps_longitudes_around_the_centre():
+    # N. America keeps -186..-6: 175E is 185W, beside Alaska, not clamped
+    # onto the eastern edge near Ireland.
+    proj = get_projection("Lambert: N. America")
+    xs, ys = proj.forward([175.0], [52.0])
+    assert xs[0] < 0 and abs(xs[0] - -4.89e6) < 0.02e6
+    np.testing.assert_array_equal((xs, ys), proj.forward([-185.0], [52.0]))
+    # ... and a point that is only inside the region once wrapped is kept.
+    xs, ys = proj.forward([178.0], [60.0], clamp=False)
+    np.testing.assert_array_equal((xs, ys), proj.forward([-182.0], [60.0]))
+    assert np.isfinite(xs).all()
+    # Centred on the antimeridian, 170W is 10 degrees east of the centre.
+    proj = get_projection("Lambert Azimuthal (custom)", 180.0, 0.0)
+    xs, ys = proj.forward([-170.0], [0.0], clamp=False)
+    assert xs[0] > 0 and np.isfinite(ys).all()
+    np.testing.assert_array_equal((xs, ys), proj.forward([190.0], [0.0]))

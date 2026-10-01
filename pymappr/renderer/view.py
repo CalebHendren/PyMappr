@@ -604,7 +604,11 @@ class ViewMixin:
         for lat in np.arange(-90, 90 + step / 2, step):
             if abs(lat) > max_lat:
                 continue
-            lons = np.linspace(-180, 180, 181)
+            # Traced across the region around the centre: from -180 to 180
+            # a regional projection would wrap part of the line round to
+            # its far edge and draw a chord back across the map.
+            span = self.proj.lon_halfspan
+            lons = self.proj.lon_0 + np.linspace(-span, span, 181)
             xs, ys = self.proj.forward(lons, np.full_like(lons, lat))
             segments.append(np.column_stack([xs, ys]))
         artists = []
