@@ -7,7 +7,7 @@ from functools import lru_cache
 from pathlib import Path
 
 from pymappr import __version__
-from pymappr.files.projects import safe_filename
+from pymappr.files.projects import safe_filename, RESERVED_FILENAMES
 from pymappr.geo.layers import BATHYMETRY_STEPS, CONTINENT_EXTENTS, LAYER_SPECS
 from pymappr.geo.projections import CAP_CLIP_RADIUS, get_projection, is_globe
 from pymappr.renderer.tables import (BATHYMETRY_COLORS, FILL_COLORS,
@@ -366,12 +366,6 @@ def _label_layers(m: dict, zoom: float) -> list[dict]:
     return labels
 
 
-# Device names Windows will not create a file under, whatever the extension.
-_RESERVED_FILENAMES = {"con", "prn", "aux", "nul",
-                       *(f"com{i}" for i in range(1, 10)),
-                       *(f"lpt{i}" for i in range(1, 10))}
-
-
 def _export_filename(name: str, extension: str, used: set[str],
                      fallback: str) -> str:
     """A filesystem-safe ``<name><extension>`` that is unique within *used*
@@ -388,7 +382,7 @@ def _export_filename(name: str, extension: str, used: set[str],
     if extension and stem.lower().endswith(extension.lower()):
         stem = stem[:-len(extension)].rstrip(". ") or fallback
     first, dot, rest = stem.partition(".")
-    if first.strip().lower() in _RESERVED_FILENAMES:
+    if first.strip().lower() in RESERVED_FILENAMES:
         stem = f"{first.rstrip()}_{dot}{rest}"
     taken = {item.casefold() for item in used}
     candidate = f"{stem}{extension}"

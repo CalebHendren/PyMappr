@@ -174,28 +174,63 @@ class Projection:
             return box(-180.0, self.min_lat, 180.0, self.max_lat)
         return None
 
+    def label_region(self):
+        """The lon/lat area a regional (Lambert) map shows - its latitude
+        band and its longitude span around lon_0 - as a shapely geometry,
+        or None for every other projection.
+
+        Polygon and line labels are anchored on the part of a feature
+        inside it, so a country only partly on the map (Russia on
+        Lambert: Europe) is labelled where it is drawn instead of at an
+        anchor off the map. The Globe is left out: every spin step is a
+        new projection, and clipping the larger label layers (states)
+        each time is too slow."""
+        if self.hemisphere or not self.is_regional:
+            return None
+        return _region_clip(self.lon_0, self.lon_halfspan,
+                            self.min_lat, self.max_lat)
+
     def horizon_xy(self) -> tuple[np.ndarray, np.ndarray]:
         """The globe's horizon circle in projected coordinates (the disk
         outline the renderer draws). Only meaningful for the Globe."""
         lons, lats = _cap_ring(self.lon_0, self.lat_0, _HORIZON_RADIUS)
         return self.forward(lons, lats)
 
-    def _clip(self, lons: np.ndarray, lats: np.ndarray):
+    def _clip(self, lons: np.ndarray, lats: np.ndarray, clamp: bool):
+        """Bring lon/lat into the projected region. Longitudes are first
+        wrapped to within 180 degrees of a regional centre (175E is 185W
+        on a map of North America). Then *clamp* moves anything outside
+        the region onto its edge; otherwise those points become NaN."""
+        regional_lon = self.lon_halfspan < 180.0
+        if regional_lon:
+            lons = self.lon_0 + ((lons - self.lon_0 + 180.0) % 360.0) - 180.0
+        if not clamp:
+            outside = (lats < self.min_lat) | (lats > self.max_lat)
+            if regional_lon:
+                outside |= np.abs(lons - self.lon_0) > self.lon_halfspan
+            return (np.where(outside, np.nan, lons),
+                    np.where(outside, np.nan, lats))
         lats = np.clip(lats, self.min_lat, self.max_lat)
-        if self.lon_halfspan < 180.0:
+        if regional_lon:
             lons = np.clip(lons, self.lon_0 - self.lon_halfspan,
                            self.lon_0 + self.lon_halfspan)
         return lons, lats
 
-    def forward(self, lons, lats) -> tuple[np.ndarray, np.ndarray]:
+    def forward(self, lons, lats,
+                clamp: bool = True) -> tuple[np.ndarray, np.ndarray]:
         """Project lon/lat arrays into map coordinates. Coordinates the
         projection cannot represent (the globe's far hemisphere) come back
-        as NaN, which matplotlib drops from paths and scatters cleanly."""
+        as NaN, which matplotlib drops from paths and scatters cleanly.
+
+        On a regional (Lambert) projection, points outside the region are
+        clamped onto its edge, so none of the user's data goes missing;
+        with *clamp* False they come back as NaN instead, for Natural
+        Earth labels and markers that would otherwise pile up there."""
         lons = np.asarray(lons, dtype=float)
         lats = np.asarray(lats, dtype=float)
         if self.crs is None:
             return lons, lats
-        lons, lats = self._clip(lons, lats)
+        lons, lats = self._clip(lons, lats, clamp)
         xs, ys = _transformer(self.crs).transform(lons, lats)
         if self.hemisphere:
             xs = np.asarray(xs, dtype=float)
@@ -350,9 +385,36 @@ def _cap_clip(lon_0: float, lat_0: float):
                         for off in (-360.0, 0.0, 360.0)])
 
 
+@lru_cache(maxsize=16)
+def _region_clip(lon_0: float, lon_halfspan: float, min_lat: float,
+                 max_lat: float):
+    """A regional map's lon/lat area for anchoring labels, with +/-360
+    degree copies so a region crossing the antimeridian still covers data
+    stored in [-180, 180]."""
+    from shapely import affinity
+    from shapely.geometry import box
+    from shapely.ops import unary_union
+
+    lon0 = (lon_0 + 180.0) % 360.0 - 180.0
+    region = box(lon0 - lon_halfspan, min_lat, lon0 + lon_halfspan, max_lat)
+    copies = unary_union([affinity.translate(region, xoff=off)
+                          for off in (-360.0, 0.0, 360.0)])
+    return copies.intersection(box(-180.0, min_lat, 180.0, max_lat))
+
+
+def normalize_origin(lon_0: float, lat_0: float) -> tuple[float, float]:
+    """*lon_0* wrapped into [-180, 180] and *lat_0* clamped to [-90, 90]:
+    the range PROJ accepts, so a typed or previously saved out-of-range
+    centre still builds."""
+    lon = float(lon_0)
+    if not -180.0 <= lon <= 180.0:
+        lon = (lon + 180.0) % 360.0 - 180.0
+    return lon, max(-90.0, min(90.0, float(lat_0)))
+
+
 def _build_globe(lon_0: float | None, lat_0: float | None) -> Projection:
-    lon0 = 0.0 if lon_0 is None else float(lon_0)
-    lat0 = 0.0 if lat_0 is None else float(lat_0)
+    lon0, lat0 = normalize_origin(0.0 if lon_0 is None else lon_0,
+                                  0.0 if lat_0 is None else lat_0)
     crs = proj4_string(GLOBE, lon0, lat0)
     lons, lats = _cap_ring(lon0, lat0, _HORIZON_RADIUS)
     xs, ys = _transformer(crs).transform(lons, lats)
@@ -368,8 +430,8 @@ def _build_globe(lon_0: float | None, lat_0: float | None) -> Projection:
 def _build_lambert(name: str, lon_0: float | None,
                    lat_0: float | None) -> Projection:
     d = LAMBERT_DEFS[name]
-    lon0 = d.lon_0 if lon_0 is None else float(lon_0)
-    lat0 = d.lat_0 if lat_0 is None else float(lat_0)
+    lon0, lat0 = normalize_origin(d.lon_0 if lon_0 is None else lon_0,
+                                  d.lat_0 if lat_0 is None else lat_0)
     crs = proj4_string(name, lon0, lat0)
     bounds = _bounds_from_grid(crs, lon0 - d.lon_halfspan,
                                lon0 + d.lon_halfspan, d.lat_min, d.lat_max)

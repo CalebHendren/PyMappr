@@ -200,7 +200,8 @@ class ColumnMapperDialog(tk.Toplevel):
         self.result = ColumnMapping(
             longitude=lon, latitude=lat, names=names,
             use_headers=(self._headers_var.get()
-                         and self._use_headers_var.get()))
+                         and self._use_headers_var.get()),
+            header_row=self._headers_var.get())
         self.destroy()
 
     def _cancel(self) -> None:

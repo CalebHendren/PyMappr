@@ -9,12 +9,13 @@ app's handler methods; the app owns the renderer and the data.
 
 from __future__ import annotations
 
+import math
 import tkinter as tk
 from tkinter import colorchooser, ttk
 
 from pymappr.geo.layers import CONTINENT_EXTENTS
 from pymappr.geo.projections import (PROJECTIONS, default_origin,
-                                     has_custom_origin)
+                                     has_custom_origin, normalize_origin)
 from pymappr.styling.decorations import (CORNERS, CompassOptions,
                                          ScaleBarOptions)
 from pymappr.styling.legend import (COUNT_FORMATS, ENTRY_ORDERS, FONT_FAMILIES,
@@ -891,13 +892,22 @@ class ControlPanel(ttk.Frame):
         if not has_custom_origin(self.projection_var.get()):
             return None, None
 
-        def _num(var):
+        def _num(var, fix):
             try:
-                return float(var.get())
+                value = float(var.get())
             except (TypeError, ValueError):
                 return None
+            if not math.isfinite(value):
+                return None
+            fixed = fix(value)
+            if fixed != value:
+                var.set(f"{fixed:g}")      # show what will actually be used
+            return fixed
 
-        return _num(self.proj_lon0_var), _num(self.proj_lat0_var)
+        return (_num(self.proj_lon0_var,
+                     lambda v: normalize_origin(v, 0.0)[0]),
+                _num(self.proj_lat0_var,
+                     lambda v: normalize_origin(0.0, v)[1]))
 
     def graticule_interval(self) -> float | None:
         return GRATICULE_CHOICES[self.graticule_var.get()]

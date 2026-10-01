@@ -63,8 +63,17 @@ function markerPath(marker,r){
 
 /* coordinate parsing (ported from coords.py) */
 const HEMI = {N:1,S:-1,E:1,W:-1};
-const DMS_RE = /^(\d+(?:[.,]\d+)?)\s*(?:[°ºd]|deg(?:rees)?)?(?:[\s:]*(\d+(?:[.,]\d+)?)\s*(?:[′ʹ']|m(?:in(?:utes)?)?)?)?(?:[\s:]*(\d+(?:[.,]\d+)?)\s*(?:[″ʺ"]|''|s(?:ec(?:onds)?)?)?)?\s*$/i;
+const DMS_RE = /^(\d+(?:[.,]\d+)?(?![\d.,]))\s*(?:[°ºd]|deg(?:rees)?)?(?:[\s:]*(\d+(?:[.,]\d+)?(?![\d.,]))\s*([′ʹ']|m(?:in(?:utes)?)?)?)?(?:[\s:]*(\d+(?:[.,]\d+)?(?![\d.,]))\s*(?:[″ʺ"]|''|s(?:ec(?:onds)?)?)?)?\s*$/i;
 function toFloat(t){ return parseFloat(String(t).replace(",",".")); }
+// A trailing "s" closes a DMS value rather than meaning South when it sits
+// right against the seconds digits and the text reads as D M S, and either
+// the minutes carry an explicit marker or the value is a longitude.
+function isSecondsMarker(text, m, kind){
+  if(m[2].toLowerCase()!=="s" || !/\d/.test(text.charAt(text.length-2))) return false;
+  const dms = text.match(DMS_RE);
+  if(!dms || !dms[2] || !dms[4]) return false;
+  return kind==="longitude" || !!dms[3];
+}
 function parseCoordinate(value, kind){
   const hemis = kind==="longitude" ? "EW" : "NS";
   const limit = kind==="longitude" ? 180 : 90;
@@ -77,7 +86,7 @@ function parseCoordinate(value, kind){
   if(!text) throw new Error("missing "+kind);
   let sign=null, hemi=null, m;
   if((m = text.match(/^([NSEW])\s*(.*)$/i))){ hemi=m[1].toUpperCase(); sign=HEMI[hemi]; text=m[2]; }
-  else if((m = text.match(/^(.*?)\s*([NSEW])$/i))){ hemi=m[2].toUpperCase(); sign=HEMI[hemi]; text=m[1]; }
+  else if((m = text.match(/^(.*?)\s*([NSEW])$/i)) && !isSecondsMarker(text, m, kind)){ hemi=m[2].toUpperCase(); sign=HEMI[hemi]; text=m[1]; }
   if(hemi && hemis.indexOf(hemi)<0) throw new Error("hemisphere "+hemi+" invalid for "+kind);
   text = text.trim();
   let neg=false;
@@ -92,7 +101,7 @@ function parseCoordinate(value, kind){
   } else {
     const dm = text.match(DMS_RE);
     if(!dm) throw new Error("cannot parse "+kind+" "+value);
-    const d=toFloat(dm[1]), mi=dm[2]?toFloat(dm[2]):0, se=dm[3]?toFloat(dm[3]):0;
+    const d=toFloat(dm[1]), mi=dm[2]?toFloat(dm[2]):0, se=dm[4]?toFloat(dm[4]):0;
     if(mi>=60 || se>=60) throw new Error("minutes/seconds must be < 60");
     deg = d + mi/60 + se/3600;
   }

@@ -17,12 +17,12 @@ _DEG_MARK = "[°ºd]|deg(?:rees)?"
 _MIN_MARK = "[′ʹ']|m(?:in(?:utes)?)?"
 _SEC_MARK = "[″ʺ\"]|''|s(?:ec(?:onds)?)?"
 
-_NUM = r"\d+(?:[.,]\d+)?"
+_NUM = r"\d+(?:[.,]\d+)?(?![\d.,])"
 
 _DMS_RE = re.compile(
     rf"""^
     (?P<deg>{_NUM})\s*(?:{_DEG_MARK})?
-    (?:[\s:]*(?P<min>{_NUM})\s*(?:{_MIN_MARK})?)?
+    (?:[\s:]*(?P<min>{_NUM})\s*(?P<minmark>{_MIN_MARK})?)?
     (?:[\s:]*(?P<sec>{_NUM})\s*(?:{_SEC_MARK})?)?
     \s*$""",
     re.IGNORECASE | re.VERBOSE,
@@ -31,6 +31,23 @@ _DMS_RE = re.compile(
 
 def _to_float(text: str) -> float:
     return float(text.replace(",", "."))
+
+
+def _is_seconds_marker(text: str, m: re.Match, kind: str) -> bool:
+    """True when a trailing "s" closes a DMS value rather than meaning South.
+
+    The "s" must sit right against the seconds digits and the whole text must
+    read as degrees, minutes and seconds. It is then the seconds marker if the
+    minutes carry an explicit marker ("45d30m15s") or if the value is a
+    longitude, which has no South. Otherwise "45 30 15s" stays South, like
+    "45 30 15 S".
+    """
+    if m.group(2).lower() != "s" or not text[-2:-1].isdigit():
+        return False
+    dms = _DMS_RE.match(text)
+    if not dms or not (dms.group("min") and dms.group("sec")):
+        return False
+    return kind == "longitude" or bool(dms.group("minmark"))
 
 
 def parse_coordinate(value: object, kind: str = "longitude") -> float:
@@ -65,6 +82,8 @@ def parse_coordinate(value: object, kind: str = "longitude") -> float:
         text = m.group(2)
     else:
         m = re.match(r"^(.*?)\s*([NSEW])$", text, re.IGNORECASE)
+        if m and _is_seconds_marker(text, m, kind):
+            m = None
         if m:
             sign = _HEMI_SIGN[m.group(2).upper()]
             hemi_letter = m.group(2).upper()

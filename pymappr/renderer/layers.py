@@ -589,11 +589,14 @@ class LayersMixin:
         self._refresh_labels()
 
     def _point_xy(self, source: str) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        cache_key = (source, self.proj.key)
+        # The whole projection, as for the labels: the out-of-region mask
+        # depends on the region, which a shared CRS does not pin down.
+        cache_key = (source, self.proj)
         if cache_key not in self._point_xy_cache:
             features = self.store.point_features(source)
+            # Like the labels: features outside the region are dropped.
             xs, ys = self.proj.forward(features["x"].to_numpy(),
-                                       features["y"].to_numpy())
+                                       features["y"].to_numpy(), clamp=False)
             self._point_xy_cache[cache_key] = (
                 np.asarray(xs, float), np.asarray(ys, float),
                 features["min_zoom"].to_numpy())

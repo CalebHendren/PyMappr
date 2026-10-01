@@ -353,20 +353,27 @@ def style_by_attributes(frame: pd.DataFrame, color_key: str | None,
         style = PointStyle(color=color_map.get(cval, default_color),
                            marker=symbol_map.get(sval, "Circle"))
         if overrides:
-            style = _override_for(style, overrides, cval, sval, nested)
+            style = _override_for(style, overrides, cval, sval, nested,
+                                  has_color_key=ckey is not None)
         groups.append((label, style, sub))
     return groups
 
 
 def _override_for(style: PointStyle, overrides: dict, cval: str, sval: str,
-                  nested: bool) -> PointStyle:
+                  nested: bool, has_color_key: bool = True) -> PointStyle:
     """Apply whichever legend row's customization governs this combination."""
     if nested:
         return apply_override(style, overrides.get(row_key("pair", cval,
                                                            sval)))
     # Crossed: color comes from the color row, shape and size from the
-    # symbol row, exactly as the two independent keys show them.
+    # symbol row, exactly as the two independent keys show them. A color
+    # set on the symbol row only reaches the points when no color key
+    # exists to defer to.
+    base = style
     style = apply_override(style, overrides.get(row_key("symbol", sval)))
+    if has_color_key:
+        style = PointStyle(color=base.color, marker=style.marker,
+                           size=style.size)
     color = (overrides.get(row_key("color", cval)) or {}).get("color")
     return PointStyle(color=color or style.color, marker=style.marker,
                       size=style.size)

@@ -237,6 +237,8 @@ class LayerStore:
         # (directory, CRS) -> reprojected frame; a few projections' worth.
         self._projected = BoundedCache(maxsize=48)
         self._labels: dict[str, pd.DataFrame] = {}
+        # (layer, label region) -> anchors on a regional projection.
+        self._region_labels = BoundedCache(maxsize=32)
         self._basemaps: dict[str, np.ndarray] = {}
         self._basemap_pyramids: dict[str, list[np.ndarray]] = {}
         self._cache_root: Path | None | bool = False  # False = not probed yet
@@ -437,61 +439,81 @@ class LayerStore:
 
     # --------------------------------------------------------------- labels
 
-    def label_points(self, key: str) -> pd.DataFrame:
+    def label_points(self, key: str, region=None) -> pd.DataFrame:
         """Label anchors for a layer: columns x, y, text, min_label.
 
         ``min_label`` is Natural Earth's curated zoom level at which the
         label becomes appropriate (smaller = show earlier / more important).
         Point layers (cities, airports, ports) use their own point
         coordinates and their ``min_zoom``/``scalerank`` ordering.
+
+        *region* (a lon/lat shapely geometry, see
+        :meth:`Projection.label_region`) anchors polygon and line labels on
+        the part of each feature inside it, dropping features with no part
+        there; point layers ignore it.
         """
+        if region is not None and self._label_spec(key).geometry != "point":
+            cache_key = (key, region)
+            if cache_key not in self._region_labels:
+                self._region_labels[cache_key] = self._label_frame(key,
+                                                                   region)
+            return self._region_labels[cache_key]
         if key not in self._labels:
-            if key in DERIVED and key != "continents":
-                source, _filt = DERIVED[key]
-                spec = LAYER_SPECS[source]
-            else:
-                spec = LAYER_SPECS[key]
-            # frame() without a zoom returns the default resolution, so
-            # label anchors stay stable while the drawn resolution switches.
-            gdf = self.frame(key)
-            label_col = spec.label_column
-            df = gdf[gdf[label_col].notna() & (gdf[label_col] != "")].copy()
-            if key in ("cities", "capitals"):
-                # Natural Earth's curated min_zoom: the zoom at which each
-                # place becomes appropriate to show.
-                df["min_label"] = pd.to_numeric(
-                    df.get("min_zoom", 5.0), errors="coerce").fillna(5.0)
-            elif "min_label" not in df.columns:
-                if "min_zoom" in df.columns:
-                    df["min_label"] = pd.to_numeric(df["min_zoom"],
-                                                    errors="coerce")
-                elif "scalerank" in df.columns:
-                    df["min_label"] = pd.to_numeric(df["scalerank"],
-                                                    errors="coerce")
-                else:
-                    df["min_label"] = 5.0
-            with warnings.catch_warnings():
-                # Length/interpolate in degrees is fine for label placement.
-                warnings.simplefilter("ignore")
-                if key in ("rivers", "wadis"):
-                    # A river is split into many segments; label the longest.
-                    df["_len"] = df.geometry.length
-                    df = (df.sort_values("_len", ascending=False)
-                            .drop_duplicates(subset=label_col))
-                if spec.geometry == "point":
-                    pts = df.geometry
-                elif spec.geometry == "line":
-                    pts = df.geometry.interpolate(0.5, normalized=True)
-                else:
-                    pts = df.geometry.representative_point()
-            self._labels[key] = pd.DataFrame({
-                "x": pts.x.to_numpy(),
-                "y": pts.y.to_numpy(),
-                "text": df[label_col].astype(str).to_numpy(),
-                "min_label": pd.to_numeric(df["min_label"],
-                                           errors="coerce").fillna(5.0).to_numpy(),
-            })
+            self._labels[key] = self._label_frame(key)
         return self._labels[key]
+
+    @staticmethod
+    def _label_spec(key: str):
+        if key in DERIVED and key != "continents":
+            source, _filt = DERIVED[key]
+            return LAYER_SPECS[source]
+        return LAYER_SPECS[key]
+
+    def _label_frame(self, key: str, region=None) -> pd.DataFrame:
+        spec = self._label_spec(key)
+        # frame() without a zoom returns the default resolution, so
+        # label anchors stay stable while the drawn resolution switches.
+        gdf = self.frame(key)
+        label_col = spec.label_column
+        df = gdf[gdf[label_col].notna() & (gdf[label_col] != "")].copy()
+        if key in ("cities", "capitals"):
+            # Natural Earth's curated min_zoom: the zoom at which each
+            # place becomes appropriate to show.
+            df["min_label"] = pd.to_numeric(
+                df.get("min_zoom", 5.0), errors="coerce").fillna(5.0)
+        elif "min_label" not in df.columns:
+            if "min_zoom" in df.columns:
+                df["min_label"] = pd.to_numeric(df["min_zoom"],
+                                                errors="coerce")
+            elif "scalerank" in df.columns:
+                df["min_label"] = pd.to_numeric(df["scalerank"],
+                                                errors="coerce")
+            else:
+                df["min_label"] = 5.0
+        with warnings.catch_warnings():
+            # Length/interpolate in degrees is fine for label placement.
+            warnings.simplefilter("ignore")
+            if region is not None:
+                df = df.set_geometry(df.geometry.intersection(region))
+                df = df[~df.geometry.is_empty]
+            if key in ("rivers", "wadis"):
+                # A river is split into many segments; label the longest.
+                df["_len"] = df.geometry.length
+                df = (df.sort_values("_len", ascending=False)
+                        .drop_duplicates(subset=label_col))
+            if spec.geometry == "point":
+                pts = df.geometry
+            elif spec.geometry == "line":
+                pts = df.geometry.interpolate(0.5, normalized=True)
+            else:
+                pts = df.geometry.representative_point()
+        return pd.DataFrame({
+            "x": pts.x.to_numpy(),
+            "y": pts.y.to_numpy(),
+            "text": df[label_col].astype(str).to_numpy(),
+            "min_label": pd.to_numeric(df["min_label"],
+                                       errors="coerce").fillna(5.0).to_numpy(),
+        })
 
     def point_features(self, key: str) -> pd.DataFrame:
         """Point-layer features: columns x, y, min_zoom (for zoom culling).

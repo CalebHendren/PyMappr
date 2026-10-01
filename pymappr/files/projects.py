@@ -18,11 +18,16 @@ __all__ = ["PROJECT_EXTENSION", "DatasetEntry", "config_dir",
            "set_projects_dir", "session_path", "entry_to_dict",
            "entry_from_dict", "save_project", "load_project",
            "list_projects", "delete_project", "rename_project",
-           "safe_filename"]
+           "safe_filename", "RESERVED_FILENAMES"]
 
 PROJECT_EXTENSION = ".pymappr"
 _FORMAT = "pymappr-project"
 _FORMAT_VERSION = 1
+
+# Device names Windows will not create a file under, whatever the extension.
+RESERVED_FILENAMES = {"con", "prn", "aux", "nul",
+                      *(f"com{i}" for i in range(1, 10)),
+                      *(f"lpt{i}" for i in range(1, 10))}
 
 
 # ------------------------------------------------------------- directories
@@ -271,7 +276,18 @@ def rename_project(path: str | Path, new_name: str) -> Path:
 
 
 def safe_filename(name: str) -> str:
-    """A filesystem-safe version of a user-typed project name."""
+    """A filesystem-safe version of a user-typed project name.
+
+    If the part before the first dot (stripped and lowercased) is a reserved
+    device name (CON, NUL, etc.), an underscore is inserted after it, so
+    "NUL.tar" becomes "NUL_.tar".
+    """
     cleaned = "".join("_" if ch in '<>:"/\\|?*' or ord(ch) < 32 else ch
                       for ch in name.strip())
-    return cleaned.strip(". ") or "Untitled"
+    cleaned = cleaned.strip(". ") or "Untitled"
+
+    first, dot, rest = cleaned.partition(".")
+    if first.strip().lower() in RESERVED_FILENAMES:
+        cleaned = f"{first.rstrip()}_{dot}{rest}"
+
+    return cleaned

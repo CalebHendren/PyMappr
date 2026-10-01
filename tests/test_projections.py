@@ -116,3 +116,83 @@ def test_globe_project_extent_falls_back_to_the_disk():
     x0, x1, y0, y1 = proj.project_extent((-180.0, 180.0, -90.0, 90.0))
     assert np.isfinite([x0, x1, y0, y1]).all()
     assert x0 < x1 and y0 < y1
+
+
+# ------------------------------------------------ outside a regional view
+
+def test_lambert_drops_features_outside_the_region_when_not_clamping():
+    # Natural Earth labels and markers outside the region are dropped
+    # rather than piled onto its edge; the user's own points still clamp.
+    proj = get_projection("Lambert: Europe")
+    for lon, lat in ((8.0, 9.0),      # Nigeria, south of the 30N edge
+                     (70.0, 50.0)):   # Kazakhstan, east of the 65E edge
+        xs, ys = proj.forward([lon], [lat], clamp=False)
+        assert np.isnan(xs[0]) and np.isnan(ys[0])
+        xs, ys = proj.forward([lon], [lat])
+        assert np.isfinite(xs[0]) and np.isfinite(ys[0])
+
+
+def test_lambert_points_inside_the_region_ignore_clamp():
+    for name in LAMBERT_PROJECTIONS:
+        proj = get_projection(name)
+        lat_mid = (proj.min_lat + proj.max_lat) / 2
+        lons = [proj.lon_0 - 10.0, proj.lon_0, proj.lon_0 + 10.0]
+        lats = [lat_mid, proj.min_lat + 1.0, proj.max_lat - 1.0]
+        clamped = proj.forward(lons, lats)
+        kept = proj.forward(lons, lats, clamp=False)
+        assert np.isfinite(kept).all()
+        np.testing.assert_array_equal(clamped, kept)
+
+
+def test_lambert_wraps_longitudes_around_the_centre():
+    # N. America keeps -186..-6: 175E is 185W, beside Alaska, not clamped
+    # onto the eastern edge near Ireland.
+    proj = get_projection("Lambert: N. America")
+    xs, ys = proj.forward([175.0], [52.0])
+    assert xs[0] < 0 and abs(xs[0] - -4.89e6) < 0.02e6
+    np.testing.assert_array_equal((xs, ys), proj.forward([-185.0], [52.0]))
+    # ... and a point that is only inside the region once wrapped is kept.
+    xs, ys = proj.forward([178.0], [60.0], clamp=False)
+    np.testing.assert_array_equal((xs, ys), proj.forward([-182.0], [60.0]))
+    assert np.isfinite(xs).all()
+    # Centred on the antimeridian, 170W is 10 degrees east of the centre.
+    proj = get_projection("Lambert Azimuthal (custom)", 180.0, 0.0)
+    xs, ys = proj.forward([-170.0], [0.0], clamp=False)
+    assert xs[0] > 0 and np.isfinite(ys).all()
+    np.testing.assert_array_equal((xs, ys), proj.forward([190.0], [0.0]))
+
+
+def test_label_region_is_the_lambert_map_area():
+    from shapely.geometry import Point
+
+    for name in ("Robinson", "Equirectangular", GLOBE):
+        assert get_projection(name).label_region() is None
+    europe = get_projection("Lambert: Europe").label_region()
+    assert europe.covers(Point(20.0, 60.0))
+    assert not europe.covers(Point(8.0, 9.0))     # south of 30N
+    assert not europe.covers(Point(70.0, 50.0))   # east of 65E
+    # N. America's 186W..6W runs past the antimeridian to 174E.
+    america = get_projection("Lambert: N. America").label_region()
+    assert america.covers(Point(176.0, 60.0))
+    assert america.covers(Point(-100.0, 40.0))
+    assert not america.covers(Point(100.0, 60.0))
+
+
+def test_every_origin_builds_at_both_poles():
+    for name in (GLOBE, *LAMBERT_PROJECTIONS):
+        for lat in (90.0, -90.0):
+            assert get_projection(name, 0.0, lat).bounds
+
+
+def test_out_of_range_origin_is_normalised_not_rejected():
+    globe = get_projection(GLOBE, 0, 95)
+    assert globe.lat_0 == 90
+    assert get_projection(GLOBE, 0, -123).lat_0 == -90
+    assert get_projection(GLOBE, 400, 0).lon_0 == 40
+    assert get_projection(GLOBE, -190, 0).lon_0 == 170
+    assert get_projection(GLOBE, 180, 0).lon_0 == 180
+    assert get_projection(GLOBE, -180, 0).lon_0 == -180
+
+    lam = get_projection("Lambert Azimuthal (custom)", 0, 95)
+    assert "+lat_0=90" in lam.crs
+    assert get_projection("Lambert: Europe", 400, 50).lon_0 == 40

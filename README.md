@@ -114,6 +114,27 @@ renders, are in [`docs/images/`](docs/images).
 
 ![Beetle localities in the publication style: black and white markers and one italic "Genus species" per legend line](docs/images/publication_style.png)
 
+## Why PyMappr over AI
+
+You can ask a chatbot to draw a distribution map, and it may draw a good one.
+Ask again with the same data and the same prompt, though, and you will
+usually get a different map. Large language models are non-deterministic:
+their output varies from run to run, and the model behind a chat service can
+change without notice. A figure made that way cannot be reproduced exactly,
+which matters when it has to hold up through revisions and replication.
+
+PyMappr draws the same map from the same data and settings every time. There
+is no sampling step, so the inputs fully describe the figure:
+
+- Save the map as a project (`.pymappr`) and reopen it later to get the same
+  map, or send it to a co-author.
+- Export a Python or R script that redraws the map without PyMappr, and
+  archive it with your data or include it as supplementary material.
+- Every release stays on the [releases page](../../releases). If a reviewer
+  asks for a change a year from now, install the version you used (shown
+  under **Help > About PyMappr**) and you are back where you were. Give that
+  version number in your methods section.
+
 ## CSV format
 
 Any number of name columns followed by Longitude/Latitude, in any order. You
