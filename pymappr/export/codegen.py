@@ -491,7 +491,9 @@ def _inline_csv(entry) -> str:
     columns = dict(zip(entry.dataset.name_keys, entry.dataset.name_labels))
     columns.update({"lon": "Longitude", "lat": "Latitude"})
     subset = frame[[c for c in frame.columns if c in columns]]
-    return subset.rename(columns=columns).to_csv(index=False)
+    # Without NULs, like every other string in the scripts (see _py, _r).
+    return subset.rename(columns=columns).to_csv(index=False).replace(
+        "\x00", "")
 
 
 def build_config(state: dict, entries, project_name: str = "map",
@@ -617,6 +619,10 @@ def _py(value) -> str:
     if isinstance(value, tuple):
         items = [_py(item) for item in value]
         return "(" + ", ".join(items) + ("," if len(items) == 1 else "") + ")"
+    if isinstance(value, str):
+        # Dropped like the R export does, so a label and the embedded data
+        # it must match (pandas stops a CSV field at a NUL) agree.
+        return repr(value.replace("\x00", ""))
     return repr(value)
 
 
@@ -636,15 +642,19 @@ def _r(value) -> str:
         if math.isinf(number):
             return "Inf" if number > 0 else "-Inf"
         return repr(round(number, 6))
-    text = str(value).replace("\\", "\\\\").replace('"', '\\"')
+    # An R string cannot hold a NUL, not even escaped, so it is dropped.
+    text = str(value).replace("\x00", "")
+    text = text.replace("\\", "\\\\").replace('"', '\\"')
     text = text.replace("\n", "\\n").replace("\r", "").replace("\t", "\\t")
     return f'"{text}"'
 
 
 def _comment_text(text) -> str:
     """*text* made safe for a one-line ``#`` comment in either language: a
-    line break in it would end the comment and run the rest as code."""
-    return re.sub(r"[\r\n]+", " ", str(text)).strip()
+    line break in it would end the comment and run the rest as code, and
+    neither language accepts a NUL in its source."""
+    text = str(text).replace("\x00", "")
+    return re.sub(r"[\r\n]+", " ", text).strip()
 
 
 def _r_named(pairs: list[tuple[str, str]], indent: str) -> str:

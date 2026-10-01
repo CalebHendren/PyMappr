@@ -1642,6 +1642,28 @@ stopifnot(identical(guide$fill, c("#111111", "#222222")))
 """)
 
 
+def test_nul_characters_never_reach_the_scripts(tmp_path):
+    entry = coded_entry(name="nul\x00name", labels=["a\x00b", "c"])
+    entry.dataset.source_path = "C:/data/x\x00.csv"
+    py = codegen.generate_code(make_state(), [entry], "Python", "P\x00Q")
+    compile(py, "recreate_map.py", "exec")
+    assert "\x00" not in py
+    ns = exec_python(py)
+    spec = ns["DATASETS"][0]
+    assert spec["name"] == "nulname"
+    labels = ns["point_labels"](ns["load_points"](spec), spec)
+    # The NUL is dropped from the data and the styles alike, so they match.
+    assert list(labels) == ["ab", "c"] == list(spec["styles"])
+    r = codegen.generate_code(make_state(), [entry], "R", "P\x00Q")
+    assert "\x00" not in r
+    assert_parses_as_r(r)
+    run_r_harness(tmp_path, r, """
+spec <- DATASETS[[1]]
+stopifnot(identical(spec$name, "nulname"))
+stopifnot(all(load_all_points()$key %in% names(STYLE_COLORS)))
+""")
+
+
 # ------------------------------- running whole exported R scripts (opt-in)
 #
 # These run a generated script's main() end to end with real R, sf and
