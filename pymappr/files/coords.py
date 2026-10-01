@@ -17,7 +17,7 @@ _DEG_MARK = "[°ºd]|deg(?:rees)?"
 _MIN_MARK = "[′ʹ']|m(?:in(?:utes)?)?"
 _SEC_MARK = "[″ʺ\"]|''|s(?:ec(?:onds)?)?"
 
-_NUM = r"\d+(?:[.,]\d+)?"
+_NUM = r"\d+(?:[.,]\d+)?(?![\d.,])"
 
 _DMS_RE = re.compile(
     rf"""^

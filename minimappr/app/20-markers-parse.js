@@ -63,7 +63,7 @@ function markerPath(marker,r){
 
 /* coordinate parsing (ported from coords.py) */
 const HEMI = {N:1,S:-1,E:1,W:-1};
-const DMS_RE = /^(\d+(?:[.,]\d+)?)\s*(?:[°ºd]|deg(?:rees)?)?(?:[\s:]*(\d+(?:[.,]\d+)?)\s*([′ʹ']|m(?:in(?:utes)?)?)?)?(?:[\s:]*(\d+(?:[.,]\d+)?)\s*(?:[″ʺ"]|''|s(?:ec(?:onds)?)?)?)?\s*$/i;
+const DMS_RE = /^(\d+(?:[.,]\d+)?(?![\d.,]))\s*(?:[°ºd]|deg(?:rees)?)?(?:[\s:]*(\d+(?:[.,]\d+)?(?![\d.,]))\s*([′ʹ']|m(?:in(?:utes)?)?)?)?(?:[\s:]*(\d+(?:[.,]\d+)?(?![\d.,]))\s*(?:[″ʺ"]|''|s(?:ec(?:onds)?)?)?)?\s*$/i;
 function toFloat(t){ return parseFloat(String(t).replace(",",".")); }
 // A trailing "s" closes a DMS value rather than meaning South when it sits
 // right against the seconds digits and the text reads as D M S, and either

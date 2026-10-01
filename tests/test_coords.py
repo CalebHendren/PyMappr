@@ -134,3 +134,12 @@ class TestSecondsMarkerVsSouth:
     def test_longitude_south_letter_still_invalid(self):
         with pytest.raises(CoordinateError):
             parse_longitude("120 30 15 S")
+
+    @pytest.mark.parametrize("text", ["30s", "120s", "45d30s"])
+    def test_longitude_digit_run_is_not_split(self, text):
+        with pytest.raises(CoordinateError):
+            parse_longitude(text)
+
+    def test_latitude_digit_run_is_not_split(self):
+        assert close(parse_latitude("30s"), -30.0)
+        assert close(parse_latitude("45d30s"), -45.5)
