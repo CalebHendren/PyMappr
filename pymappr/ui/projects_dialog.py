@@ -2,7 +2,9 @@
 
 Lists every project in the projects folder (newest first). Double-click
 or the Open button opens one; ``self.open_path`` holds the chosen file
-when the dialog closes (None otherwise).
+when the dialog closes (None otherwise). ``renamed`` (original path to
+final path, chains collapsed) and ``deleted`` record what changed on
+disk, so the caller can keep its open project's path in step.
 """
 
 from __future__ import annotations
@@ -21,6 +23,8 @@ class ProjectsDialog(tk.Toplevel):
         self.title("Projects")
         self.transient(master)
         self.open_path: Path | None = None
+        self.renamed: dict[Path, Path] = {}
+        self.deleted: set[Path] = set()
         self._paths: list[Path] = []
 
         body = ttk.Frame(self, padding=12)
@@ -101,9 +105,11 @@ class ProjectsDialog(tk.Toplevel):
         if not new_name or new_name.strip() == path.stem:
             return
         try:
-            projects.rename_project(path, new_name.strip())
+            target = projects.rename_project(path, new_name.strip())
         except OSError as exc:
             messagebox.showerror("Rename project", str(exc), parent=self)
+        else:
+            self._record_rename(path, target)
         self._refresh()
 
     def _delete(self) -> None:
@@ -119,4 +125,23 @@ class ProjectsDialog(tk.Toplevel):
             projects.delete_project(path)
         except OSError as exc:
             messagebox.showerror("Delete project", str(exc), parent=self)
+        else:
+            self._record_delete(path)
         self._refresh()
+
+    def _record_rename(self, old: Path, new: Path) -> None:
+        if old == new:
+            return
+        for origin, current in self.renamed.items():
+            if current == old:  # A -> B then B -> C is recorded as A -> C
+                self.renamed[origin] = new
+                return
+        self.renamed[old] = new
+
+    def _record_delete(self, path: Path) -> None:
+        for origin, current in list(self.renamed.items()):
+            if current == path:  # the file came from an earlier rename
+                del self.renamed[origin]
+                path = origin
+                break
+        self.deleted.add(path)

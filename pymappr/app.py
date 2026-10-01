@@ -388,6 +388,26 @@ class PyMapprApp:
         self.root.wait_window(dialog)
         if dialog.open_path is not None:
             self._open_project_path(dialog.open_path)
+            return
+        self._follow_dialog_changes(dialog)
+
+    def _follow_dialog_changes(self, dialog: ProjectsDialog) -> None:
+        """Keep the open project's path in step with renames and deletes."""
+        if self.project_path is None:
+            return
+        current = self.project_path.resolve()
+        for old, new in dialog.renamed.items():
+            if old.resolve() == current:
+                self.project_path = new
+                self.project_name = new.stem
+                self._set_title()
+                return
+        if any(path.resolve() == current for path in dialog.deleted):
+            # The file is gone: Ctrl+S must ask for a name, and closing
+            # must offer to save.
+            self.project_path = None
+            self._clean_snapshot = None
+            self._set_title()
 
     def _open_project_path(self, path: Path | str) -> None:
         if not self._confirm_discard():
@@ -397,9 +417,12 @@ class PyMapprApp:
         except (OSError, ValueError) as exc:
             messagebox.showerror("Open project", str(exc), parent=self.root)
             return
+        before = self._collect_state()
+        was_clean = self._snapshot() == self._clean_snapshot
         try:
             self._apply_state(state)
         except Exception as exc:  # noqa: BLE001 - corrupt/edited file
+            self._restore_after_failed_open(before, was_clean)
             messagebox.showerror(
                 "Open project",
                 f"Could not open the project:\n{exc}", parent=self.root)
@@ -409,6 +432,23 @@ class PyMapprApp:
         self._mark_clean()
         self._set_title()
         self.set_status(f"Opened project {self.project_name}.")
+
+    def _restore_after_failed_open(self, before: dict,
+                                   was_clean: bool) -> None:
+        """Undo a part-applied project so it is never paired with a path."""
+        try:
+            self._apply_state(before)
+        except Exception:  # noqa: BLE001 - fall back to a blank project
+            self._apply_state(json.loads(json.dumps(self._default_state)))
+            self.project_path = None
+            self.project_name = UNTITLED
+            self._mark_clean()
+            self._set_title()
+            return
+        if was_clean:
+            self._mark_clean()
+        else:
+            self._clean_snapshot = None
 
     def on_save_project(self) -> bool:
         if self.project_path is None:
@@ -440,10 +480,15 @@ class PyMapprApp:
                     f"\N{RIGHT DOUBLE QUOTATION MARK} already exists. "
                     "Overwrite it?", parent=self.root):
                 return False
+        old_path, old_name = self.project_path, self.project_name
         self.project_path = path
         self.project_name = name
         self._set_title()
-        return self.on_save_project()
+        if self.on_save_project():
+            return True
+        self.project_path, self.project_name = old_path, old_name
+        self._set_title()
+        return False
 
     def on_import_project(self) -> None:
         """Copy a shared project file into the projects folder and open it."""
