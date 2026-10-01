@@ -17,7 +17,8 @@ from matplotlib.patches import Rectangle
 from pymappr.geo.layers import CONTINENT_EXTENTS, LayerStore
 from pymappr.geo.projections import GLOBE, get_projection
 from pymappr.renderer import MapRenderer
-from pymappr.styling.decorations import (CompassOptions, ScaleBarOptions,
+from pymappr.styling.decorations import (CORNERS, CompassOptions,
+                                         ScaleBarOptions,
                                          corner_anchor, format_length,
                                          nice_length, unit_metres)
 
@@ -259,18 +260,57 @@ def test_the_compass_defaults_reproduce_the_original_arrow():
     assert annotation.xy == (0.975, 0.975)
 
 
-@pytest.mark.parametrize("position", ["lower left", "lower right",
-                                      "upper left", "upper right"])
-def test_the_compass_arrow_always_points_into_the_map(position):
+def _to_display(ax, coords, xy):
+    """*xy* in display pixels, given the coordinate system an annotation
+    names for it (the axes-fraction string or a transform)."""
+    transform = ax.transAxes if coords == "axes fraction" else coords
+    return transform.transform(xy)
+
+
+@pytest.mark.parametrize("position", CORNERS)
+def test_the_compass_arrow_points_north_in_every_corner(position):
     r = _renderer()
     r.set_compass(CompassOptions(show=True, position=position))
     r.fig.canvas.draw()
     annotation, = r._artists["compass"]
-    tip_y = annotation.xy[1]
-    tail_y = annotation.get_position()[1]
-    assert 0.0 < tail_y < 1.0
-    # The arrow runs from the tail towards the tip, away from the frame.
-    assert (tip_y > tail_y) == (position.startswith("upper"))
+    head = _to_display(r.ax, annotation.xycoords, annotation.xy)
+    tail = _to_display(r.ax, annotation.anncoords, annotation.xyann)
+    # The arrow runs from the "N" to its head, so north is up the page only
+    # when the head sits above the "N".
+    assert head[1] > tail[1]
+    assert head[0] == pytest.approx(tail[0])
+
+
+@pytest.mark.parametrize("position", CORNERS)
+def test_the_triangle_compass_points_north_in_every_corner(position):
+    r = _renderer()
+    r.set_compass(CompassOptions(show=True, position=position,
+                                 style="triangle"))
+    r.fig.canvas.draw()
+    triangle, label = r._artists["compass"]
+    tip, *base = triangle.get_transform().transform(triangle.get_xy()[:3])
+    assert all(tip[1] > corner[1] for corner in base)
+    # The "N" sits under the base, the way it does in a top corner.
+    assert label.get_window_extent().y1 <= min(c[1] for c in base) + 1.0
+
+
+@pytest.mark.parametrize("figsize", [(9, 6.5), (5, 4)])
+@pytest.mark.parametrize("size", [0.5, 1.0, 3.0])
+@pytest.mark.parametrize("style", ["arrow", "triangle"])
+@pytest.mark.parametrize("position", CORNERS)
+def test_the_whole_compass_stays_inside_the_map(position, style, size,
+                                                figsize):
+    r = _renderer()
+    r.fig.set_size_inches(*figsize)
+    r.set_extent(CONTINENT_EXTENTS["Africa"])
+    r.set_compass(CompassOptions(show=True, position=position, style=style,
+                                 size=size))
+    r.fig.canvas.draw()
+    frame = r.ax.bbox
+    for artist in r._artists["compass"]:
+        box = artist.get_window_extent()
+        assert box.x0 >= frame.x0 and box.x1 <= frame.x1, (artist, box)
+        assert box.y0 >= frame.y0 and box.y1 <= frame.y1, (artist, box)
 
 
 def test_the_triangle_compass_draws_a_polygon_and_a_label():

@@ -6,11 +6,17 @@ from __future__ import annotations
 
 import numpy as np
 from matplotlib.patches import Polygon, Rectangle
+from matplotlib.transforms import ScaledTranslation
 
 from pymappr.renderer.tables import LABEL_HALO, Z_COMPASS, Z_SCALE_BAR
 from pymappr.styling.decorations import (CompassOptions, ScaleBarOptions,
                                          corner_anchor, format_length,
                                          nice_length, unit_metres)
+
+# Half the width of the triangle compass at size 1, in axes fraction.
+_TRIANGLE_HALF_WIDTH = 0.016
+# Half the width of the arrow's bold "N", in ems.
+_N_HALF_WIDTH_EM = 0.425
 
 
 class OverlaysMixin:
@@ -34,18 +40,34 @@ class OverlaysMixin:
             return
         x, y = corner_anchor(opts.position, pad=0.025)
         size = max(float(opts.size), 0.1)
-        # The arrow runs downwards from the anchor when the compass sits at
-        # the top, and upwards when it sits at the bottom, so it never points
-        # out of the map.
+        triangle = opts.style == "triangle"
+        fontsize = (10 if triangle else 11) * size
+        # North is up the page in every corner: the head (or tip) sits
+        # *reach* above the "N". In a top corner the head is at the anchor
+        # and the compass hangs below it; in a bottom corner the "N" rests on
+        # the anchor, lifted by half its height (in points, as fonts are).
         reach = 0.07 * size
-        tail_y = y - reach if y > 0.5 else y + reach
-        if opts.style == "triangle":
-            artists = self._compass_triangle(x, y, tail_y, size, opts.color)
+        top = y if y > 0.5 else y + reach
+        lift = 0.0 if y > 0.5 else 0.5 * fontsize
+        # Grown past its original size, the compass grows inwards, so its
+        # outer edge stays where size 1 puts it, inside the map.
+        inwards = -1.0 if x > 0.5 else 1.0
+        growth = max(size - 1.0, 0.0)
+        shift = 0.0
+        if triangle:
+            x += inwards * _TRIANGLE_HALF_WIDTH * growth
+        else:
+            shift = inwards * _N_HALF_WIDTH_EM * 11 * growth
+        coords = self.ax.transAxes + ScaledTranslation(
+            shift / 72, lift / 72, self.fig.dpi_scale_trans)
+        if triangle:
+            artists = self._compass_triangle(x, top, reach, size, opts.color,
+                                             coords)
         else:
             artists = [self.ax.annotate(
-                "N", xy=(x, y), xytext=(x, tail_y),
-                xycoords="axes fraction", textcoords="axes fraction",
-                ha="center", va="center", fontsize=11 * size,
+                "N", xy=(x, top), xytext=(x, top - reach),
+                xycoords=coords, textcoords=coords,
+                ha="center", va="center", fontsize=fontsize,
                 fontweight="bold", color=opts.color,
                 path_effects=LABEL_HALO, zorder=Z_COMPASS,
                 annotation_clip=False,
@@ -55,21 +77,22 @@ class OverlaysMixin:
                     shrinkA=6 * size, shrinkB=0))]
         self._artists["compass"] = artists
 
-    def _compass_triangle(self, x, y, tail_y, size, color) -> list:
-        """A filled triangle pointing north, with an "N" beside its base."""
-        half = 0.016 * size
-        up = y > tail_y
-        tip = y
-        base = tail_y + (0.02 * size if up else -0.02 * size)
+    def _compass_triangle(self, x, top, reach, size, color,
+                          transform) -> list:
+        """A filled triangle pointing north from *top*, with an "N" under
+        its base."""
+        half = _TRIANGLE_HALF_WIDTH * size
+        label_y = top - reach
+        base = label_y + 0.02 * size
         triangle = Polygon(
-            [(x, tip), (x - half, base), (x + half, base)],
-            closed=True, transform=self.ax.transAxes, facecolor=color,
+            [(x, top), (x - half, base), (x + half, base)],
+            closed=True, transform=transform, facecolor=color,
             edgecolor="white", linewidth=0.8 * size, zorder=Z_COMPASS,
             clip_on=False)
         self.ax.add_patch(triangle)
         label = self.ax.text(
-            x, tail_y, "N", transform=self.ax.transAxes,
-            ha="center", va="center" if up else "center",
+            x, label_y, "N", transform=transform,
+            ha="center", va="center",
             fontsize=10 * size, fontweight="bold", color=color,
             path_effects=LABEL_HALO, zorder=Z_COMPASS, clip_on=False)
         return [triangle, label]
