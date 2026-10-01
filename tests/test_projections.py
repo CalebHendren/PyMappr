@@ -160,3 +160,19 @@ def test_lambert_wraps_longitudes_around_the_centre():
     xs, ys = proj.forward([-170.0], [0.0], clamp=False)
     assert xs[0] > 0 and np.isfinite(ys).all()
     np.testing.assert_array_equal((xs, ys), proj.forward([190.0], [0.0]))
+
+
+def test_label_region_is_the_lambert_map_area():
+    from shapely.geometry import Point
+
+    for name in ("Robinson", "Equirectangular", GLOBE):
+        assert get_projection(name).label_region() is None
+    europe = get_projection("Lambert: Europe").label_region()
+    assert europe.covers(Point(20.0, 60.0))
+    assert not europe.covers(Point(8.0, 9.0))     # south of 30N
+    assert not europe.covers(Point(70.0, 50.0))   # east of 65E
+    # N. America's 186W..6W runs past the antimeridian to 174E.
+    america = get_projection("Lambert: N. America").label_region()
+    assert america.covers(Point(176.0, 60.0))
+    assert america.covers(Point(-100.0, 40.0))
+    assert not america.covers(Point(100.0, 60.0))

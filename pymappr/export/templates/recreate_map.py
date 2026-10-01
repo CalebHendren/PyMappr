@@ -254,6 +254,26 @@ def to_map_crs(gdf):
     return gdf.to_crs(MAP_CRS)
 
 
+def label_region():
+    """The lon/lat area a regional (Lambert) map shows, like the app:
+    polygon and line labels are anchored on the part of each feature
+    inside it. None on every other projection, the globe included."""
+    from shapely import affinity
+    from shapely.geometry import box
+    from shapely.ops import unary_union
+
+    lon_0, halfspan = PROJ["lon_0"], PROJ["lon_halfspan"]
+    min_lat, max_lat = PROJ["min_lat"], PROJ["max_lat"]
+    if (MAP_CRS is None or PROJ["hemisphere"]
+            or (halfspan >= 180.0 and min_lat == -max_lat)):
+        return None
+    lon0 = (lon_0 + 180.0) % 360.0 - 180.0
+    region = box(lon0 - halfspan, min_lat, lon0 + halfspan, max_lat)
+    copies = unary_union([affinity.translate(region, xoff=off)
+                          for off in (-360.0, 0.0, 360.0)])
+    return copies.intersection(box(-180.0, min_lat, 180.0, max_lat))
+
+
 def wrap_offsets():
     """Horizontal world copies needed to cover the view (the app draws
     wrapped copies when the view crosses a world edge)."""
@@ -485,8 +505,12 @@ def label_anchors(spec):
             gdf["min_label"] = 5.0
     import warnings
 
+    region = label_region()
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
+        if region is not None and spec["geometry"] != "point":
+            gdf = gdf.set_geometry(gdf.geometry.intersection(region))
+            gdf = gdf[~gdf.geometry.is_empty]
         if spec["dedupe_longest"]:
             gdf["_len"] = gdf.geometry.length
             gdf = (gdf.sort_values("_len", ascending=False)

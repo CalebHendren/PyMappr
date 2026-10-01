@@ -30,10 +30,16 @@ class LabelsMixin:
             self._label_visible.discard(key)
         self._refresh_labels()
 
+    def _label_points(self, source: str):
+        """The store's label anchors for *source* in this projection: on a
+        regional one, anchored on the part of each feature it shows."""
+        return self.store.label_points(source,
+                                       region=self.proj.label_region())
+
     def _label_xy(self, source: str) -> tuple[np.ndarray, np.ndarray]:
         cache_key = (source, self.proj.key)
         if cache_key not in self._label_xy_cache:
-            points = self.store.label_points(source)
+            points = self._label_points(source)
             # Anchors outside a regional projection are dropped (NaN), not
             # stacked along the region's edge.
             xs, ys = self.proj.forward(points["x"].to_numpy(),
@@ -105,7 +111,7 @@ class LabelsMixin:
         important first and at most the layer's cap. The wrapped world
         copies count, so labels follow the view across the antimeridian."""
         x0, x1, y0, y1 = view
-        points = self.store.label_points(source)
+        points = self._label_points(source)
         xs, ys = self._label_xy(source)
         ranks = points["min_label"].to_numpy()
         names = points["text"].to_numpy()

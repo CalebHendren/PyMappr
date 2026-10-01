@@ -765,6 +765,41 @@ def test_generated_python_graticule_draws_no_chords_across_the_region():
             assert (np.diff(seg[:, 0]) >= -1e-6).all(), name
 
 
+def test_generated_python_anchors_lambert_labels_like_the_app():
+    # A country reaching off Lambert: Europe is labelled on its part on
+    # the map (as the app does); one wholly off it is not labelled.
+    import geopandas as gpd
+    import numpy as np
+    from shapely.geometry import box
+
+    name = "Lambert: Europe"
+    state = make_state(map={"projection": name,
+                            "labels": {"countries": True}})
+    py = codegen.generate_code(state, [], "Python")
+    ns: dict = {}
+    exec(py.replace('if __name__ == "__main__":\n    main()', ""), ns)
+    shapes = {"Northland": box(5.0, 58.0, 30.0, 81.0),   # past 72N
+              "Eastland": box(50.0, 40.0, 90.0, 55.0),   # past 65E
+              "Southland": box(0.0, 4.0, 14.0, 14.0)}    # below 30N
+    gdf = gpd.GeoDataFrame({"name": list(shapes), "min_label": 1.0},
+                           geometry=list(shapes.values()), crs="EPSG:4326")
+    ns["load_natural_earth"] = lambda *args, **kwargs: gdf.copy()
+    spec = next(s for s in ns["LABEL_LAYERS"] if s["column"] == "name")
+    anchors = ns["label_anchors"](spec)
+    assert list(anchors["text"]) == ["Northland", "Eastland"]
+    region = get_projection(name).label_region()
+    for row in anchors.itertuples():
+        expected = shapes[row.text].intersection(region).representative_point()
+        assert (row.x, row.y) == (expected.x, expected.y)
+    xs, ys = ns["proj_forward"](anchors["x"].to_numpy(),
+                                anchors["y"].to_numpy(), clamp=False)
+    assert np.isfinite(xs).all() and np.isfinite(ys).all()
+    # Off a Lambert map the anchors are the whole features', as before.
+    ns["PROJ"] = dict(ns["PROJ"], lon_halfspan=180.0, min_lat=-90.0,
+                      max_lat=90.0)
+    assert ns["label_region"]() is None
+
+
 def test_generated_python_drops_natural_earth_features_outside_the_region():
     # Like the app: Natural Earth markers and labels outside a regional
     # projection are dropped, the user's own points clamped onto its edge.

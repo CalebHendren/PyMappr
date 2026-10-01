@@ -1550,7 +1550,7 @@ def test_natural_earth_features_outside_a_lambert_region_are_dropped():
     frame = pd.DataFrame({"x": [3.4, 2.35], "y": [6.45, 48.86],
                           "text": ["Lagos", "Paris"], "min_label": [1, 1],
                           "min_zoom": [1, 1]})
-    r.store.label_points = lambda _key: frame
+    r.store.label_points = lambda _key, region=None: frame
     r.store.point_features = lambda _key: frame
     for xs, ys in (r._label_xy("cities"), r._point_xy("cities")[:2]):
         assert np.isnan(xs[0]) and np.isnan(ys[0])
@@ -1569,3 +1569,32 @@ def test_the_lambert_graticule_draws_no_chords_across_the_region():
         assert parallels
         for seg in parallels:
             assert (np.diff(seg[:, 0]) >= -1e-6).all(), name
+
+
+def test_lambert_labels_sit_on_the_part_of_a_feature_on_the_map():
+    # Norway's whole-country anchor is on Svalbard (79.8N), Russia's and
+    # Kazakhstan's east of 65E: all off Lambert: Europe, yet most of each
+    # country is on it. Their labels anchor on the part that is drawn.
+    store = LayerStore()
+    if store.check_data():
+        pytest.skip("map data not downloaded")
+    fig = Figure(figsize=(9, 6.5), dpi=100)
+    FigureCanvasAgg(fig)
+    r = MapRenderer(fig, store)
+    world = store.label_points("countries")
+    norway = world[world["text"] == "Norway"].iloc[0]
+    assert norway["y"] > 72.0   # the unclipped anchor, unchanged
+    r.set_projection("Lambert: Europe")
+    points = r._label_points("countries")
+    xs, ys = r._label_xy("countries")
+    x0, x1, y0, y1 = r.proj.bounds
+    names = list(points["text"])
+    for name in ("Norway", "Russia", "Kazakhstan"):
+        i = names.index(name)
+        assert np.isfinite([xs[i], ys[i]]).all(), name
+        assert x0 <= xs[i] <= x1 and y0 <= ys[i] <= y1, name
+    assert points["y"].to_numpy()[names.index("Norway")] < 72.0
+    assert "Nigeria" not in names
+    # World projections keep the whole-feature anchors.
+    r.set_projection("Robinson")
+    assert r._label_points("countries") is world

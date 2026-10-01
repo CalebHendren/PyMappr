@@ -174,6 +174,22 @@ class Projection:
             return box(-180.0, self.min_lat, 180.0, self.max_lat)
         return None
 
+    def label_region(self):
+        """The lon/lat area a regional (Lambert) map shows - its latitude
+        band and its longitude span around lon_0 - as a shapely geometry,
+        or None for every other projection.
+
+        Polygon and line labels are anchored on the part of a feature
+        inside it, so a country only partly on the map (Russia on
+        Lambert: Europe) is labelled where it is drawn instead of at an
+        anchor off the map. The Globe is left out: every spin step is a
+        new projection, and clipping the larger label layers (states)
+        each time is too slow."""
+        if self.hemisphere or not self.is_regional:
+            return None
+        return _region_clip(self.lon_0, self.lon_halfspan,
+                            self.min_lat, self.max_lat)
+
     def horizon_xy(self) -> tuple[np.ndarray, np.ndarray]:
         """The globe's horizon circle in projected coordinates (the disk
         outline the renderer draws). Only meaningful for the Globe."""
@@ -367,6 +383,23 @@ def _cap_clip(lon_0: float, lat_0: float):
     cap = Polygon(shell).buffer(0)  # heal numerical self-touches
     return unary_union([affinity.translate(cap, xoff=off)
                         for off in (-360.0, 0.0, 360.0)])
+
+
+@lru_cache(maxsize=16)
+def _region_clip(lon_0: float, lon_halfspan: float, min_lat: float,
+                 max_lat: float):
+    """A regional map's lon/lat area for anchoring labels, with +/-360
+    degree copies so a region crossing the antimeridian still covers data
+    stored in [-180, 180]."""
+    from shapely import affinity
+    from shapely.geometry import box
+    from shapely.ops import unary_union
+
+    lon0 = (lon_0 + 180.0) % 360.0 - 180.0
+    region = box(lon0 - lon_halfspan, min_lat, lon0 + lon_halfspan, max_lat)
+    copies = unary_union([affinity.translate(region, xoff=off)
+                          for off in (-360.0, 0.0, 360.0)])
+    return copies.intersection(box(-180.0, min_lat, 180.0, max_lat))
 
 
 def _build_globe(lon_0: float | None, lat_0: float | None) -> Projection:
