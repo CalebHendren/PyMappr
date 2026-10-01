@@ -96,6 +96,28 @@ def _rscript():
     return path
 
 
+_R_PACKAGE_CACHE: dict[tuple[str, ...], list[str]] = {}
+
+
+def _rscript_with(*packages):
+    """Rscript, skipping visibly when any of *packages* is not installed."""
+    rscript = _rscript()
+    if packages not in _R_PACKAGE_CACHE:
+        names = ", ".join(f"'{pkg}'" for pkg in packages)
+        result = subprocess.run(
+            [rscript, "-e",
+             f"cat(Filter(function(p) !requireNamespace(p, quietly = TRUE), "
+             f"c({names})), sep = ' ')"],
+            capture_output=True, text=True)
+        _R_PACKAGE_CACHE[packages] = (
+            result.stdout.split() if result.returncode == 0 else
+            list(packages))
+    missing = _R_PACKAGE_CACHE[packages]
+    if missing:
+        pytest.skip("R package(s) not installed: " + ", ".join(missing))
+    return rscript
+
+
 def assert_parses_as_r(code):
     """Parse generated R with a real R interpreter; skip, visibly, when
     there is none."""
@@ -979,7 +1001,7 @@ cat("R functions OK\\n")
 def run_r_harness(tmp_path, code, harness, name="harness.R"):
     """Run a generated R script's definitions (the package bootstrap and
     the final main() call dropped) followed by *harness*; return stdout."""
-    rscript = _rscript()
+    rscript = _rscript_with("sf", "ggplot2")
     body = "\n".join(line for line in code.splitlines()
                      if not line.startswith("ensure_packages(")
                      and line != "main()")
@@ -1833,7 +1855,7 @@ def cities_entry():
 def run_exported_r(tmp_path, state, entries, files=None):
     """Write the exported script (plus any extra *files*) to *tmp_path* with
     a pre-filled Natural Earth cache, run it, and return the result."""
-    rscript = _rscript()
+    rscript = _rscript_with("sf", "ggplot2")
     config = codegen.build_config(state, entries)
     cache = tmp_path / "naturalearth_cache"
     cache.mkdir()
