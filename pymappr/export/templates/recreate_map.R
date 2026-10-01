@@ -62,13 +62,30 @@ download_archive <- function(scale, category, name) {
 
 extract_archive <- function(zip_path, folder, wanted, junkpaths = TRUE) {
   # Unzip into a scratch folder and move it into place once complete, so a
-  # failed extraction never leaves a folder that looks finished.
+  # failed extraction never leaves a folder that looks finished. unzip()
+  # only warns about a member it cannot decode, so a warning - or a file
+  # missing from what it wrote - counts as a failure, and the zip is
+  # deleted so the next run downloads it again.
   if (!is.null(wanted) && all(file.exists(file.path(folder, wanted)))) {
     return(folder)
   }
   scratch <- paste0(folder, ".part")
   unlink(scratch, recursive = TRUE)
-  utils::unzip(zip_path, exdir = scratch, junkpaths = junkpaths)
+  members <- utils::unzip(zip_path, list = TRUE)$Name
+  members <- members[!grepl("/$", members)]
+  written <- tryCatch(
+    withCallingHandlers(
+      utils::unzip(zip_path, exdir = scratch, junkpaths = junkpaths),
+      warning = function(w) stop(conditionMessage(w), call. = FALSE)),
+    error = function(e) e)
+  if (inherits(written, "error") || length(written) != length(members)) {
+    unlink(scratch, recursive = TRUE)
+    file.remove(zip_path)
+    stop("Could not unpack ", basename(zip_path), " (",
+         if (inherits(written, "error")) conditionMessage(written) else
+           "files missing", "); it was deleted, so run the script again ",
+         "to download it afresh.", call. = FALSE)
+  }
   unlink(folder, recursive = TRUE)
   file.rename(scratch, folder)
   folder

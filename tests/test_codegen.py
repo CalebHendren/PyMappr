@@ -1548,6 +1548,36 @@ if (startsWith(COMPASS$position, "upper")) {
 """)
 
 
+# ------------------------------------------------ review fixes (1.31.3)
+
+def test_r_recovers_from_a_failed_extraction(tmp_path):
+    # R's unzip only warns about a member it cannot decode (here LZMA), so
+    # the folder used to be moved into place holding just the .shp, and
+    # every later run skipped extraction and failed to read it.
+    with zipfile.ZipFile(tmp_path / "bad.zip", "w") as archive:
+        archive.writestr("ne/ne_110m_land.shp", b"shape",
+                         compress_type=zipfile.ZIP_DEFLATED)
+        archive.writestr("ne/ne_110m_land.dbf", b"table" * 100,
+                         compress_type=zipfile.ZIP_LZMA)
+    (tmp_path / "good.zip").write_bytes(_zip_bytes())
+    code = codegen.generate_code(make_state(), [], "R")
+    run_r_harness(tmp_path, code, """
+failed <- tryCatch({
+  extract_archive("bad.zip", "bad", "ne_110m_land.shp")
+  FALSE
+}, error = function(e) TRUE)
+stopifnot(failed)
+# Nothing that looks finished is left, and the zip goes so the next run
+# downloads it again.
+stopifnot(!dir.exists("bad"), !dir.exists("bad.part"),
+          !file.exists("bad.zip"))
+folder <- extract_archive("good.zip", "good", "ne_110m_land.shp")
+stopifnot(identical(sort(list.files(folder)),
+                    c("ne_110m_land.dbf", "ne_110m_land.shp")))
+stopifnot(file.exists("good.zip"))
+""")
+
+
 # ------------------------------- running whole exported R scripts (opt-in)
 #
 # These run a generated script's main() end to end with real R, sf and
