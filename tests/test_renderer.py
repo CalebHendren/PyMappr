@@ -1463,3 +1463,30 @@ def test_the_toolbar_history_cancels_a_pending_zoom(button):
     assert r.get_view() == expected
     _fire(timer)
     assert r.get_view() == expected
+
+
+def test_a_fractional_drag_renders_the_whole_pixels_it_previewed():
+    # The preview can only shift the snapshot by whole pixels, so the render
+    # must move the view by the same whole pixels, and the drag re-base on
+    # them, or the map lands up to half a pixel off the preview at each
+    # pause (HiDPI cursors report fractional positions).
+    r = _pan_renderer()
+    x0, x1 = r.ax.get_xlim()
+    y0, y1 = r.ax.get_ylim()
+    bbox = r.ax.bbox
+    cx, cy = _axes_centre(r)
+    r._on_canvas_press(_MouseEvent(r.ax, cx, cy))
+    r._on_canvas_motion(_MouseEvent(r.ax, cx + 40.4, cy + 20.6))
+    _fire_pause(r)
+    assert r.ax.get_xlim()[0] - x0 == pytest.approx(
+        -(x1 - x0) / bbox.width * 40)
+    assert r.ax.get_ylim()[0] - y0 == pytest.approx(
+        -(y1 - y0) / bbox.height * 21)
+    r._on_canvas_motion(_MouseEvent(r.ax, cx + 80.8, cy + 41.2))
+    r._on_canvas_release(_MouseEvent(r.ax, cx + 80.8, cy + 41.2))
+    # The map ends under the cursor to the nearest pixel overall, not off
+    # by the fraction dropped at the pause.
+    assert r.ax.get_xlim()[0] - x0 == pytest.approx(
+        -(x1 - x0) / bbox.width * 81)
+    assert r.ax.get_ylim()[0] - y0 == pytest.approx(
+        -(y1 - y0) / bbox.height * 41)

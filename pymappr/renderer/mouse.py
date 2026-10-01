@@ -241,11 +241,15 @@ class MouseMixin:
             background = self._map_background()
             if background is None:
                 return
-        dx, dy = event.x - drag["x"], event.y - drag["y"]
+        # Whole pixels, as the snapshot can only shift by those: the render
+        # then moves the view by exactly what the preview showed, and the
+        # drag re-bases on that rather than on the fractional cursor.
+        dx = round(event.x - drag["x"])
+        dy = round(event.y - drag["y"])
         self._blit_pan(background, dx, dy)
-        # The shift in pixels; the map follows the cursor.
+        # The map follows the cursor.
         drag["pending"] = (dx, dy)
-        drag["last"] = (event.x, event.y)
+        drag["last"] = (drag["x"] + dx, drag["y"] + dy)
         timer = drag["timer"]
         if timer is not None:
             # Re-armed on every motion, so it fires only once the cursor rests.
