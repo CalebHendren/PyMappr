@@ -88,3 +88,12 @@ def test_later_burst_is_debounced_again(tk_root, canvas):
     _resize(canvas, 620, 400)
     _flush(tk_root, canvas)
     assert canvas.applied == [(620, 400)]
+
+
+def test_the_held_picture_is_centred_on_whole_pixels(tk_root, canvas):
+    # As matplotlib places it, so the held picture does not jump half a
+    # pixel when the real resize lands.
+    _resize(canvas, 400, 300)
+    _resize(canvas, 401, 301)
+    assert canvas._tkcanvas.coords(canvas._tkcanvas_image_region) == [
+        200.0, 150.0]

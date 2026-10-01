@@ -39,10 +39,11 @@ class DebouncedFigureCanvasTkAgg(FigureCanvasTkAgg):
             self._resize_figure_for_canvas_size(width, height)
             return
 
-        # Keep the stale picture centred in the new window: cheap, and it
-        # stands in for the real redraw until the drag settles.
+        # Keep the stale picture centred in the new window (on whole pixels,
+        # as matplotlib centres it): cheap, and it stands in for the real
+        # redraw until the drag settles.
         self._tkcanvas.coords(self._tkcanvas_image_region,
-                              width / 2, height / 2)
+                              int(width / 2), int(height / 2))
         if self._resize_after_id is not None:
             self._tkcanvas.after_cancel(self._resize_after_id)
         self._resize_after_id = self._tkcanvas.after(
