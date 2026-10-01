@@ -111,3 +111,26 @@ class TestErrors:
         assert close(parse_longitude("-180"), -180.0)
         assert close(parse_latitude("90"), 90.0)
         assert close(parse_latitude("-90"), -90.0)
+
+
+class TestSecondsMarkerVsSouth:
+    V = 45 + 30 / 60 + 15 / 3600
+    L = 120 + 30 / 60 + 15 / 3600
+
+    @pytest.mark.parametrize("text", ["45d30m15s", "45°30′15s", "45d 30m 15s"])
+    def test_latitude_seconds_marker(self, text):
+        assert close(parse_latitude(text), self.V)
+
+    @pytest.mark.parametrize("text", [
+        "45 30 15s", "45 30 15 S", "45°30'15\"S", "S45d30m15s", "45d30m15 S",
+    ])
+    def test_latitude_south(self, text):
+        assert close(parse_latitude(text), -self.V)
+
+    @pytest.mark.parametrize("text", ["120d30m15s", "120 30 15s"])
+    def test_longitude_seconds_marker(self, text):
+        assert close(parse_longitude(text), self.L)
+
+    def test_longitude_south_letter_still_invalid(self):
+        with pytest.raises(CoordinateError):
+            parse_longitude("120 30 15 S")
