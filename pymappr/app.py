@@ -438,11 +438,11 @@ class PyMapprApp:
         try:
             self._apply_state(before)
         except Exception:  # noqa: BLE001 - fall back to a blank project
-            self._apply_state(json.loads(json.dumps(self._default_state)))
             self.project_path = None
             self.project_name = UNTITLED
-            self._mark_clean()
             self._set_title()
+            self._apply_state(json.loads(json.dumps(self._default_state)))
+            self._mark_clean()
             return
         if was_clean:
             self._mark_clean()

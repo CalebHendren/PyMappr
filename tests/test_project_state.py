@@ -108,6 +108,18 @@ def test_failed_open_that_cannot_restore_starts_blank(monkeypatch, errors):
     assert app.state["entries"] == []
 
 
+def test_failed_open_with_failing_fallback_still_detaches_the_path(
+        monkeypatch, errors):
+    app = _StubApp()
+    app.project_path = Path("Mine.pymappr")
+    app.fail_on = {"bad", "mine", "default"}
+    _stub_load(monkeypatch, {"entries": ["theirs"], "settings": "bad"})
+    with pytest.raises(KeyError):
+        app._open_project_path("Other.pymappr")
+    assert app.project_path is None
+    assert app.project_name == UNTITLED
+
+
 def _dialog():
     return SimpleNamespace(renamed={}, deleted=set())
 

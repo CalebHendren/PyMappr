@@ -257,3 +257,12 @@ def test_origin_spinboxes_are_clamped_and_written_back(panel):
     panel.proj_lat0_var.set("-90")
     assert panel.projection_origin() == (180, -90)
     assert panel.proj_lon0_var.get() == "180"
+
+
+@pytest.mark.parametrize("text", ["nan", "inf", "-inf"])
+def test_origin_ignores_non_finite_input(panel, text):
+    panel.projection_var.set("Globe (Orthographic)")
+    panel.proj_lon0_var.set(text)
+    panel.proj_lat0_var.set(text)
+    assert panel.projection_origin() == (None, None)
+    assert panel.proj_lon0_var.get() == text

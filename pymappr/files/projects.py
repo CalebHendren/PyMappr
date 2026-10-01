@@ -278,17 +278,14 @@ def rename_project(path: str | Path, new_name: str) -> Path:
 def safe_filename(name: str) -> str:
     """A filesystem-safe version of a user-typed project name.
 
-    On Windows, if the part before the first dot (stripped and lowercased) is
-    a reserved device name (CON, NUL, etc.), an underscore is inserted after
-    it to make the name usable.
+    If the part before the first dot (stripped and lowercased) is a reserved
+    device name (CON, NUL, etc.), an underscore is inserted after it, so
+    "NUL.tar" becomes "NUL_.tar".
     """
     cleaned = "".join("_" if ch in '<>:"/\\|?*' or ord(ch) < 32 else ch
                       for ch in name.strip())
     cleaned = cleaned.strip(". ") or "Untitled"
 
-    # Guard against Windows reserved device names: if the part before the
-    # first dot (stripped, lowercased) is reserved, insert an underscore.
-    # E.g., "CON" -> "CON_", "NUL.tar" -> "NUL_.tar"
     first, dot, rest = cleaned.partition(".")
     if first.strip().lower() in RESERVED_FILENAMES:
         cleaned = f"{first.rstrip()}_{dot}{rest}"

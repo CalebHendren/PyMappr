@@ -9,6 +9,7 @@ app's handler methods; the app owns the renderer and the data.
 
 from __future__ import annotations
 
+import math
 import tkinter as tk
 from tkinter import colorchooser, ttk
 
@@ -895,6 +896,8 @@ class ControlPanel(ttk.Frame):
             try:
                 value = float(var.get())
             except (TypeError, ValueError):
+                return None
+            if not math.isfinite(value):
                 return None
             fixed = fix(value)
             if fixed != value:

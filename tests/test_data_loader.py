@@ -137,14 +137,26 @@ def test_row_numbers_with_headers(tmp_path):
     """)
     frame = read_table(path)
     mapping = ColumnMapping(longitude="Longitude", latitude="Latitude",
-                           names=[], use_headers=True)
+                           names=[], header_row=True)
     ds = build_dataset(frame, mapping)
     assert len(ds.skipped) == 1
     assert "row 3" in ds.skipped[0]
 
 
+def test_row_numbers_header_row_with_generic_labels(tmp_path):
+    # A header row is still file line 1 when its text is not used as labels.
+    path = write(tmp_path, """\n        Longitude,Latitude
+        -97.7,30.3
+        bad,bad
+    """)
+    mapping = ColumnMapping(longitude="Longitude", latitude="Latitude",
+                           names=[], use_headers=False, header_row=True)
+    ds = build_dataset(read_table(path), mapping)
+    assert "row 3" in ds.skipped[0]
+
+
 def test_row_numbers_without_headers(tmp_path):
-    # Without headers (use_headers=False), row numbering starts at 1 with no
+    # Without a header row (header_row=False), row numbering starts at 1 with no
     # header offset. A bad row at index 0 (the first data row) reports as "row 1".
     path = write(tmp_path, """\
         bad,bad
@@ -152,7 +164,7 @@ def test_row_numbers_without_headers(tmp_path):
     """)
     frame = read_table(path, headers=False)
     mapping = ColumnMapping(longitude="Column 1", latitude="Column 2",
-                           names=[], use_headers=False)
+                           names=[], use_headers=False, header_row=False)
     ds = build_dataset(frame, mapping)
     assert len(ds.skipped) == 1
     assert "row 1" in ds.skipped[0]
