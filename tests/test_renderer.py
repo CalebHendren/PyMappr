@@ -1490,3 +1490,47 @@ def test_a_fractional_drag_renders_the_whole_pixels_it_previewed():
         -(x1 - x0) / bbox.width * 81)
     assert r.ax.get_ylim()[0] - y0 == pytest.approx(
         -(y1 - y0) / bbox.height * 41)
+
+
+@pytest.mark.parametrize("graticule", [None, 10])
+def test_a_shift_after_the_first_lands_where_the_cursor_went(graticule):
+    # The first motion of a drag used to render, which hid a mis-placed
+    # shift: graticule labels move the axes box off the figure's vertical
+    # centre, and the shift then put the map 22 px off vertically. Only a
+    # motion that shifts without rendering shows it, so this takes two.
+    r = _pan_renderer()
+    r.set_graticule(graticule)
+    r.fig.canvas.draw()
+    before = _red_centre(r.fig.canvas)
+    cx, cy = _axes_centre(r)
+    r._on_canvas_press(_MouseEvent(r.ax, cx, cy))
+    r._on_canvas_motion(_MouseEvent(r.ax, cx + 20, cy + 10))
+    r._on_canvas_motion(_MouseEvent(r.ax, cx + 37, cy + 21))
+    after = _red_centre(r.fig.canvas)
+    assert after[0] - before[0] == pytest.approx(37, abs=1.0)
+    assert after[1] - before[1] == pytest.approx(-21, abs=1.0)
+
+
+def test_the_legend_underline_stays_on_screen_through_a_drag():
+    # As above, the first motion used to render the whole frame, underline
+    # and all; the underline has to survive the shifts that follow it too.
+    r = _pan_renderer()
+    r.set_points([("a", PointStyle(color="#000000"), [100.0], [-40.0])],
+                 None, None,
+                 LegendOptions(location="upper left", label_underline=True))
+    r.fig.canvas.draw()
+    leg = r.ax.get_legend().get_window_extent()
+    height = np.asarray(r.fig.canvas.buffer_rgba()).shape[0]
+    rows = slice(height - int(leg.y1) - 2, height - int(leg.y0) + 2)
+    cols = slice(int(leg.x0) - 2, int(leg.x1) + 2)
+
+    def legend_area():
+        return np.asarray(r.fig.canvas.buffer_rgba())[rows, cols].copy()
+
+    before = legend_area()
+    cx, cy = _axes_centre(r)
+    r._on_canvas_press(_MouseEvent(r.ax, cx, cy))
+    for step in (1, 2, 3):
+        r._on_canvas_motion(_MouseEvent(r.ax, cx + 15 * step,
+                                        cy - 10 * step))
+        assert np.array_equal(legend_area(), before), f"motion {step}"
