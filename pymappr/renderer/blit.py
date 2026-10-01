@@ -37,6 +37,10 @@ class _SnapshotArtist(Artist):
         self._source = None
 
     def draw(self, renderer) -> None:
+        if self.axes.figure.canvas.is_saving():
+            # An export is not the screen, and its full-size copy would stay
+            # referenced here until the next screen render.
+            return
         copy_from_bbox = getattr(renderer, "copy_from_bbox", None)
         if copy_from_bbox is None:
             # PDF, SVG and PS renderers have no pixels to copy, so an export
@@ -170,8 +174,9 @@ class BlitMixin:
         """A GUI timer that runs *callback* once, *interval_ms* after it is
         (re)started, or None on a canvas without timers.
 
-        On Agg the timer never fires; the release still renders, so nothing
-        is left unfinished without it."""
+        On Agg the timer never fires. A pan relies on its release render; a
+        zoom gesture is applied only when the timer fires (GUI canvases) or
+        when _finish_zoom is called, as the tests and the press handler do."""
         new_timer = getattr(self.fig.canvas, "new_timer", None)
         if new_timer is None:
             return None

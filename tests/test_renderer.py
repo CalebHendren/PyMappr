@@ -1355,3 +1355,44 @@ def test_an_unknown_layer_key_is_rejected_before_it_is_recorded():
     x0, x1 = r.ax.get_xlim()
     r.ax.set_xlim(x0 + 1.0, x1 + 1.0)   # fires _on_limits_changed
     assert r.ax.get_xlim()[0] == pytest.approx(x0 + 1.0)
+
+
+def test_exporting_leaves_the_screen_snapshot_alone():
+    # A high-dpi export would otherwise leave its full-size copy of the
+    # pixels referenced by the snapshot until the next screen render.
+    from io import BytesIO
+
+    r = _pan_renderer()
+    before = r._snapshot.region
+    assert before is not None
+    r.fig.savefig(BytesIO(), format="png", dpi=200)
+    assert r._snapshot.region is before
+
+
+def test_a_globe_press_applies_a_pending_zoom_first():
+    from pymappr.geo.projections import GLOBE
+
+    r = _renderer(9.0, 6.5)
+    r.set_projection(GLOBE, 0.0, 0.0)
+    r.fig.canvas.draw()
+    span = abs(r.ax.get_xlim()[1] - r.ax.get_xlim()[0])
+    for _ in range(2):
+        r.zoom_interactive(1.25)
+    assert r._zoom_gesture is not None
+    cx, cy = _axes_centre(r)
+    r._on_canvas_press(_MouseEvent(r.ax, cx, cy, button=1))
+    assert r._zoom_gesture is None
+    assert r._globe_drag is not None
+    assert abs(r.ax.get_xlim()[1] - r.ax.get_xlim()[0]) == pytest.approx(
+        span / 1.5625)
+
+
+def test_the_wheel_is_ignored_during_a_pan_drag():
+    r = _pan_renderer()
+    cx, cy = _axes_centre(r)
+    r._on_canvas_press(_MouseEvent(r.ax, cx, cy))
+    assert r._pan_drag is not None
+    draws = _count_draws(r)
+    r.zoom_interactive(1.25, (cx, cy))
+    assert r._zoom_gesture is None
+    assert not draws

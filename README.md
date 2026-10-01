@@ -33,7 +33,8 @@ Python as an offline desktop application.
 - Combine name columns (e.g. Genus + Species) into one, so a legend row
   reads "Eleusis chapadensis" without editing the file.
 - One-click publication style: black & white outlined markers in varied
-  shapes, a plain boxed legend with italic names, and 600 DPI export.
+  shapes, a plain boxed legend with italic names sorted A-Z and shaded by
+  genus, and 600 DPI export.
 - Projects (`.pymappr` files) with autosave/restore, and export/import for
   sharing.
 - Save the map as PNG, JPEG, TIFF, PDF, SVG or WebP at the DPI you choose,
@@ -50,8 +51,10 @@ Python as an offline desktop application.
    The source file is left as it is.
 2. **Map tab > Apply publication style** switches to black & white points
    with black outlines and varied shapes, a plain boxed legend with italic
-   names, and 600 DPI export. Rows you restyled with Customize legend keep
-   their styling.
+   names sorted A-Z and shaded by genus, and 600 DPI export. Datasets with
+   no Color by are colored by the parent name column, and a legend order you
+   set by hand is kept. Rows you restyled with Customize legend keep their
+   styling.
 3. **File > Save map as...** and pick TIFF or PDF.
 
 ## Screenshots
@@ -133,7 +136,7 @@ Project layout:
 - `pymappr/geo/layers.py` - Natural Earth layer store and on-disk frame cache
 - `pymappr/geo/projections.py` - map projections (pyproj)
 - `pymappr/renderer/` - matplotlib map rendering, one module per concern
-  (view, layers, overlays, labels, points and legend, mouse), plus the
+  (view, layers, overlays, labels, points and legend, mouse, blit), plus the
   layer style tables shared with code export
 - `pymappr/styling/styles.py` - point styles and group/color-by styling
 - `pymappr/styling/legend.py` - legend options and legend rows

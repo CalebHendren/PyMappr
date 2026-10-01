@@ -310,6 +310,9 @@ class ViewMixin:
         and rendering the zoom once no further call has come for
         _ZOOM_PAUSE_MS. Without a centre, and always on the globe, the zoom
         is about the middle of the map box, as with :meth:`zoom`."""
+        if self._pan_drag is not None or self._globe_drag is not None:
+            # The drag owns the view until it is released.
+            return
         if self._map_background() is None:
             # No snapshot of the screen as it is - nothing rendered since
             # start-up, or the map box has changed size. Finishing a zoom in

@@ -121,6 +121,9 @@ class MouseMixin:
     def _on_canvas_press(self, event) -> None:
         if event.inaxes is not self.ax:
             return
+        # A scroll zoom still waiting on its timer is applied before any
+        # press acts on the view, whether it pans, spins or drags an overlay.
+        self._finish_zoom()
         # The globe spin takes the press even while a matplotlib toolbar tool
         # (pan/zoom) is active: matplotlib's own axes pan and rubber-band zoom
         # are switched off for the map axes on the globe (see _sync_navigation),
@@ -211,10 +214,6 @@ class MouseMixin:
     # ends on one, so what the user stops on is a full render either way.
 
     def _pan_press(self, event) -> None:
-        # A scroll zoom still waiting on its timer is applied first: the drag
-        # moves the snapshot of the last render, which has to show the view
-        # being dragged.
-        self._finish_zoom()
         # The snapshot of the last render is already the map alone, so the
         # press itself draws nothing.
         if self._map_background() is None:
