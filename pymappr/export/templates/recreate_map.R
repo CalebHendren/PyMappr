@@ -539,6 +539,11 @@ legend_frame <- function() {
 
 legend_text <- function(size, bold, italic, colour) {
   family <- if (nzchar(LEGEND$font_family)) LEGEND$font_family else NULL
+  # matplotlib's generic families go by other names in R.
+  generic <- c("sans-serif" = "sans", "monospace" = "mono")
+  if (!is.null(family) && family %in% names(generic)) {
+    family <- unname(generic[family])
+  }
   element_text(size = size, face = text_face(bold, italic), colour = colour,
                family = family)
 }

@@ -1578,6 +1578,20 @@ stopifnot(file.exists("good.zip"))
 """)
 
 
+@pytest.mark.parametrize("family, r_family", [
+    ("monospace", "mono"), ("sans-serif", "sans"), ("serif", "serif"),
+    ("DejaVu Sans", "DejaVu Sans")])
+def test_r_legend_font_family_uses_r_names(tmp_path, family, r_family):
+    # matplotlib's generic families have other names in R: "monospace" is
+    # not one, and quietly fell back to Arial.
+    state = make_state(legend={"font_family": family, "title": "T"})
+    code = codegen.generate_code(state, [manual_entry()], "R")
+    run_r_harness(tmp_path, code, f"""
+stopifnot(identical(legend_text(9, FALSE, FALSE, "#000000")$family,
+                    "{r_family}"))
+""")
+
+
 # ------------------------------- running whole exported R scripts (opt-in)
 #
 # These run a generated script's main() end to end with real R, sf and
