@@ -133,6 +133,15 @@ function saveState(){
       flashStage("Autosave is off: browser storage is full or blocked. Export to keep this map."); }
   }
 }
+// Keep only the theme, then reload: every default lives in code, so a reload
+// is a true first visit with no list of settings to keep in sync here.
+$("#resetAll").addEventListener("click",()=>{
+  if(!confirm("Reset MiniMappr? This removes every dataset and puts all settings back to their defaults.")) return;
+  clearTimeout(saveTimer);
+  try{ localStorage.setItem(STORE_KEY, JSON.stringify({theme:$("#themeSelect").value})); }
+  catch(e){ try{ localStorage.removeItem(STORE_KEY); }catch(e2){} }
+  location.reload();
+});
 // Fill in whatever an older or partial save lacks, so restoring never hands
 // the renderer a dataset it cannot draw. Returns null for one past saving.
 function normalizeDataset(d){
