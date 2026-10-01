@@ -209,3 +209,26 @@ def test_failed_save_as_leaves_path_name_and_title(monkeypatch, tmp_path):
     assert app.project_path == Path("Survey.pymappr")
     assert app.project_name == "Survey"
     assert app.titles[-1] == "Survey"
+
+
+def test_opening_another_project_after_renaming_the_open_one(
+        monkeypatch, tmp_path):
+    old, new = tmp_path / "Survey.pymappr", tmp_path / "Survey 2024.pymappr"
+    app = _StubApp()
+    app.project_path = old
+    app.state["settings"] = "edited"
+    app.root = SimpleNamespace(wait_window=lambda dialog: None)
+    app.on_projects = lambda: PyMapprApp.on_projects(app)
+    dialog = _dialog()
+    dialog.renamed = {old: new}
+    dialog.open_path = tmp_path / "Other.pymappr"
+    monkeypatch.setattr(app_module, "ProjectsDialog", lambda root: dialog)
+    monkeypatch.setattr(app_module.messagebox, "askyesnocancel",
+                        lambda *a, **k: True)
+    saved = []
+    monkeypatch.setattr(projects, "save_project",
+                        lambda path, name, state: saved.append(path))
+    _stub_load(monkeypatch, {"entries": ["theirs"], "settings": "theirs"})
+    app.on_projects()
+    assert saved == [new]
+    assert app.project_path == dialog.open_path

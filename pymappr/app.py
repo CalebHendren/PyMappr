@@ -386,10 +386,9 @@ class PyMapprApp:
         """Open the project manager (open / rename / delete)."""
         dialog = ProjectsDialog(self.root)
         self.root.wait_window(dialog)
+        self._follow_dialog_changes(dialog)
         if dialog.open_path is not None:
             self._open_project_path(dialog.open_path)
-            return
-        self._follow_dialog_changes(dialog)
 
     def _follow_dialog_changes(self, dialog: ProjectsDialog) -> None:
         """Keep the open project's path in step with renames and deletes."""
