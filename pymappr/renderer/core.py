@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pymappr.layers import LayerStore
+from pymappr.renderer.blit import BlitMixin
 from pymappr.renderer.labels import LabelsMixin
 from pymappr.renderer.layers import LayersMixin
 from pymappr.renderer.mouse import MouseMixin
@@ -12,7 +13,7 @@ from pymappr.renderer.view import ViewMixin
 
 
 class MapRenderer(ViewMixin, LayersMixin, OverlaysMixin, LabelsMixin,
-                  PointsMixin, MouseMixin):
+                  PointsMixin, MouseMixin, BlitMixin):
     """Draws the map onto a matplotlib figure and keeps it in step with the
     app's settings.
 
@@ -29,6 +30,7 @@ class MapRenderer(ViewMixin, LayersMixin, OverlaysMixin, LabelsMixin,
         self._init_labels()
         self._init_points()
         self._init_mouse()
+        self._init_blit()
 
         self.set_extent("World")
         self._apply_graticule()

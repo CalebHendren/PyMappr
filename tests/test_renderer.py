@@ -928,12 +928,49 @@ def _red_centre(canvas):
     return cols.mean(), rows.mean()
 
 
+def _axes_centre(r):
+    bbox = r.ax.bbox
+    return (bbox.x0 + bbox.x1) / 2, (bbox.y0 + bbox.y1) / 2
+
+
+def _count_draws(r) -> list:
+    """Count full renders from here on. On Agg ``draw_idle`` draws straight
+    away, so a deferred ``redraw()`` is counted too."""
+    calls = []
+    real = r.fig.canvas.draw
+
+    def draw(*args, **kwargs):
+        calls.append(1)
+        return real(*args, **kwargs)
+
+    r.fig.canvas.draw = draw
+    return calls
+
+
+def _fire_pause(r) -> None:
+    """Run the drag's pause timer as the GUI loop would once the cursor rests.
+    Agg's timer never fires by itself."""
+    timer = r._pan_drag["timer"]
+    for func, args, kwargs in list(timer.callbacks):
+        func(*args, **kwargs)
+
+
+def _axes_rgb(canvas, ax, inset: int = 4):
+    """The axes interior in the canvas buffer (rows count down), less *inset*
+    pixels at each edge where the frame line sits."""
+    buf = np.asarray(canvas.buffer_rgba())[..., :3]
+    height = buf.shape[0]
+    x0, y0, x1, y1 = (int(v) for v in ax.bbox.extents)
+    return buf[height - y1 + inset:height - y0 - inset,
+               x0 + inset:x1 - inset]
+
+
 def test_a_pan_drag_moves_the_view_by_the_dragged_distance():
     r = _pan_renderer()
     x0, x1 = r.ax.get_xlim()
     y0, y1 = r.ax.get_ylim()
     bbox = r.ax.bbox
-    cx, cy = (bbox.x0 + bbox.x1) / 2, (bbox.y0 + bbox.y1) / 2
+    cx, cy = _axes_centre(r)
     dx, dy = 40, 25
     r._on_canvas_press(_MouseEvent(r.ax, cx, cy))
     assert r._pan_drag is not None
@@ -945,7 +982,6 @@ def test_a_pan_drag_moves_the_view_by_the_dragged_distance():
     assert r.ax.get_ylim()[0] - y0 == pytest.approx(
         -(y1 - y0) / bbox.height * dy)
     assert r._pan_drag is None
-    assert not any(a.get_animated() for a in r._pinned_overlays())
 
 
 def test_a_pan_press_without_a_drag_leaves_the_view_alone():
@@ -960,53 +996,191 @@ def test_a_pan_press_without_a_drag_leaves_the_view_alone():
 
 def test_panning_only_takes_the_drag_while_the_pan_tool_is_active():
     r = _pan_renderer()
-    bbox = r.ax.bbox
-    press = _MouseEvent(r.ax, (bbox.x0 + bbox.x1) / 2, (bbox.y0 + bbox.y1) / 2)
+    press = _MouseEvent(r.ax, *_axes_centre(r))
     for mode in ("", "zoom rect"):
         r.fig.canvas.toolbar = _FakeToolbar(mode)
         r._on_canvas_press(press)
         assert r._pan_drag is None, f"pan started with toolbar mode {mode!r}"
 
 
-def test_the_blitted_drag_shifts_the_map_the_way_the_cursor_went():
+@pytest.mark.parametrize("graticule", [None, 10])
+def test_the_blitted_drag_shifts_the_map_the_way_the_cursor_went(graticule):
     # Guards the sign of the blit offset: event y counts up, the cached
     # region's rows count down, so a mixed-up sign silently drags the map the
-    # wrong way vertically.
-    import time
-
+    # wrong way vertically. Graticule labels move the axes box off the
+    # figure's vertical centre, which a mixed-up origin gets wrong too.
     r = _pan_renderer()
+    r.set_graticule(graticule)
+    r.fig.canvas.draw()
     before = _red_centre(r.fig.canvas)
-    bbox = r.ax.bbox
-    cx, cy = (bbox.x0 + bbox.x1) / 2, (bbox.y0 + bbox.y1) / 2
+    cx, cy = _axes_centre(r)
     dx, dy = 37, 21
     r._on_canvas_press(_MouseEvent(r.ax, cx, cy))
-    # Hold off the throttled re-render, so what is on the canvas is the blit.
-    r._pan_drag["applied_at"] = time.monotonic()
     r._on_canvas_motion(_MouseEvent(r.ax, cx + dx, cy + dy))
     after = _red_centre(r.fig.canvas)
     assert after[0] - before[0] == pytest.approx(dx, abs=1.0)   # right with it
     assert after[1] - before[1] == pytest.approx(-dy, abs=1.0)  # and upwards
 
 
-def test_pinned_overlays_stay_put_while_the_map_is_dragged():
-    import time
+def test_a_pan_drag_renders_only_when_it_is_released():
+    # A render is ~0.5 s with a basemap and a few layers, so one inside a
+    # motion event is a visible hitch. Only the release (or a pause) renders.
+    r = _pan_renderer()
+    draws = _count_draws(r)
+    cx, cy = _axes_centre(r)
+    r._on_canvas_press(_MouseEvent(r.ax, cx, cy))
+    for step in range(1, 21):
+        r._on_canvas_motion(_MouseEvent(r.ax, cx + 3 * step, cy + 2 * step))
+    assert len(draws) == 0
+    r._on_canvas_release(_MouseEvent(r.ax, cx + 60, cy + 40))
+    assert len(draws) == 1
 
+
+def test_a_pause_in_the_drag_renders_once_and_rebases_it():
+    r = _pan_renderer()
+    x0, x1 = r.ax.get_xlim()
+    bbox = r.ax.bbox
+    cx, cy = _axes_centre(r)
+    r._on_canvas_press(_MouseEvent(r.ax, cx, cy))
+    r._on_canvas_motion(_MouseEvent(r.ax, cx + 40, cy))
+    timer = r._pan_drag["timer"]
+    assert timer.interval == 150 and timer.single_shot
+    draws = _count_draws(r)
+    _fire_pause(r)
+    assert len(draws) == 1
+    assert r.ax.get_xlim()[0] - x0 == pytest.approx(
+        -(x1 - x0) / bbox.width * 40)
+    # The next shift is measured from where the pause left the view.
+    assert (r._pan_drag["x"], r._pan_drag["y"]) == (cx + 40, cy)
+    assert r._pan_drag["pending"] is None
+    # Nothing moved since the pause, so the release has nothing to render.
+    r._on_canvas_release(_MouseEvent(r.ax, cx + 40, cy))
+    assert len(draws) == 1
+
+
+def test_pinned_overlays_stay_put_through_a_pause_render():
+    # A pause render replaces the scale bar's artists (its length follows the
+    # view). They must still stay out of the map snapshot, or the next shift
+    # drags a copy of the bar along with the map.
     r = _pan_renderer()
     r.set_scale_bar(ScaleBarOptions(show=True))
     r.fig.canvas.draw()
-    bbox = r.ax.bbox
-    bars = r._artists["scale_bar"]
-    assert bars, "no scale bar to check"
-    before = [a.get_window_extent().bounds for a in bars]
-    cx, cy = (bbox.x0 + bbox.x1) / 2, (bbox.y0 + bbox.y1) / 2
+    before = [a.get_window_extent().bounds for a in r._artists["scale_bar"]]
+    cx, cy = _axes_centre(r)
     r._on_canvas_press(_MouseEvent(r.ax, cx, cy))
-    # Held out of the cached bitmap, so they can be re-drawn at their corner.
-    assert all(a.get_animated() for a in bars)
-    r._pan_drag["applied_at"] = time.monotonic()
-    r._on_canvas_motion(_MouseEvent(r.ax, cx + 45, cy + 30))
+    r._on_canvas_motion(_MouseEvent(r.ax, cx + 30, cy))
+    _fire_pause(r)
+    r._on_canvas_motion(_MouseEvent(r.ax, cx + 60, cy))
+    bars = r._artists["scale_bar"]
     assert [a.get_window_extent().bounds for a in bars] == before
-    r._on_canvas_release(_MouseEvent(r.ax, cx + 45, cy + 30))
-    assert not any(a.get_animated() for a in bars)
+    shifted = _axes_rgb(r.fig.canvas, r.ax).copy()
+    r._on_canvas_release(_MouseEvent(r.ax, cx + 60, cy))
+    final = _axes_rgb(r.fig.canvas, r.ax)
+
+    def dark(rgb):
+        return rgb.max(axis=-1) < 90
+
+    assert dark(final).any(), "no scale bar drawn"
+    assert np.array_equal(dark(shifted), dark(final))
+
+
+def test_the_map_snapshot_holds_no_legend_or_underline():
+    r = _pan_renderer()
+    r.set_points([("a", PointStyle(color="#000000"), [100.0], [-40.0])],
+                 None, None,
+                 LegendOptions(location="upper left", label_underline=True))
+    assert r._legend_underline_texts
+    r.fig.canvas.draw()
+    snapshot = np.asarray(r._map_background())[..., :3]
+    frame = np.asarray(r.fig.canvas.buffer_rgba())[..., :3]
+    height = frame.shape[0]
+    ax_x0, _y0, _x1, ax_y1 = (int(v) for v in r.ax.bbox.extents)
+    leg = r.ax.get_legend().get_window_extent()
+    rows = slice(height - int(leg.y1) + 1, height - int(leg.y0) - 1)
+    cols = slice(int(leg.x0) + 1, int(leg.x1) - 1)
+    assert (frame[rows, cols].max(axis=-1) < 90).any(), "no legend text"
+    # The snapshot is the map alone: plain white where the legend sits.
+    top = height - ax_y1
+    assert (snapshot[rows.start - top:rows.stop - top,
+                     cols.start - ax_x0:cols.stop - ax_x0] == 255).all()
+
+
+def test_the_legend_and_its_underline_stay_on_screen_while_dragging():
+    # The underline is drawn from the draw_event, not by the legend, so a
+    # composite that only redraws the legend loses it until the release.
+    r = _pan_renderer()
+    r.set_points([("a", PointStyle(color="#000000"), [100.0], [-40.0])],
+                 None, None,
+                 LegendOptions(location="upper left", label_underline=True))
+    r.fig.canvas.draw()
+    leg = r.ax.get_legend().get_window_extent()
+    height = np.asarray(r.fig.canvas.buffer_rgba()).shape[0]
+    rows = slice(height - int(leg.y1) - 2, height - int(leg.y0) + 2)
+    cols = slice(int(leg.x0) - 2, int(leg.x1) + 2)
+
+    def legend_area():
+        return np.asarray(r.fig.canvas.buffer_rgba())[rows, cols].copy()
+
+    before = legend_area()
+    cx, cy = _axes_centre(r)
+    r._on_canvas_press(_MouseEvent(r.ax, cx, cy))
+    r._on_canvas_motion(_MouseEvent(r.ax, cx + 30, cy - 20))
+    assert np.array_equal(legend_area(), before)
+
+
+def test_a_finished_drag_matches_a_fresh_render_of_the_view():
+    r = _pan_renderer()
+    r.set_scale_bar(ScaleBarOptions(show=True))
+    r.set_points([("a", PointStyle(color="#000000"), [100.0], [-40.0])],
+                 None, None,
+                 LegendOptions(location="upper left", label_underline=True))
+    r.fig.canvas.draw()
+    cx, cy = _axes_centre(r)
+    r._on_canvas_press(_MouseEvent(r.ax, cx, cy))
+    r._on_canvas_motion(_MouseEvent(r.ax, cx + 25, cy - 10))
+    _fire_pause(r)
+    r._on_canvas_motion(_MouseEvent(r.ax, cx + 50, cy - 30))
+    r._on_canvas_release(_MouseEvent(r.ax, cx + 50, cy - 30))
+    dragged = bytes(r.fig.canvas.buffer_rgba())
+    r.fig.canvas.draw()
+    assert bytes(r.fig.canvas.buffer_rgba()) == dragged
+
+
+def test_the_strip_a_drag_uncovers_is_the_axes_facecolour():
+    from matplotlib.patches import Rectangle
+
+    r = _pan_renderer()
+    r.ax.set_facecolor("#204060")
+    # Map content everywhere, so stale pixels left in the strip would show.
+    r.ax.add_patch(Rectangle((-1e9, -1e9), 2e9, 2e9, color="#00ff00",
+                             zorder=1))
+    r.fig.canvas.draw()
+    cx, cy = _axes_centre(r)
+    dx = 40
+    r._on_canvas_press(_MouseEvent(r.ax, cx, cy))
+    r._on_canvas_motion(_MouseEvent(r.ax, cx + dx, cy))
+    interior = _axes_rgb(r.fig.canvas, r.ax)
+    strip = interior[:, :dx - 6]
+    assert (strip == (0x20, 0x40, 0x60)).all()
+    assert (interior[:, dx + 2:] == (0, 255, 0)).all(axis=-1).mean() > 0.95
+
+
+def test_a_render_at_another_dpi_is_never_the_pan_background(tmp_path):
+    r = _pan_renderer()
+    background = r._map_background()
+    assert background is not None
+    # A vector export draws nothing into the snapshot.
+    r.save_image(str(tmp_path / "map.pdf"), "pdf")
+    assert r._map_background() is background
+    # A raster export at another dpi renders a snapshot of its own size; the
+    # screen must not pick it up.
+    r.save_image(str(tmp_path / "map.png"), "png", dpi=200)
+    assert r._map_background() is None
+    # So the press renders once to get a screen snapshot, then drags as usual.
+    draws = _count_draws(r)
+    r._on_canvas_press(_MouseEvent(r.ax, *_axes_centre(r)))
+    assert len(draws) == 1
+    assert r._map_background() is not None and r._pan_drag is not None
 
 
 def test_an_unknown_layer_key_is_rejected_before_it_is_recorded():

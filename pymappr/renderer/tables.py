@@ -107,6 +107,10 @@ Z_LAKE_FILL = 0.5
 Z_GRID = 1.8
 Z_POINTS = 2.6
 Z_LABELS = 3.0
+# Not drawn: the point in the draw order where the map is copied for blitting
+# (renderer/blit.py). Above all map content, below the overlays pinned to the
+# axes - the compass and scale bar here, and the legend at matplotlib's 5.
+Z_SNAPSHOT = 3.5
 Z_COMPASS = 4.0
 Z_SCALE_BAR = 4.0
 
