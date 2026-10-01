@@ -1,9 +1,13 @@
+import ast
+import io
 import math
+import os
 import re
 import shutil
 import subprocess
 import sys
 import types
+import zipfile
 from pathlib import Path
 
 import pandas as pd
@@ -14,8 +18,10 @@ from pymappr.files.data_loader import (build_manual_dataset,
                                        combine_name_columns)
 from pymappr.files.projects import DatasetEntry, entry_from_dict
 from pymappr.geo.projections import get_projection
-from pymappr.styling.legend import row_key
-from pymappr.styling.styles import BLACK_AND_WHITE, BLACK_AND_WHITE_NAME
+from pymappr.styling.layout import layout_points
+from pymappr.styling.legend import LegendOptions, row_key
+from pymappr.styling.styles import (BLACK_AND_WHITE, BLACK_AND_WHITE_NAME,
+                                    DEFAULT_PALETTE)
 
 
 def make_state(**overrides):
@@ -72,15 +78,38 @@ def file_entry():
     })
 
 
+def find_rscript() -> str | None:
+    """Rscript on PATH, else the newest one in a standard Windows install
+    (R's installer does not put itself on PATH)."""
+    found = shutil.which("Rscript")
+    if found:
+        return found
+    candidates = sorted(Path("C:/Program Files/R").glob("R-*/bin/Rscript.exe"))
+    return str(candidates[-1]) if candidates else None
+
+
+def _rscript():
+    path = find_rscript()
+    if path is None:
+        pytest.skip("Rscript is not installed (not on PATH or in "
+                    "C:/Program Files/R)")
+    return path
+
+
 def assert_parses_as_r(code):
-    """Parse generated R with a real R interpreter, when one is installed
-    (the tests further down that need R skip without it)."""
-    rscript = shutil.which("Rscript")
-    if rscript is None:
-        return
-    subprocess.run([rscript, "-e",
-                    "invisible(parse(text = readLines(file('stdin'))))"],
-                   input=code, text=True, check=True, capture_output=True)
+    """Parse generated R with a real R interpreter; skip, visibly, when
+    there is none."""
+    rscript = _rscript()
+    result = subprocess.run(
+        [rscript, "-e", "invisible(parse(file('stdin'), encoding = 'UTF-8'))"],
+        input=code.encode("utf-8"), capture_output=True)
+    assert result.returncode == 0, result.stderr.decode("utf-8", "replace")
+
+
+def all_styles(ns):
+    """Every dataset's label -> style, merged (for single-dataset maps)."""
+    return {label: style for spec in ns["DATASETS"]
+            for label, style in spec["styles"].items()}
 
 
 def exec_python(code):
@@ -210,11 +239,6 @@ def test_r_config_reflects_map_settings():
     assert '"title_fontsize" = 12.0' in code
     assert '"marker_scale" = 1.5' in code
     assert '"label_spacing" = 0.8' in code
-    assert "override.aes = list(size = key_sizes)" in code
-    assert "unname(STYLE_SIZES) * LEGEND$marker_scale" in code
-    assert "element_text(size = LEGEND$title_fontsize" in code
-    assert "face = text_face(LEGEND$title_bold" in code
-    assert "grid::unit(1 + LEGEND$label_spacing" in code
 
 
 def test_legend_options_default_when_absent():
@@ -247,7 +271,6 @@ def test_legend_text_formatting_reaches_exports():
     assert "style_legend(ax.figure, leg" in py
     r = codegen.generate_code(state, [file_entry()], "R")
     assert '"label_bold" = TRUE' in r
-    assert "face = text_face(LEGEND$label_bold" in r
     # Underline is unsupported in ggplot2 element_text: it is called out.
     assert "Underlined legend text" in r
 
@@ -610,7 +633,7 @@ def test_palette_and_point_outline_reach_the_script():
     ns = exec_python(codegen.generate_code(state, [entry], "Python"))
     assert ns["POINT_EDGE"] == {"color": "#333333", "width": 0.6}
     # Colours come from the map's palette, not always the default one.
-    colors = {style["color"] for style in ns["STYLES"].values()}
+    colors = {style["color"] for style in all_styles(ns).values()}
     assert colors == {BLACK_AND_WHITE[0]}
     r_code = codegen.generate_code(state, [entry], "R")
     assert "POINT_STROKE <- 0.6" in r_code
@@ -625,7 +648,7 @@ def test_an_ungrouped_dataset_draws_in_its_own_style():
     ns = exec_python(codegen.generate_code(make_state(), [entry], "Python"))
     spec = ns["DATASETS"][0]
     labels = ns["point_labels"](ns["load_points"](spec), spec)
-    assert set(labels) <= set(ns["STYLES"])
+    assert set(labels) <= set(spec["styles"])
 
 
 def test_combined_name_column_is_exported():
@@ -656,7 +679,7 @@ def test_generated_python_functions_actually_run():
     # Labels follow the group column and the label map.
     labels = ns["point_labels"](df, spec)
     assert list(labels) == ["spiders", "spiders"]
-    assert ns["STYLES"]["spiders"]["color"] == "#123456"
+    assert spec["styles"]["spiders"]["color"] == "#123456"
 
     # Column auto-detection matches PyMappr's import hints.
     frame = pd.DataFrame({"Site": ["a"], "LONGITUDE": [1.0],
@@ -689,7 +712,7 @@ def test_generated_python_attribute_labels_run():
     df = ns["load_points"](spec)
     labels = ns["point_labels"](df, spec)
     assert list(labels) == ["Site A", "Site B"]
-    assert set(labels) <= set(ns["STYLES"])
+    assert set(labels) <= set(spec["styles"])
 
 
 def test_generated_projection_forward_matches_the_app():
@@ -779,14 +802,16 @@ def test_working_directory_python_layout():
 def test_working_directory_r_layout():
     files = codegen.generate_working_directory(
         make_state(), [file_entry()], "R", "My Project")
+    # The RStudio project is named after the project, spaces and all.
     assert set(files) >= {"recreate_map.R", "install.R", "README.md",
-                          ".gitignore", "My_Project.Rproj"}
+                          ".gitignore", "My Project.Rproj"}
     assert "data/us_cities.csv" in files
     script = files["recreate_map.R"]
     assert_parses_as_r(script)
     assert '"path" = "data/us_cities.csv"' in script
     assert 'install.packages(c("sf", "ggplot2")' in files["install.R"]
-    assert "Version: 1.0" in files["My_Project.Rproj"]
+    assert "Version: 1.0" in files["My Project.Rproj"]
+    assert "Open `My Project.Rproj` in RStudio" in files["README.md"]
 
 
 def test_working_directory_dedupes_data_filenames():
@@ -816,13 +841,6 @@ def test_working_directory_unknown_language_rejected():
 
 
 # ------------------------------------ with a real R interpreter, if any
-
-def _rscript():
-    path = shutil.which("Rscript")
-    if path is None:
-        pytest.skip("Rscript is not installed")
-    return path
-
 
 def test_generated_r_parses_with_real_r(tmp_path):
     rscript = _rscript()
@@ -872,6 +890,24 @@ cat("R functions OK\\n")
                             text=True)
     assert result.returncode == 0, result.stderr
     assert "R functions OK" in result.stdout
+
+
+def run_r_harness(tmp_path, code, harness, name="harness.R"):
+    """Run a generated R script's definitions (the package bootstrap and
+    the final main() call dropped) followed by *harness*; return stdout."""
+    rscript = _rscript()
+    body = "\n".join(line for line in code.splitlines()
+                     if not line.startswith("ensure_packages(")
+                     and line != "main()")
+    script = tmp_path / name
+    script.write_text(body + "\n" + harness + '\ncat("HARNESS OK\\n")\n',
+                      encoding="utf-8")
+    result = subprocess.run([rscript, str(script)], cwd=tmp_path,
+                            capture_output=True, text=True,
+                            encoding="utf-8", errors="replace", timeout=300)
+    assert result.returncode == 0, result.stderr[-3000:]
+    assert "HARNESS OK" in result.stdout, result.stdout[-2000:]
+    return result.stdout
 
 
 def beetle_entry():
@@ -966,5 +1002,542 @@ def test_renamed_group_rows_carry_their_new_name_through_styles():
     entry.legend_overrides = {row_key("group", "spiders"): {"label": "Araneae"}}
     code = codegen.generate_code(make_state(), [entry], "Python")
     ns = exec_python(code)
-    assert "Araneae" in ns["STYLES"]
+    assert "Araneae" in all_styles(ns)
     assert ns["LEGEND_ROWS"] == ["Araneae"]
+
+
+# ------------------------------------------------- export fixes (1.31.3)
+
+TRICKY_LABELS = ["NA", "007", "T", "1.50", ""]
+
+
+def coded_entry(name="codes", labels=TRICKY_LABELS, column="Code",
+                **extra):
+    """A grouped dataset whose group values pandas and R would retype."""
+    rows = [[label, -100.0 + i * 10.0, 40.0 - i * 5.0]
+            for i, label in enumerate(labels)]
+    return entry_from_dict({"name": name, "columns": ["name1", "lon", "lat"],
+                            "name_labels": [column], "rows": rows,
+                            "group_by": column, **extra})
+
+
+def ungrouped_entry(name, color, source_path=""):
+    entry = manual_entry(name, group_by="",
+                         legend_overrides={row_key("group", "All points"): {
+                             "color": color}})
+    entry.dataset.source_path = source_path
+    return entry
+
+
+def app_labels(entries, legend=None):
+    """The labels the app draws each dataset's groups under."""
+    layout = layout_points(entries, LegendOptions.from_dict(legend or {}),
+                           DEFAULT_PALETTE)
+    return [[label for label, _style, _rows in dataset.groups]
+            for dataset in layout.datasets]
+
+
+@pytest.mark.parametrize("data_mode", ["inline", "files"])
+def test_python_reads_label_values_as_text(tmp_path, data_mode):
+    entry = coded_entry()
+    if data_mode == "files":
+        files = codegen.generate_working_directory(make_state(), [entry],
+                                                   "Python", "P")
+        for rel, text in files.items():
+            (tmp_path / rel).parent.mkdir(parents=True, exist_ok=True)
+            (tmp_path / rel).write_text(text, encoding="utf-8")
+        code = files["recreate_map.py"]
+    else:
+        code = codegen.generate_code(make_state(), [entry], "Python")
+    ns = exec_python(code)
+    ns["SCRIPT_DIR"] = tmp_path
+    spec = ns["DATASETS"][0]
+    labels = list(ns["point_labels"](ns["load_points"](spec), spec))
+    # "NA" is not missing, "007" keeps its zeros, "1.50" its trailing zero.
+    assert labels == ["NA", "007", "T", "1.50", "(blank)"]
+    assert labels == app_labels([entry])[0]
+    assert list(spec["styles"]) == labels
+
+
+@pytest.mark.parametrize("data_mode", ["inline", "files"])
+def test_r_reads_label_values_as_text(tmp_path, data_mode):
+    entry = coded_entry()
+    if data_mode == "files":
+        files = codegen.generate_working_directory(make_state(), [entry],
+                                                   "R", "P")
+        for rel, text in files.items():
+            (tmp_path / rel).parent.mkdir(parents=True, exist_ok=True)
+            (tmp_path / rel).write_text(text, encoding="utf-8")
+        code = files["recreate_map.R"]
+    else:
+        code = codegen.generate_code(make_state(), [entry], "R")
+    run_r_harness(tmp_path, code, """
+spec <- DATASETS[[1]]
+labels <- point_labels(load_points(spec), spec)
+stopifnot(identical(labels, c("NA", "007", "T", "1.50", "(blank)")))
+stopifnot(identical(names(STYLE_COLORS), labels))
+points <- load_all_points()
+stopifnot(identical(points$key, labels))
+""")
+
+
+def test_two_datasets_sharing_a_label_keep_their_own_styles(tmp_path):
+    matplotlib = pytest.importorskip("matplotlib")
+    matplotlib.use("Agg")
+    # Two ungrouped datasets with the same name both display as "Sites";
+    # the app draws each in its own colour with a legend row each.
+    entries = [ungrouped_entry("Sites", "#111111"),
+               ungrouped_entry("Sites", "#222222")]
+    assert app_labels(entries) == [["Sites"], ["Sites"]]
+    ns = exec_python(codegen.generate_code(make_state(), entries, "Python"))
+    colors = [spec["styles"]["Sites"]["color"] for spec in ns["DATASETS"]]
+    assert colors == ["#111111", "#222222"]
+    fig = matplotlib.figure.Figure()
+    ax = fig.add_subplot(111)
+    ns["add_legend"](ax)
+    legend = ax.get_legend()
+    assert [t.get_text() for t in legend.get_texts()] == ["Sites", "Sites"]
+    assert [h.get_markerfacecolor() for h in legend.legend_handles] == colors
+
+    code = codegen.generate_code(make_state(), entries, "R")
+    run_r_harness(tmp_path, code, """
+stopifnot(identical(names(STYLE_FILLS), c("Sites", "Sites [2]")))
+stopifnot(identical(unname(STYLE_FILLS), c("#111111", "#222222")))
+points <- load_all_points()
+stopifnot(identical(points$key, c("Sites", "Sites", "Sites [2]",
+                                  "Sites [2]")))
+guide <- get_guide_data(ggplot() + point_layers(), "fill")
+stopifnot(identical(guide$.label, c("Sites", "Sites")))
+stopifnot(identical(guide$fill, c("#111111", "#222222")))
+""")
+
+
+def test_attribute_datasets_with_overlapping_values_keep_their_styles():
+    # Symbol-by labels get no per-dataset dedupe: both datasets draw
+    # "Site A", each with its own override.
+    a = manual_entry("One", symbol_by="Label", group_by="")
+    b = manual_entry("Two", symbol_by="Label", group_by="")
+    a.legend_overrides = {row_key("symbol", "Site A"): {"marker": "Square"}}
+    b.legend_overrides = {row_key("symbol", "Site A"): {"marker": "Diamond"}}
+    ns = exec_python(codegen.generate_code(make_state(), [a, b], "Python"))
+    markers = [spec["styles"]["Site A"]["marker"] for spec in ns["DATASETS"]]
+    assert markers == ["s", "D"]
+    r_code = codegen.generate_code(make_state(), [a, b], "R")
+    shapes = r_code.split("STYLE_SHAPES <- c(")[1].split(")")[0]
+    assert '"Site A" = 22' in shapes and '"Site A [2]" = 23' in shapes
+
+
+def test_r_legend_follows_row_order_and_hides_rows(tmp_path):
+    entry = coded_entry(labels=["Zeta", "Beta", "Alpha"], column="Name")
+    entry.legend_overrides = {row_key("group", "Zeta"): {"hidden": True}}
+    state = make_state(legend={"order": "az", "title": ""})
+    code = codegen.generate_code(state, [entry], "R")
+    run_r_harness(tmp_path, code, """
+stopifnot(identical(LEGEND_ROWS, c("Alpha", "Beta")))
+p <- ggplot() + point_layers()
+guide <- get_guide_data(p, "colour")
+stopifnot(identical(guide$.label, c("Alpha", "Beta")))
+# Hiding a row keeps its points.
+stopifnot(nrow(layer_data(p, 1)) == 3)
+""")
+    # Every row hidden is not "no ordering": the legend is empty.
+    entry.legend_overrides = {row_key("group", label): {"hidden": True}
+                              for label in ("Zeta", "Beta", "Alpha")}
+    code = codegen.generate_code(state, [entry], "R")
+    assert "LEGEND_ROWS <- character(0)" in code
+    run_r_harness(tmp_path, code, """
+p <- ggplot() + point_layers()
+stopifnot(is.null(get_guide_data(p, "colour")))
+stopifnot(nrow(layer_data(p, 1)) == 3)
+""")
+
+
+R_LEGEND_SWATCHES = """
+legend_swatches <- function(p) {
+  # Point glyphs drawn in the legend box.
+  g <- ggplotGrob(p)
+  flat <- function(x) {
+    if (inherits(x, "gtable")) {
+      return(unlist(lapply(x$grobs, flat), recursive = FALSE))
+    }
+    if (inherits(x, "gTree")) {
+      return(unlist(lapply(x$children, flat), recursive = FALSE))
+    }
+    list(x)
+  }
+  box <- g$grobs[grepl("guide-box", g$layout$name)]
+  grobs <- unlist(lapply(box, flat), recursive = FALSE)
+  sum(vapply(grobs, inherits, logical(1), "points"))
+}
+"""
+
+
+def test_r_keeps_legend_rows_whose_points_are_off_the_map(tmp_path):
+    # Cape Town is on the far side of this globe: its row stays, with its
+    # swatch, as in the app - and building the legend must not crash.
+    state = make_state(map={"projection": "Globe (Orthographic)",
+                            "proj_lon0": "-100", "proj_lat0": "40"})
+    code = codegen.generate_code(state, [cities_entry()], "R")
+    run_r_harness(tmp_path, code, R_LEGEND_SWATCHES + """
+points <- project_points(load_all_points())
+stopifnot(identical(unique(points$key), "Paris"))
+p <- ggplot() + point_layers()
+guide <- get_guide_data(p, "colour")
+stopifnot(identical(guide$.label, c("Paris", "Cape Town")))
+stopifnot(legend_swatches(p) == 2)
+""")
+
+
+def test_r_points_are_clamped_into_the_band_like_the_app(tmp_path):
+    # Lambert: Europe stops at 30N; Cape Town sits on that edge in the app
+    # (Projection._clip) rather than vanishing.
+    state = make_state(map={"projection": "Lambert: Europe"})
+    code = codegen.generate_code(state, [cities_entry()], "R")
+    projection = get_projection("Lambert: Europe")
+    x, y = projection.forward([18.42], [-33.92])
+    run_r_harness(tmp_path, code, f"""
+points <- project_points(load_all_points())
+stopifnot(nrow(points) == 3)
+xy <- sf::st_coordinates(points)[points$key == "Cape Town", ]
+stopifnot(abs(xy[["X"]] - ({float(x[0])})) < 1)
+stopifnot(abs(xy[["Y"]] - ({float(y[0])})) < 1)
+""")
+
+
+def test_r_draws_wrapped_world_copies(tmp_path):
+    # Equirectangular from 100E to 260E: the right half is the next world
+    # copy, where Hawaii sits at 203E.
+    hawaii = DatasetEntry(dataset=build_manual_dataset(
+        "islands", "19.9,-155.6, Hawaii\n"), name="islands",
+        group_by="Label")
+    state = make_state(map={"projection": "Equirectangular"},
+                       view={"xlim": [100, 260], "ylim": [-40, 60]})
+    code = codegen.generate_code(state, [hawaii], "R")
+    run_r_harness(tmp_path, code, """
+stopifnot(identical(wrap_offsets(), c(0, 360)))
+points <- wrapped(project_points(load_all_points()))
+x <- sf::st_coordinates(points)[, "X"]
+stopifnot(isTRUE(all.equal(sort(x), c(-155.6, 204.4))))
+""")
+    # The globe never wraps.
+    globe = codegen.generate_code(
+        make_state(map={"projection": "Globe (Orthographic)"}), [hawaii], "R")
+    run_r_harness(tmp_path, globe, "stopifnot(identical(wrap_offsets(), 0))")
+
+
+def test_r_grid_is_drawn_above_the_fills_and_under_the_points(tmp_path):
+    state = make_state(map={"projection": "Globe (Orthographic)",
+                            "points": {"cities": True}})
+    code = codegen.generate_code(state, [manual_entry()], "R")
+    run_r_harness(tmp_path, code, """
+# Stand-ins that record the draw order instead of loading Natural Earth.
+base_layer_geom <- function(layer) {
+  annotate("text", x = 0, y = 0, label = layer$name)
+}
+order <- function(p) {
+  vapply(p$layers, function(l) {
+    if (!is.null(l$aes_params$label)) l$aes_params$label
+    else class(l$geom)[1]
+  }, character(1))
+}
+p <- build_map()
+drawn <- order(p)
+grid_at <- which(drawn == "GeomSf")[1:2]  # graticule, then horizon
+fills <- match(c("ocean", "land", "lakes"), drawn)
+cities <- match("populated_places_simple", drawn)
+stopifnot(all(fills < grid_at[1]), grid_at[2] < cities)
+# The globe always gets its horizon circle, grid or not.
+GRID_INTERVAL <- NULL
+stopifnot(length(graticule_layers()) == 1)
+""")
+
+
+def test_r_legend_placement_frame_and_text_options(tmp_path):
+    legend = {"location": "lower left", "frame": True,
+              "frame_color": "#000000", "frame_alpha": 1.0,
+              "frame_edge_color": "#ff0000", "frame_width": 2.13,
+              "label_color": "#00ff00", "title_color": "#0000ff",
+              "font_family": "serif", "fontsize": 9, "title": "Sites"}
+    code = codegen.generate_code(make_state(legend=legend, view={}),
+                                 [manual_entry()], "R")
+    assert "Legend border width" not in code  # it is reproduced now
+    run_r_harness(tmp_path, code, """
+NE_LAYERS <- list()
+p <- build_map()
+th <- p$theme
+stopifnot(identical(th$legend.position, "inside"))
+stopifnot(identical(th$legend.justification.inside, c(0, 0)))
+stopifnot(all(th$legend.position.inside > 0),
+          all(th$legend.position.inside < 0.05))
+stopifnot(identical(th$legend.background$colour, "#ff0000"))
+stopifnot(identical(toupper(th$legend.background$fill), "#000000FF"))
+stopifnot(abs(th$legend.background$linewidth - 1) < 0.01)
+stopifnot(identical(th$legend.text$colour, "#00ff00"))
+stopifnot(identical(th$legend.title$colour, "#0000ff"))
+stopifnot(identical(th$legend.text$family, "serif"))
+stopifnot(identical(legend_anchor("upper right"), c(1, 1)))
+stopifnot(identical(legend_anchor("best"), c(1, 1)))
+stopifnot(identical(legend_anchor("center left"), c(0, 0.5)))
+stopifnot(identical(legend_anchor("right"), c(1, 0.5)))
+stopifnot(identical(legend_anchor("lower center"), c(0.5, 0)))
+invisible(ggplotGrob(p))
+""")
+
+
+def test_r_header_names_the_marker_approximations():
+    entry = manual_entry()  # its one group is a Star
+    code = codegen.generate_code(make_state(), [entry], "R")
+    notes = code.split("NOT reproduced")[1].split("ensure_packages")[0]
+    assert "stars are drawn as asterisks (R pch 8)" in notes
+    plain = codegen.generate_code(
+        make_state(), [manual_entry(legend_overrides={})], "R")
+    assert "R has no exact equivalent" not in plain
+
+
+def test_r_point_outlines_are_converted_from_points(tmp_path):
+    entry = coded_entry(labels=["Filled", "Open"], column="Name")
+    entry.legend_overrides = {
+        row_key("group", "Open"): {"marker": "Circle (open)"}}
+    state = make_state(point_edge={"color": "#333333", "width": 0.5})
+    code = codegen.generate_code(state, [entry], "R")
+    run_r_harness(tmp_path, code, """
+stopifnot(identical(unname(STYLE_STROKES), c(0.5, 1.2)))
+strokes <- layer_data(ggplot() + point_layers(), 1)$stroke
+# ggplot2 strokes are not points: 0.5 pt is about 0.35 stroke units.
+stopifnot(isTRUE(all.equal(strokes, c(0.5, 1.2) * 50.8 / 72)))
+""")
+
+
+def test_names_with_escapes_and_quotes_compile(tmp_path):
+    names = ["Field\\Notes 2024", "C:\\path\\x41", 'say "hi"',
+             "two\nlines", "caf\u00e9 \u00e5\u00df \u6f22", "\\N{oops}"]
+    for name in names:
+        entries = [manual_entry(name), ungrouped_entry(name, "#123456")]
+        code = codegen.generate_code(make_state(), entries, "Python", name)
+        compile(code, "recreate_map.py", "exec")
+        ns = exec_python(code)
+        assert [spec["name"] for spec in ns["DATASETS"]] == [name, name]
+        files = codegen.generate_working_directory(make_state(), entries,
+                                                   "Python", name)
+        compile(files["recreate_map.py"], "recreate_map.py", "exec")
+    expected = tmp_path / "expected.txt"
+    for name in names:
+        code = codegen.generate_code(make_state(), [manual_entry(name)], "R",
+                                     name)
+        expected.write_text(name, encoding="utf-8")
+        run_r_harness(tmp_path, code, """
+wanted <- paste(readLines("expected.txt", encoding = "UTF-8", warn = FALSE),
+                collapse = "\\n")
+stopifnot(identical(enc2utf8(DATASETS[[1]]$name), wanted))
+""")
+
+
+def test_backslash_project_name_compiles():
+    # "\N" in a normal docstring starts a named-character escape.
+    code = codegen.generate_code(make_state(), [file_entry()], "Python",
+                                 "Field\\Notes 2024")
+    docstring = ast.get_docstring(ast.parse(code))
+    assert docstring.startswith(
+        'Recreate the PyMappr map "Field\\Notes 2024" outside')
+
+
+def test_source_path_cannot_inject_code(tmp_path):
+    attack = "C:/data/x.csv\nINJECTED = 1\r\nINJECTED <- 1"
+    entry = ungrouped_entry("Sites", "#123456", source_path=attack)
+    py = codegen.generate_code(make_state(), [entry], "Python")
+    assert "# originally imported from: C:/data/x.csv INJECTED = 1" in py
+    assert "INJECTED" not in exec_python(py)
+    r = codegen.generate_code(make_state(), [entry], "R")
+    run_r_harness(tmp_path, r, 'stopifnot(!exists("INJECTED"))')
+
+
+def test_non_finite_numbers_are_valid_literals(tmp_path):
+    assert codegen._py(float("nan")) == 'float("nan")'
+    assert codegen._py(float("inf")) == 'float("inf")'
+    assert codegen._py(-float("inf")) == '-float("inf")'
+    assert codegen._py({"a": (float("nan"),)}) == "{'a': (float(\"nan\"),)}"
+    assert codegen._r(float("nan")) == "NA_real_"
+    assert codegen._r(float("inf")) == "Inf"
+    assert codegen._r(-float("inf")) == "-Inf"
+    # Typing "nan" as the scale bar's fixed length.
+    state = make_state(map={"scale_bar": {"show": True,
+                                          "length_mode": "fixed",
+                                          "fixed_length": float("nan")}})
+    ns = exec_python(codegen.generate_code(state, [], "Python"))
+    assert math.isnan(ns["SCALE_BAR"]["fixed_length"])
+    r = codegen.generate_code(state, [], "R")
+    run_r_harness(tmp_path, r, "stopifnot(is.na(SCALE_BAR$fixed_length))")
+
+
+def test_stale_color_by_is_ignored_like_the_app():
+    entry = manual_entry(symbol_by="Label", group_by="",
+                         color_by="Gone")  # names no column any more
+    ns = exec_python(codegen.generate_code(make_state(), [entry], "Python"))
+    spec = ns["DATASETS"][0]
+    assert spec["color_col"] is None and spec["symbol_col"] == "Label"
+    labels = ns["point_labels"](ns["load_points"](spec), spec)
+    assert list(labels) == ["Site A", "Site B"]
+
+
+def test_dataset_files_survive_case_and_reserved_names():
+    entries = [manual_entry(name) for name in
+               ("Sites", "sites", "CON", "nul.csv", "My Sites")]
+    files = codegen.generate_working_directory(make_state(), entries,
+                                               "Python", "P")
+    data = [name for name in files if name.startswith("data/")]
+    assert data == ["data/Sites.csv", "data/sites_2.csv", "data/CON_.csv",
+                    "data/nul_.csv", "data/My Sites.csv"]
+    assert len({name.casefold() for name in data}) == len(data)
+    rproj = codegen.generate_working_directory(make_state(), [], "R", "AUX")
+    assert "AUX_.Rproj" in rproj
+
+
+def test_projection_helpers_are_built_once():
+    ns = exec_python(codegen.generate_code(make_state(), [], "Python"))
+    assert ns["_transformer"]() is ns["_transformer"]()
+    assert ns["_geod"]() is ns["_geod"]()
+
+
+def _zip_bytes():
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr("ne_110m_land/ne_110m_land.shp", b"shape")
+        archive.writestr("ne_110m_land/ne_110m_land.dbf", b"table")
+    return buffer.getvalue()
+
+
+def test_python_recovers_from_an_interrupted_download(tmp_path):
+    ns = exec_python(codegen.generate_code(make_state(), [], "Python"))
+    ns["SCRIPT_DIR"] = tmp_path
+    cache = tmp_path / "naturalearth_cache"
+    cache.mkdir()
+    good = _zip_bytes()
+    zip_path = cache / "ne_110m_land.zip"
+    zip_path.write_bytes(good[: len(good) // 2])  # cut off mid-download
+    fetched = []
+
+    def fake_urlretrieve(url, target):
+        fetched.append(url)
+        Path(target).write_bytes(good)
+
+    ns["urlretrieve"] = fake_urlretrieve
+    assert ns["download_archive"]("110m", "physical", "land") == zip_path
+    assert fetched and zip_path.read_bytes() == good
+
+    # A download that dies part-way leaves no zip that looks finished.
+    zip_path.unlink()
+
+    def dying_urlretrieve(url, target):
+        Path(target).write_bytes(good[:10])
+        raise KeyboardInterrupt
+
+    ns["urlretrieve"] = dying_urlretrieve
+    with pytest.raises(KeyboardInterrupt):
+        ns["download_archive"]("110m", "physical", "land")
+    assert not zip_path.exists()
+
+
+def test_python_recovers_from_a_failed_extraction(tmp_path):
+    ns = exec_python(codegen.generate_code(make_state(), [], "Python"))
+    zip_path = tmp_path / "ne_110m_land.zip"
+    zip_path.write_bytes(_zip_bytes())
+    folder = tmp_path / "ne_110m_land"
+    folder.mkdir()  # what an extraction that failed used to leave behind
+    ns["extract_archive"](zip_path, folder, "ne_110m_land.shp")
+    assert (folder / "ne_110m_land.shp").read_bytes() == b"shape"
+    assert not (tmp_path / "ne_110m_land.part").exists()
+
+
+# ------------------------------- running whole exported R scripts (opt-in)
+#
+# These run a generated script's main() end to end with real R, sf and
+# ggplot2, against the Natural Earth zips the app already downloaded into
+# data/downloads (copied into the script's naturalearth_cache/, so nothing
+# is fetched). Slow, so opt in with PYMAPPR_RUN_R=1.
+
+NE_DOWNLOADS = Path(__file__).resolve().parent.parent / "data" / "downloads"
+
+run_r = pytest.mark.skipif(os.environ.get("PYMAPPR_RUN_R") != "1",
+                           reason="set PYMAPPR_RUN_R=1 to run whole R "
+                                  "scripts")
+
+
+def r_run_state(projection, lon0="", lat0="", **map_overrides):
+    """A small map: world-scale layers only, so the 110m zips do."""
+    settings = {"projection": projection, "proj_lon0": lon0,
+                "proj_lat0": lat0, "graticule": "10\N{DEGREE SIGN}",
+                "ocean": "blue", "lake_fill": "grey",
+                "lines": {"countries": True}, "fills": {"land": True},
+                "points": {}, "labels": {},
+                "scale_bar": {"show": True}}
+    settings.update(map_overrides)
+    return make_state(map=settings, view={})
+
+
+def cities_entry():
+    """Two groups far apart, so a regional map clips one of them."""
+    dataset = build_manual_dataset(
+        "cities", "48.86,2.35, Paris\n-33.92,18.42, Cape Town\n"
+                  "51.5,-0.12, Paris\n")
+    return DatasetEntry(dataset=dataset, name="cities", group_by="Label")
+
+
+def run_exported_r(tmp_path, state, entries, files=None):
+    """Write the exported script (plus any extra *files*) to *tmp_path* with
+    a pre-filled Natural Earth cache, run it, and return the result."""
+    rscript = _rscript()
+    config = codegen.build_config(state, entries)
+    cache = tmp_path / "naturalearth_cache"
+    cache.mkdir()
+    zip_names = [f"ne_{layer['scale']}_{layer['name']}.zip"
+                 for layer in config["layers"]]
+    if config["basemap"] in codegen.BASEMAP_RASTERS:
+        (_scale, _category, name), _jpg = codegen.BASEMAP_RASTERS[
+            config["basemap"]]
+        zip_names.append(f"{name}.zip")
+    for zip_name in zip_names:
+        source = NE_DOWNLOADS / zip_name
+        if not source.exists():
+            pytest.skip(f"{zip_name} is not in {NE_DOWNLOADS}")
+        shutil.copyfile(source, cache / zip_name)
+    script = tmp_path / "recreate_map.R"
+    script.write_text(codegen.generate_code(state, entries, "R"),
+                      encoding="utf-8")
+    for name, text in (files or {}).items():
+        (tmp_path / name).write_text(text, encoding="utf-8")
+    result = subprocess.run([rscript, str(script)], cwd=tmp_path,
+                            capture_output=True, text=True,
+                            encoding="utf-8", errors="replace", timeout=600)
+    return result
+
+
+def assert_r_map_saved(tmp_path, result):
+    assert result.returncode == 0, result.stderr[-3000:]
+    assert (tmp_path / "map.png").stat().st_size > 10_000
+    assert "Saved map.png" in result.stderr
+
+
+@run_r
+@pytest.mark.parametrize("projection, lon0, lat0", [
+    ("Mercator", "", ""),
+    ("Lambert: Europe", "", ""),
+    ("Globe (Orthographic)", "0", "0"),
+    ("Globe (Orthographic)", "-100", "40"),
+])
+def test_exported_r_script_draws_the_map(tmp_path, projection, lon0, lat0):
+    state = r_run_state(projection, lon0, lat0)
+    result = run_exported_r(tmp_path, state, [cities_entry()])
+    assert_r_map_saved(tmp_path, result)
+
+
+@run_r
+def test_exported_r_script_wraps_the_world_and_its_basemap(tmp_path):
+    # Equirectangular from 100E to 260E: the right half is the next world
+    # copy, basemap raster included, with Hawaii drawn at 203E.
+    hawaii = DatasetEntry(dataset=build_manual_dataset(
+        "islands", "19.9,-155.6, Hawaii"), name="islands",
+        group_by="Label")
+    state = r_run_state("Equirectangular", basemap="relief_grey")
+    state["view"] = {"xlim": [100, 260], "ylim": [-40, 60]}
+    result = run_exported_r(tmp_path, state, [hawaii])
+    assert_r_map_saved(tmp_path, result)

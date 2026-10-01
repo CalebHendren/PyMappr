@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import math
+import numbers
 import re
 from functools import lru_cache
 from pathlib import Path
 
 from pymappr import __version__
+from pymappr.files.projects import safe_filename
 from pymappr.geo.layers import BATHYMETRY_STEPS, CONTINENT_EXTENTS, LAYER_SPECS
 from pymappr.geo.projections import CAP_CLIP_RADIUS, get_projection, is_globe
 from pymappr.renderer.tables import (BATHYMETRY_COLORS, FILL_COLORS,
@@ -108,6 +110,33 @@ _R_PCH = {
     "Dot": 20, "Dot (open)": 20,
 }
 _R_FILLABLE_PCH = {21, 22, 23, 24, 25}
+
+# How the R shapes above differ from the app's markers, for the script
+# header. Keyed by PyMappr marker name; only markers a map uses are listed.
+_R_MARKER_NOTES = {
+    "Star": "stars are drawn as asterisks (R pch 8)",
+    "Star (open)": "stars are drawn as asterisks (R pch 8)",
+    "Plus": "plus markers are thin crosses (R pch 3)",
+    "Plus (open)": "plus markers are thin crosses (R pch 3)",
+    "X": "X markers are thin crosses (R pch 4)",
+    "X (open)": "X markers are thin crosses (R pch 4)",
+    "Triangle left": "left/right triangles point up",
+    "Triangle left (open)": "left/right triangles point up",
+    "Triangle right": "left/right triangles point up",
+    "Triangle right (open)": "left/right triangles point up",
+    "Thin diamond": "thin diamonds are regular diamonds",
+    "Thin diamond (open)": "thin diamonds are regular diamonds",
+    "Pentagon": "pentagons, hexagons and octagons are circles",
+    "Pentagon (open)": "pentagons, hexagons and octagons are circles",
+    "Hexagon": "pentagons, hexagons and octagons are circles",
+    "Hexagon (open)": "pentagons, hexagons and octagons are circles",
+    "Octagon": "pentagons, hexagons and octagons are circles",
+    "Octagon (open)": "pentagons, hexagons and octagons are circles",
+    "Dot (open)": "open dots are filled dots",
+}
+
+# Outline width (points) of an open marker, as the app draws it.
+OPEN_MARKER_EDGE = 1.2
 
 # ggplot2 linetype names approximating the renderer's dash tuples.
 _R_LINETYPES = {
@@ -337,16 +366,33 @@ def _label_layers(m: dict, zoom: float) -> list[dict]:
     return labels
 
 
-def _dataset_filename(name: str, used: set[str]) -> str:
-    """A filesystem-safe ``<name>.csv`` unique within *used*."""
-    stem = re.sub(r"[^A-Za-z0-9._-]+", "_", str(name)).strip("._-")
-    if stem.lower().endswith(".csv"):
-        stem = stem[:-4]
-    stem = stem or "dataset"
-    candidate = f"{stem}.csv"
+# Device names Windows will not create a file under, whatever the extension.
+_RESERVED_FILENAMES = {"con", "prn", "aux", "nul",
+                       *(f"com{i}" for i in range(1, 10)),
+                       *(f"lpt{i}" for i in range(1, 10))}
+
+
+def _export_filename(name: str, extension: str, used: set[str],
+                     fallback: str) -> str:
+    """A filesystem-safe ``<name><extension>`` that is unique within *used*
+    (and is added to it).
+
+    The name is cleaned by the same rule as a saved project's file name,
+    which keeps spaces and accented letters. Uniqueness ignores case,
+    because Windows and macOS do: "Sites" and "sites" would otherwise write
+    one file. A Windows device name such as "CON" gets an underscore, since
+    Windows refuses to create that file under any extension.
+    """
+    stem = safe_filename(str(name)) if str(name).strip() else fallback
+    if extension and stem.lower().endswith(extension.lower()):
+        stem = stem[:-len(extension)].rstrip(". ") or fallback
+    if stem.split(".")[0].strip().lower() in _RESERVED_FILENAMES:
+        stem += "_"
+    taken = {item.casefold() for item in used}
+    candidate = f"{stem}{extension}"
     counter = 2
-    while candidate in used:
-        candidate = f"{stem}_{counter}.csv"
+    while candidate.casefold() in taken:
+        candidate = f"{stem}_{counter}{extension}"
         counter += 1
     used.add(candidate)
     return candidate
@@ -363,12 +409,16 @@ def _style_dict(style: PointStyle | None) -> dict | None:
 def _dataset_configs(entries, data_mode: str = "inline",
                      options: LegendOptions | None = None,
                      palette: list[str] | None = None
-                     ) -> tuple[list[dict], dict[str, PointStyle],
-                                dict[str, str], list | None, list | None]:
-    """Per-dataset script configs, the legend-label -> style map (in render
-    order), the point data to write as ``data/<name>.csv`` in ``"files"``
-    mode, the sectioned legend (None in plain mode) and the plain legend's
-    row order (None when sectioned).
+                     ) -> tuple[list[dict], dict[str, str], list | None,
+                                list | None]:
+    """Per-dataset script configs, the point data to write as
+    ``data/<name>.csv`` in ``"files"`` mode, the sectioned legend (None in
+    plain mode) and the plain legend's row order (None when sectioned).
+
+    Each config carries its own ``styles`` (legend label -> style, in
+    render order): labels are not unique across datasets - two ungrouped
+    datasets can both be "Sites" - and the app draws each dataset in its
+    own style.
 
     Everything about what is drawn comes from :func:`layout_points`, the
     same function the app draws with, so the script matches the map.
@@ -396,24 +446,30 @@ def _dataset_configs(entries, data_mode: str = "inline",
             # label_map turns it into the legend text.
             "default_label": "All points",
             "label_map": dataset.label_map,
+            "styles": {label: style for label, style, _rows
+                       in dataset.groups},
             # Original source path, for a provenance comment only (not read
             # by the generated loader).
             "source": entry.dataset.source_path or None,
         }
         if data_mode == "files":
-            rel = "data/" + _dataset_filename(entry.name, used_files)
+            rel = "data/" + _export_filename(entry.name, ".csv",
+                                             used_files, "dataset")
             config["path"] = rel
             data_files[rel] = csv_text
         else:
             config["inline_data"] = csv_text
         if dataset.attribute:
-            config["color_col"] = entry.color_by or None
-            config["symbol_col"] = entry.symbol_by or None
+            # Only columns the app resolves: a stale Color by that names no
+            # column is ignored there, so it must not stop the script.
+            for key, label in (("color_col", entry.color_by),
+                               ("symbol_col", entry.symbol_by)):
+                if column_key(entry, label) is not None:
+                    config[key] = label
         elif column_key(entry, entry.group_by) is not None:
             config["group_col"] = entry.group_by
         configs.append(config)
-    styles = {label: style for label, style, _rows in layout.groups}
-    return configs, styles, data_files, layout.sections, layout.row_order
+    return configs, data_files, layout.sections, layout.row_order
 
 
 def _inline_csv(entry) -> str:
@@ -466,7 +522,7 @@ def build_config(state: dict, entries, project_name: str = "map",
     if not (options.title or "").strip():
         options.title = None
     options = with_default_title(entries, options)
-    datasets, styles, data_files, sections, row_order = _dataset_configs(
+    datasets, data_files, sections, row_order = _dataset_configs(
         entries, data_mode, options, palette_for(m.get("palette")))
     edge = dict(state.get("point_edge") or {})
     title = (options.title or "").strip()
@@ -504,7 +560,6 @@ def build_config(state: dict, entries, project_name: str = "map",
         "datasets": datasets,
         "data_mode": data_mode,
         "data_files": data_files,
-        "styles": styles,
         "legend_sections": sections,
         # None = no explicit ordering (the sectioned legend owns its rows).
         # An empty list is different: it means every row was hidden.
@@ -525,24 +580,59 @@ def build_config(state: dict, entries, project_name: str = "map",
 # ----------------------------------------------------- literal formatting
 
 def _py(value) -> str:
-    """A Python literal for a config value (round-trips through repr)."""
-    if isinstance(value, float):
-        return repr(round(value, 6))
+    """A Python literal for a config value, containers included.
+
+    Floats are rounded to 6 places; NaN and infinity, which repr() would
+    write as the undefined names ``nan`` and ``inf``, become ``float()``
+    calls.
+    """
+    if isinstance(value, bool) or value is None:
+        return repr(value)
+    if isinstance(value, numbers.Integral):
+        return repr(int(value))
+    if isinstance(value, numbers.Real):
+        number = float(value)
+        if math.isnan(number):
+            return 'float("nan")'
+        if math.isinf(number):
+            return 'float("inf")' if number > 0 else '-float("inf")'
+        return repr(round(number, 6))
+    if isinstance(value, dict):
+        return "{" + ", ".join(f"{_py(k)}: {_py(v)}"
+                               for k, v in value.items()) + "}"
+    if isinstance(value, list):
+        return "[" + ", ".join(_py(item) for item in value) + "]"
+    if isinstance(value, tuple):
+        items = [_py(item) for item in value]
+        return "(" + ", ".join(items) + ("," if len(items) == 1 else "") + ")"
     return repr(value)
 
 
 def _r(value) -> str:
-    """An R literal for a config value."""
+    """An R literal for a config value. NaN and infinity become R's own
+    ``NA_real_``, ``Inf`` and ``-Inf`` rather than undefined names."""
     if value is None:
         return "NULL"
     if isinstance(value, bool):
         return "TRUE" if value else "FALSE"
-    if isinstance(value, (int, float)):
-        return repr(round(float(value), 6)) if isinstance(value, float) \
-            else str(value)
+    if isinstance(value, numbers.Integral):
+        return str(int(value))
+    if isinstance(value, numbers.Real):
+        number = float(value)
+        if math.isnan(number):
+            return "NA_real_"
+        if math.isinf(number):
+            return "Inf" if number > 0 else "-Inf"
+        return repr(round(number, 6))
     text = str(value).replace("\\", "\\\\").replace('"', '\\"')
     text = text.replace("\n", "\\n").replace("\r", "").replace("\t", "\\t")
     return f'"{text}"'
+
+
+def _comment_text(text) -> str:
+    """*text* made safe for a one-line ``#`` comment in either language: a
+    line break in it would end the comment and run the rest as code."""
+    return re.sub(r"[\r\n]+", " ", str(text)).strip()
 
 
 def _r_named(pairs: list[tuple[str, str]], indent: str) -> str:
@@ -572,8 +662,17 @@ def _r_linetype(linestyle) -> str:
 # --------------------------------------------------------- Python template
 
 def _safe_name(name: str) -> str:
-    """A project name safe to embed in a docstring/comment."""
-    return str(name).replace('"', "'").replace("\n", " ").strip() or "map"
+    """A project name on one line and free of double quotes, so it can sit
+    in quotes in a docstring, comment or README."""
+    text = re.sub(r"[\x00-\x1f\x7f]+", " ", str(name)).replace('"', "'")
+    return text.strip() or "map"
+
+
+def _py_docstring_text(text: str) -> str:
+    """*text* escaped for a normal (non-raw) docstring, where a backslash
+    starts an escape: "Field\\Notes" would otherwise read as a malformed
+    \\N{...} escape and stop the script compiling."""
+    return text.replace("\\", "\\\\")
 
 
 def _py_header(config: dict) -> str:
@@ -591,7 +690,7 @@ def _py_header(config: dict) -> str:
     return f'''\
 #!/usr/bin/env python3
 # Made with {config["generator"]} - {REPO_URL}
-"""Recreate the PyMappr map "{_safe_name(config["project"])}" outside PyMappr.
+"""Recreate the PyMappr map "{_py_docstring_text(_safe_name(config["project"]))}" outside PyMappr.
 
 Generated by {config["generator"]} from pre-made function templates and
 the map's saved settings
@@ -694,26 +793,26 @@ def _py_config(config: dict) -> str:
     lines.append("# One entry per dataset. lon_col/lat_col name the "
                  "coordinate columns")
     lines.append("# (None = auto-detect by column name).")
+    lines.append("# 'styles' maps each legend label to its point style, in "
+                 "render order")
+    lines.append("# (open = outline-only marker).")
     lines.append("DATASETS = [")
     for spec in config["datasets"]:
         if spec.get("source"):
-            lines.append(f"    # originally imported from: {spec['source']}")
+            lines.append("    # originally imported from: "
+                         + _comment_text(spec["source"]))
         lines.append("    {")
         for key in ("name", "path", "inline_data", "lon_col", "lat_col",
                     "group_col", "color_col", "symbol_col",
                     "default_label", "label_map"):
             lines.append(f"        {_py(key)}: {_py(spec[key])},")
+        lines.append("        'styles': {")
+        for label, style in spec["styles"].items():
+            lines.append(f"            {_py(label)}: "
+                         f"{_py(_style_dict(style))},")
+        lines.append("        },")
         lines.append("    },")
     lines.append("]")
-    lines.append("")
-    lines.append("# Legend label -> point style, in render order "
-                 "(open = outline-only marker).")
-    lines.append("STYLES = {")
-    for label, style in config["styles"].items():
-        body = ", ".join(f"{_py(k)}: {_py(v)}"
-                         for k, v in _style_dict(style).items())
-        lines.append(f"    {_py(label)}: {{{body}}},")
-    lines.append("}")
     lines.append("")
     sections = config["legend_sections"]
     if sections is None:
@@ -741,8 +840,8 @@ def _py_config(config: dict) -> str:
         lines.append("]")
     lines.append("")
     rows = config.get("legend_rows")
-    lines.append("# Legend row order for the plain legend (None = the order "
-                 "STYLES was built in).")
+    lines.append("# Legend rows for the plain legend, in order (None = "
+                 "every style, in DATASETS order).")
     lines.append(f"LEGEND_ROWS = {_py(rows)}")
     lines.append("")
     legend = config["legend"]
@@ -779,7 +878,6 @@ def _r_legend_notes(legend: dict) -> list[str]:
         ("rounded", "Rounded legend corners"),
         ("shadow", "The legend's drop shadow"),
         ("title_align", "Legend title alignment"),
-        ("frame_width", "Legend border width"),
     ]
     for key, description in unsupported:
         if legend.get(key) != getattr(defaults, key):
@@ -788,7 +886,22 @@ def _r_legend_notes(legend: dict) -> list[str]:
     # "automatic" can produce rather than against the unset default.
     if legend.get("handle_text_pad") not in (0.4, 0.8):
         notes.append("The swatch-to-label gap (no ggplot2 equivalent)")
+    if legend.get("show", True) and legend.get("location") == "best":
+        notes.append('Automatic ("best") legend placement: the legend sits '
+                     "in the upper right")
     return notes
+
+
+def _r_marker_notes(config: dict) -> list[str]:
+    """How the map's own markers are approximated by R's point shapes."""
+    found = dict.fromkeys(
+        _R_MARKER_NOTES[style.marker]
+        for spec in config["datasets"] for style in spec["styles"].values()
+        if style.marker in _R_MARKER_NOTES)
+    if not found:
+        return []
+    return ["Some marker shapes (R has no exact equivalent): "
+            + "; ".join(found)]
 
 
 def _r_header(config: dict) -> str:
@@ -802,6 +915,7 @@ def _r_header(config: dict) -> str:
         notes.append("The sectioned two-attribute legend (rendered as one "
                      "row per combination)")
     notes += _r_legend_notes(config["legend"])
+    notes += _r_marker_notes(config)
     listed = "".join(f"\n#   - {note}" for note in notes)
     listed = ("\n# Shown in PyMappr but NOT reproduced by this script:"
               + listed)
@@ -829,9 +943,8 @@ def _r_header(config: dict) -> str:
 # Output: map.png
 #
 {data_note}
-# Some marker shapes are approximated (base R has no pentagon/hexagon/
-# octagon point shapes). The satellite basemap needs the terra and
-# tidyterra packages; without them the script draws the vector map only.
+# The satellite basemap needs the terra and tidyterra packages; without
+# them the script draws the vector map only.
 #
 # Projection: {config["projection"]}{listed}
 
@@ -875,6 +988,7 @@ def _r_layer(layer: dict) -> str:
         pairs += [("filter_column", "NULL"), ("filter_values", "NULL"),
                   ("filter_keep", "TRUE")]
     pairs.append(("min_zoom_max", _r(layer.get("min_zoom_max"))))
+    pairs.append(("z", _r(round(layer["z"], 6))))
     if layer["kind"] == "fill":
         pairs += [("fill", _r(layer["color"])),
                   ("edgecolor", _r(None if layer["edgecolor"] == "none"
@@ -900,6 +1014,54 @@ def _r_layer(layer: dict) -> str:
     return f"  list({body})"
 
 
+def _r_vector(name: str, pairs: list[tuple[str, str]]) -> str:
+    """``name <- c(...)`` with one ``"key" = value`` per line."""
+    if not pairs:
+        return f"{name} <- c()"
+    return f"{name} <- c({_r_named(pairs, '  ')})"
+
+
+def _r_style_keys(config: dict) -> tuple[list[dict], list[tuple],
+                                         list | None]:
+    """The R script's style keys.
+
+    ggplot2 styles points through one set of manual scales, keyed by name,
+    so two datasets that share a label (two ungrouped datasets both named
+    "Sites") need different keys to keep their own styles and legend rows.
+    A key is the label itself, or "label [n]" for dataset n when an earlier
+    dataset already used the label.
+
+    Returns each dataset's label -> key map (only the labels that differ),
+    every (key, label, style) in render order, and the legend's keys in
+    legend order (None when every key is a row, as in the sectioned
+    legend), ordered the way the app orders its plain legend.
+    """
+    taken: set[str] = set()
+    per_dataset: list[dict] = []
+    groups: list[tuple] = []
+    for number, spec in enumerate(config["datasets"], start=1):
+        renamed = {}
+        for label, style in spec["styles"].items():
+            key = label
+            suffix = 0
+            while key in taken:
+                suffix += 1
+                key = (f"{label} [{number}]" if suffix == 1
+                       else f"{label} [{number}.{suffix}]")
+            taken.add(key)
+            if key != label:
+                renamed[label] = key
+            groups.append((key, label, style))
+        per_dataset.append(renamed)
+    rows = config.get("legend_rows")
+    if rows is None:
+        return per_dataset, groups, None
+    rank = {label: i for i, label in enumerate(rows)}
+    shown = sorted((group for group in groups if group[1] in rank),
+                   key=lambda group: rank[group[1]])
+    return per_dataset, groups, [key for key, _label, _style in shown]
+
+
 def _r_config(config: dict) -> str:
     lines = ["", "# ------------------------- map configuration (from "
                  "PyMappr) -------------------------", ""]
@@ -915,8 +1077,17 @@ def _r_config(config: dict) -> str:
         lines.append(f'CLIP_CAP <- c({", ".join(_r(v) for v in clip_cap)})'
                      "  # (lon0, lat0, radius) visible cap for the globe")
     proj = config["proj"]
-    lines.append(f'MAX_LAT <- {_r(proj["max_lat"])}')
+    lines.append(f'MAX_LAT <- {_r(proj["max_lat"])}'
+                 "  # the projection's usable latitude band")
     lines.append(f'MIN_LAT <- {_r(proj["min_lat"])}')
+    lines.append(f'LON_0 <- {_r(proj["lon_0"])}'
+                 "  # central meridian, and how far either side is usable")
+    lines.append(f'LON_HALFSPAN <- {_r(proj["lon_halfspan"])}')
+    bounds = proj["bounds"]
+    lines.append(f'PROJ_X <- c({_r(bounds[0])}, {_r(bounds[1])})'
+                 "  # the world's x range, for wrapped copies")
+    lines.append(f'HEMISPHERE <- {_r(bool(proj["hemisphere"]))}'
+                 "  # a globe: only the near side is drawn")
     figsize = config["figsize"]
     lines.append(f'FIGSIZE <- c({_r(figsize[0])}, {_r(figsize[1])})'
                  "  # inches; the app canvas geometry")
@@ -930,7 +1101,8 @@ def _r_config(config: dict) -> str:
     lines.append(f'GRID_LABELS <- {_r(grat["labels"])}')
     lines.append(f'POINT_ALPHA <- {_r(config["point_alpha"])}')
     lines.append(f'POINT_STROKE <- {_r(config["point_edge"]["width"])}'
-                 "  # outline width of filled markers")
+                 "  # outline width of filled markers, in points")
+    lines.append(f'POINT_EDGE_COLOR <- {_r(config["point_edge"]["color"])}')
     compass = dict(config["compass_options"])
     compass["show"] = config["compass"]
     lines.append("COMPASS <- list(" + _r_named(
@@ -949,50 +1121,72 @@ def _r_config(config: dict) -> str:
     lines.append("# One entry per dataset. lon_col/lat_col name the "
                  "coordinate columns")
     lines.append("# (NULL = auto-detect by column name).")
+    lines.append("# style_keys maps a label to its STYLE_* key where the "
+                 "two differ.")
     lines.append("DATASETS <- list(")
     dataset_blocks = []
-    for spec in config["datasets"]:
+    style_keys, groups, legend_keys = _r_style_keys(config)
+    for spec, keys in zip(config["datasets"], style_keys):
         pairs = [(key, _r(spec[key]))
                  for key in ("name", "path", "inline_data", "lon_col",
                              "lat_col", "group_col", "color_col",
                              "symbol_col", "default_label")]
-        label_map = spec["label_map"]
-        if label_map:
-            body = _r_named(list((k, _r(v)) for k, v in label_map.items()),
-                            "      ")
-            pairs.append(("label_map", f"c({body})"))
-        else:
-            pairs.append(("label_map", "c()"))
+        for name, mapping in (("label_map", spec["label_map"]),
+                              ("style_keys", keys)):
+            if mapping:
+                body = _r_named([(k, _r(v)) for k, v in mapping.items()],
+                                "      ")
+                pairs.append((name, f"c({body})"))
+            else:
+                pairs.append((name, "c()"))
         block = f"  list({_r_named(pairs, '    ')})"
         if spec.get("source"):
-            block = f"  # originally imported from: {spec['source']}\n" + block
+            block = ("  # originally imported from: "
+                     f"{_comment_text(spec['source'])}\n" + block)
         dataset_blocks.append(block)
     lines.append(",\n".join(dataset_blocks))
     lines.append(")")
     lines.append("")
-    lines.append("# Legend label -> style, in render order. Fillable "
-                 "shapes (21-25) carry the")
-    lines.append("# app's marker outline; sizes approximate PyMappr's "
-                 "marker areas.")
-    styles = config["styles"]
-    edge = config["point_edge"]["color"]
-    shapes, colors, fills, sizes = [], [], [], []
-    for label, style in styles.items():
+    lines.append("# Legend key -> style, in render order. A key is the "
+                 "legend label, with")
+    lines.append("# \" [n]\" added where dataset n repeats a label "
+                 "another dataset already uses")
+    lines.append("# (STYLE_LABELS holds those keys' labels). Fillable "
+                 "shapes (21-25) carry")
+    lines.append("# the app's marker outline; sizes approximate "
+                 "PyMappr's marker areas and")
+    lines.append("# strokes are outline widths in points.")
+    edge = config["point_edge"]
+    shapes, colors, fills, sizes, strokes, renamed = [], [], [], [], [], []
+    for key, label, style in groups:
         pch = _R_PCH.get(style.marker, 21)
-        shapes.append((label, _r(pch)))
+        shapes.append((key, _r(pch)))
         if pch in _R_FILLABLE_PCH:
-            colors.append((label, _r(edge)))
-            fills.append((label, _r(style.color)))
+            colors.append((key, _r(edge["color"])))
         else:
-            colors.append((label, _r(style.color)))
-            fills.append((label, _r(style.color)))
-        sizes.append((label, _r(_size_mm(style.size))))
+            colors.append((key, _r(style.color)))
+        fills.append((key, _r(style.color)))
+        sizes.append((key, _r(_size_mm(style.size))))
+        strokes.append((key, _r(OPEN_MARKER_EDGE if style.is_open
+                                else edge["width"])))
+        if key != label:
+            renamed.append((key, _r(label)))
     for name, pairs in (("STYLE_COLORS", colors), ("STYLE_FILLS", fills),
-                        ("STYLE_SHAPES", shapes), ("STYLE_SIZES", sizes)):
-        if pairs:
-            lines.append(f"{name} <- c({_r_named(pairs, '  ')})")
-        else:
-            lines.append(f"{name} <- c()")
+                        ("STYLE_SHAPES", shapes), ("STYLE_SIZES", sizes),
+                        ("STYLE_STROKES", strokes),
+                        ("STYLE_LABELS", renamed)):
+        lines.append(_r_vector(name, pairs))
+    lines.append("")
+    lines.append("# Legend rows, in order: hidden rows are left out but "
+                 "their points still draw")
+    lines.append("# (NULL = every STYLE_* key).")
+    if legend_keys is None:
+        lines.append("LEGEND_ROWS <- NULL")
+    elif legend_keys:
+        lines.append("LEGEND_ROWS <- c(" + ", ".join(
+            _r(key) for key in legend_keys) + ")")
+    else:
+        lines.append("LEGEND_ROWS <- character(0)  # every row is hidden")
     lines.append("")
     legend = config["legend"]
     pairs = [(key, _r(value)) for key, value in legend.items()]
@@ -1031,12 +1225,6 @@ _RPROJ = ("Version: 1.0\n\n"
           "Encoding: UTF-8\n")
 
 
-def _slug(name: str) -> str:
-    """A filesystem-safe slug for a project/folder name."""
-    slug = re.sub(r"[^A-Za-z0-9._-]+", "_", str(name)).strip("._-")
-    return slug or "map"
-
-
 def _py_readme(project: str) -> str:
     return f'''# {project} - PyMappr map export
 
@@ -1063,7 +1251,7 @@ It downloads its map data from Natural Earth into
 '''
 
 
-def _r_readme(project: str, slug: str) -> str:
+def _r_readme(project: str, rproj: str) -> str:
     return f'''# {project} - PyMappr map export
 
 A ready-to-run R recreation of the PyMappr map "{project}"
@@ -1071,7 +1259,7 @@ A ready-to-run R recreation of the PyMappr map "{project}"
 
 ## Run it
 
-Open `{slug}.Rproj` in RStudio, open `recreate_map.R`, and click Source.
+Open `{rproj}` in RStudio, open `recreate_map.R`, and click Source.
 Or, from a terminal in this folder:
 
     Rscript recreate_map.R
@@ -1111,12 +1299,12 @@ def generate_working_directory(state: dict, entries, language: str,
             ".gitignore": _PY_GITIGNORE,
         }
     else:
-        slug = _slug(project)
+        rproj = _export_filename(project, ".Rproj", set(), "map")
         files = {
             "recreate_map.R": _r_script(config),
             "install.R": _R_INSTALL,
-            f"{slug}.Rproj": _RPROJ,
-            "README.md": _r_readme(project, slug),
+            rproj: _RPROJ,
+            "README.md": _r_readme(project, rproj),
             ".gitignore": _R_GITIGNORE,
         }
     files.update(config["data_files"])  # data/<name>.csv -> CSV text

@@ -21,28 +21,66 @@ local({
 LON_HINTS <- c("lon", "lng", "long", "longitude", "x")
 LAT_HINTS <- c("lat", "latitude", "y")
 
+# ggplot2 sizes things in its own units; these convert the app's points.
+LINEWIDTH_PT <- 72.27 / 25.4 * 0.75  # points per ggplot2 linewidth unit
+STROKE_PT <- 72 / 50.8               # points per ggplot2 point stroke unit
+Z_GRID <- 1.8                        # the app's grid z, above fills/lines
+GRID_COLOR <- grDevices::adjustcolor("#787878", 0.7)
+MARKER_LAYER_EDGE <- 0.5             # city/airport marker outline (points)
+BASEMAP_WIDTH <- 5400                # PyMappr's basemap resample width
+# How a label with no entry in STYLE_* draws: the app's default grey dot.
+FALLBACK_STYLE <- list(fill = "#7f7f7f", shape = 21, size = 1.93)
+
+zip_is_readable <- function(zip_path) {
+  listing <- tryCatch(suppressWarnings(utils::unzip(zip_path, list = TRUE)),
+                      error = function(e) NULL)
+  !is.null(listing) && nrow(listing) > 0
+}
+
 download_archive <- function(scale, category, name) {
-  # Download a Natural Earth zip (cached in ./naturalearth_cache).
+  # Download a Natural Earth zip (cached in ./naturalearth_cache). It lands
+  # under a .part name first, so an interrupted download is never mistaken
+  # for a finished one; a damaged zip already in the cache is fetched again.
   dir.create("naturalearth_cache", showWarnings = FALSE)
   stem <- if (category == "raster") name else
     sprintf("ne_%s_%s", scale, name)
   zip_path <- file.path("naturalearth_cache", paste0(stem, ".zip"))
+  if (file.exists(zip_path) && !zip_is_readable(zip_path)) {
+    message("Re-downloading the damaged ", basename(zip_path))
+    file.remove(zip_path)
+  }
   if (!file.exists(zip_path)) {
     url <- sprintf("https://naturalearth.s3.amazonaws.com/%s_%s/%s.zip",
                    scale, category, stem)
+    part <- paste0(zip_path, ".part")
     message("Downloading ", url)
-    download.file(url, zip_path, mode = "wb", quiet = TRUE)
+    download.file(url, part, mode = "wb", quiet = TRUE)
+    file.rename(part, zip_path)
   }
   zip_path
+}
+
+extract_archive <- function(zip_path, folder, wanted, junkpaths = TRUE) {
+  # Unzip into a scratch folder and move it into place once complete, so a
+  # failed extraction never leaves a folder that looks finished.
+  if (!is.null(wanted) && all(file.exists(file.path(folder, wanted)))) {
+    return(folder)
+  }
+  scratch <- paste0(folder, ".part")
+  unlink(scratch, recursive = TRUE)
+  utils::unzip(zip_path, exdir = scratch, junkpaths = junkpaths)
+  unlink(folder, recursive = TRUE)
+  file.rename(scratch, folder)
+  folder
 }
 
 load_natural_earth <- function(name, category, scale, member = NULL) {
   # Load a Natural Earth vector layer, downloading it if needed.
   zip_path <- download_archive(scale, category, name)
   stem <- sprintf("ne_%s_%s", scale, name)
-  folder <- file.path("naturalearth_cache", stem)
-  if (!dir.exists(folder)) unzip(zip_path, exdir = folder, junkpaths = TRUE)
   shp <- if (is.null(member)) paste0(stem, ".shp") else paste0(member, ".shp")
+  folder <- extract_archive(zip_path, file.path("naturalearth_cache", stem),
+                            shp)
   data <- sf::read_sf(file.path(folder, shp))
   names(data) <- tolower(names(data))
   data
@@ -100,14 +138,20 @@ find_column <- function(df, wanted, hints, what) {
 }
 
 load_points <- function(spec) {
-  # Read one dataset (file or embedded CSV) with numeric lon/lat.
+  # Read one dataset (file or embedded CSV) with numeric lon/lat. Every
+  # column is read as text, like PyMappr does, so labels such as "007",
+  # "1.50", "T" or "NA" stay exactly as written.
   if (!is.null(spec$inline_data)) {
-    df <- read.csv(text = spec$inline_data, check.names = FALSE)
+    df <- read.csv(text = spec$inline_data, check.names = FALSE,
+                   colClasses = "character", na.strings = character(0))
   } else if (grepl("\\.(tsv|txt)$", tolower(spec$path))) {
-    df <- read.delim(spec$path, check.names = FALSE)
+    df <- read.delim(spec$path, check.names = FALSE, encoding = "UTF-8",
+                     colClasses = "character", na.strings = character(0))
   } else {
-    # Excel files need readxl: df <- readxl::read_excel(spec$path)
-    df <- read.csv(spec$path, check.names = FALSE)
+    # Excel files need readxl:
+    # df <- readxl::read_excel(spec$path, col_types = "text")
+    df <- read.csv(spec$path, check.names = FALSE, encoding = "UTF-8",
+                   colClasses = "character", na.strings = character(0))
   }
   lon <- find_column(df, spec$lon_col, LON_HINTS, "longitude")
   lat <- find_column(df, spec$lat_col, LAT_HINTS, "latitude")
@@ -148,31 +192,40 @@ point_labels <- function(df, spec) {
 }
 
 load_all_points <- function() {
-  # Every dataset as one sf object with a legend `label` column.
+  # Every dataset's points as lon/lat plus the STYLE_* key each is drawn
+  # with: its legend label, made unique where two datasets share a label.
   frames <- lapply(DATASETS, function(spec) {
     df <- load_points(spec)
-    data.frame(lon = df$`_lon`, lat = df$`_lat`,
-               label = point_labels(df, spec))
+    labels <- point_labels(df, spec)
+    keys <- labels
+    if (length(spec$style_keys) > 0) {
+      renamed <- labels %in% names(spec$style_keys)
+      keys[renamed] <- spec$style_keys[labels[renamed]]
+    }
+    data.frame(lon = df$`_lon`, lat = df$`_lat`, key = unname(keys))
   })
   merged <- do.call(rbind, frames)
-  merged$label <- factor(merged$label,
-                         levels = unique(c(names(STYLE_COLORS),
-                                           merged$label)))
   sf::st_as_sf(merged, coords = c("lon", "lat"), crs = "EPSG:4326")
+}
+
+cap_ring <- function(lon0, lat0, radius, n) {
+  # Lon/lat points `radius` degrees from (lon0, lat0), all the way round.
+  az <- seq(0, 2 * pi, length.out = n)
+  phi0 <- lat0 * pi / 180
+  r <- radius * pi / 180
+  lat <- asin(sin(phi0) * cos(r) + cos(phi0) * sin(r) * cos(az))
+  dlon <- atan2(sin(az) * sin(r) * cos(phi0),
+                cos(r) - sin(phi0) * sin(lat))
+  cbind(lon0 + dlon * 180 / pi, lat * 180 / pi)
 }
 
 cap_polygon <- function(lon0, lat0, radius) {
   # The visible spherical cap (a lon/lat polygon) for clipping to an
   # orthographic globe's near hemisphere, with +/-360 copies so a cap
   # crossing the antimeridian still covers data stored in [-180, 180].
-  az <- seq(0, 2 * pi, length.out = 181)
-  phi0 <- lat0 * pi / 180
-  r <- radius * pi / 180
-  lat <- asin(sin(phi0) * cos(r) + cos(phi0) * sin(r) * cos(az))
-  dlon <- atan2(sin(az) * sin(r) * cos(phi0),
-                cos(r) - sin(phi0) * sin(lat))
-  lon <- lon0 + dlon * 180 / pi
-  lat <- lat * 180 / pi
+  ring <- cap_ring(lon0, lat0, radius, 181)
+  lon <- ring[, 1]
+  lat <- ring[, 2]
   if (lat0 + radius >= 90) {          # cap encloses the north pole
     ord <- order(lon)
     coords <- rbind(cbind(lon[ord], lat[ord]),
@@ -184,27 +237,80 @@ cap_polygon <- function(lon0, lat0, radius) {
                     c(lon0 + 180, -90), c(lon0 - 180, -90),
                     c(lon[ord][1], lat[ord][1]))
   } else {
-    coords <- cbind(lon, lat)         # az 0..2pi already closes the ring
+    # sin(2 * pi) misses 0 by ~1e-14, so close the ring explicitly.
+    coords <- rbind(cbind(lon, lat), c(lon[1], lat[1]))
   }
   base <- sf::st_polygon(list(coords))
   parts <- lapply(c(-360, 0, 360), function(off) base + c(off, 0))
-  sf::st_make_valid(sf::st_union(sf::st_sfc(parts, crs = "EPSG:4326")))
+  suppressMessages(sf::st_make_valid(
+    sf::st_union(sf::st_sfc(parts, crs = "EPSG:4326"))))
 }
 
 to_map_crs <- function(data) {
   # Reproject into the map projection like the app: clip to the visible
   # cap / latitude band first; leave plain lon/lat data untouched.
   if (GEOGRAPHIC) return(data)
+  # Clip on the plane, like shapely in the app: Natural Earth polygons and
+  # the band/cap rings are not valid s2 geometry. Only for this call - the
+  # scale bar's st_distance needs s2 on lon/lat (or lwgeom without it).
+  old <- suppressMessages(sf::sf_use_s2(FALSE))
+  on.exit(suppressMessages(sf::sf_use_s2(old)))
   if (!is.null(CLIP_CAP)) {
     cap <- cap_polygon(CLIP_CAP[1], CLIP_CAP[2], CLIP_CAP[3])
-    data <- suppressWarnings(sf::st_intersection(data, cap))
+    data <- suppressMessages(suppressWarnings(
+      sf::st_intersection(data, cap)))
   } else if (MAX_LAT < 90 || MIN_LAT > -90) {
     band <- sf::st_as_sfc(sf::st_bbox(
       c(xmin = -180, ymin = MIN_LAT, xmax = 180, ymax = MAX_LAT),
       crs = sf::st_crs("EPSG:4326")))
-    data <- suppressWarnings(sf::st_intersection(data, band))
+    data <- suppressMessages(suppressWarnings(
+      sf::st_intersection(data, band)))
   }
   sf::st_transform(data, MAP_CRS)
+}
+
+project_points <- function(data) {
+  # Points like the app: clamped into the projection's usable band rather
+  # than clipped away, and dropped only where the globe's far side hides
+  # them.
+  if (GEOGRAPHIC || nrow(data) == 0) return(data)
+  xy <- sf::st_coordinates(data)
+  lon <- xy[, 1]
+  lat <- pmin(pmax(xy[, 2], MIN_LAT), MAX_LAT)
+  if (LON_HALFSPAN < 180) {
+    lon <- pmin(pmax(lon, LON_0 - LON_HALFSPAN), LON_0 + LON_HALFSPAN)
+  }
+  clamped <- sf::st_as_sf(data.frame(lon = lon, lat = lat),
+                          coords = c("lon", "lat"), crs = "EPSG:4326")
+  data <- sf::st_set_geometry(data, sf::st_geometry(clamped))
+  data <- sf::st_transform(data, MAP_CRS)
+  xy <- sf::st_coordinates(data)
+  data[is.finite(xy[, 1]) & is.finite(xy[, 2]), ]
+}
+
+wrap_offsets <- function() {
+  # Horizontal world copies needed to cover the view (the app draws
+  # wrapped copies when the view crosses a world edge).
+  if (HEMISPHERE) return(0)
+  width <- PROJ_X[2] - PROJ_X[1]
+  offsets <- 0
+  if (min(VIEW[1:2]) < PROJ_X[1]) offsets <- c(offsets, -width)
+  if (max(VIEW[1:2]) > PROJ_X[2]) offsets <- c(offsets, width)
+  offsets
+}
+
+wrapped <- function(data) {
+  # `data` (already in the map projection) plus its wrapped world copies.
+  offsets <- wrap_offsets()
+  if (length(offsets) == 1 || nrow(data) == 0) return(data)
+  crs <- sf::st_crs(data)
+  copies <- lapply(offsets, function(off) {
+    if (off == 0) return(data)
+    moved <- sf::st_geometry(data) + c(off, 0)
+    sf::st_crs(moved) <- crs
+    sf::st_set_geometry(data, moved)
+  })
+  do.call(rbind, copies)
 }
 
 base_layer_geom <- function(layer) {
@@ -220,7 +326,9 @@ base_layer_geom <- function(layer) {
     }))
   }
   data <- zoom_filter(data, layer$min_zoom_max)
-  data <- to_map_crs(data)
+  data <- if (layer$kind == "point") project_points(data) else
+    to_map_crs(data)
+  data <- wrapped(data)
   if (layer$kind == "fill") {
     geom_sf(data = data, fill = layer$fill,
             color = if (is.null(layer$edgecolor)) NA else layer$edgecolor,
@@ -231,11 +339,40 @@ base_layer_geom <- function(layer) {
   } else if (layer$shape %in% 21:25) {
     # Filled marker with the app's white edge.
     geom_sf(data = data, fill = layer$color, color = layer$edgecolor,
-            size = layer$size, shape = layer$shape, stroke = 0.3)
+            size = layer$size, shape = layer$shape,
+            stroke = MARKER_LAYER_EDGE / STROKE_PT)
   } else {
     geom_sf(data = data, color = layer$color, size = layer$size,
-            shape = layer$shape, stroke = 0.3)
+            shape = layer$shape, stroke = MARKER_LAYER_EDGE / STROKE_PT)
   }
+}
+
+graticule_layers <- function() {
+  # The lon/lat grid as map lines, drawn at the app's grid z (above every
+  # fill and line layer, below the points), plus the globe's horizon.
+  layers <- list()
+  if (!is.null(GRID_INTERVAL)) {
+    lats <- seq(-90, 90, by = GRID_INTERVAL)
+    meridians <- lapply(seq(-180, 180, by = GRID_INTERVAL), function(lon) {
+      sf::st_linestring(cbind(lon, seq(-MAX_LAT, MAX_LAT, length.out = 91)))
+    })
+    parallels <- lapply(lats[abs(lats) <= MAX_LAT], function(lat) {
+      sf::st_linestring(cbind(seq(-180, 180, length.out = 181), lat))
+    })
+    grid <- sf::st_sf(geometry = sf::st_sfc(c(meridians, parallels),
+                                            crs = "EPSG:4326"))
+    layers <- c(layers, list(geom_sf(
+      data = wrapped(to_map_crs(grid)), color = GRID_COLOR,
+      linewidth = 0.4 / LINEWIDTH_PT)))
+  }
+  if (HEMISPHERE) {
+    ring <- cap_ring(CLIP_CAP[1], CLIP_CAP[2], 89.9, 361)
+    horizon <- sf::st_sfc(sf::st_linestring(ring), crs = "EPSG:4326")
+    layers <- c(layers, list(geom_sf(
+      data = sf::st_transform(horizon, MAP_CRS), color = "#787878",
+      linewidth = 0.8 / LINEWIDTH_PT)))
+  }
+  layers
 }
 
 basemap_archives <- list(
@@ -245,10 +382,12 @@ basemap_archives <- list(
   blue_marble = list(scale = "50m", cat = "raster", name = "HYP_50M_SR_W")
 )
 
-basemap_geom <- function() {
+basemap_layers <- function() {
   # The raster basemap via terra + tidyterra (best effort: the
   # vector map still draws if these packages cannot be installed).
-  if (BASEMAP == "simple" || is.null(basemap_archives[[BASEMAP]])) return(NULL)
+  if (BASEMAP == "simple" || is.null(basemap_archives[[BASEMAP]])) {
+    return(list())
+  }
   ok <- tryCatch({
     ensure_packages(c("terra", "tidyterra"))
     TRUE
@@ -256,100 +395,182 @@ basemap_geom <- function() {
   if (!ok || !requireNamespace("terra", quietly = TRUE) ||
       !requireNamespace("tidyterra", quietly = TRUE)) {
     message("note: terra/tidyterra unavailable; skipping the basemap raster")
-    return(NULL)
+    return(list())
   }
   info <- basemap_archives[[BASEMAP]]
   zip_path <- download_archive(info$scale, info$cat, info$name)
   folder <- file.path("naturalearth_cache", info$name)
-  if (!dir.exists(folder)) unzip(zip_path, exdir = folder)
-  tif <- list.files(folder, pattern = "\\.tif$", full.names = TRUE,
-                    recursive = TRUE)[1]
-  tidyterra::geom_spatraster_rgb(data = terra::rast(tif))
+  find_tif <- function() {
+    list.files(folder, pattern = "\\.tif$", full.names = TRUE,
+               recursive = TRUE)
+  }
+  if (length(find_tif()) == 0) {
+    extract_archive(zip_path, folder, NULL, junkpaths = FALSE)
+  }
+  raster <- terra::rast(find_tif()[1])
+  # The grey relief is a single band; drawn as RGB it needs three.
+  if (terra::nlyr(raster) == 1) raster <- c(raster, raster, raster)
+  # PyMappr draws a 5400 x 2700 resample of the raster; match that instead
+  # of tidyterra's default 500,000-cell preview.
+  shrink <- floor(terra::ncol(raster) / BASEMAP_WIDTH)
+  if (shrink > 1) raster <- terra::aggregate(raster, fact = shrink)
+  offsets <- wrap_offsets()
+  # A copy shifted by a world width only lines up in map coordinates.
+  if (length(offsets) > 1 && !GEOGRAPHIC) {
+    raster <- terra::project(raster, MAP_CRS)
+  }
+  lapply(offsets, function(off) {
+    copy <- if (off == 0) raster else terra::shift(raster, dx = off)
+    tidyterra::geom_spatraster_rgb(data = copy, maxcell = Inf)
+  })
 }
 
 lon_label <- function(value) {
   value <- ((value + 180) %% 360) - 180
-  ifelse(value %in% c(0, 180, -180), sprintf("%g\u00b0", abs(value)),
-         sprintf("%g\u00b0%s", abs(value),
+  ifelse(value %in% c(0, 180, -180), sprintf("%g°", abs(value)),
+         sprintf("%g°%s", abs(value),
                  ifelse(value < 0, "W", "E")))
 }
 
 lat_label <- function(value) {
-  ifelse(value == 0, "0\u00b0",
-         sprintf("%g\u00b0%s", abs(value), ifelse(value < 0, "S", "N")))
+  ifelse(value == 0, "0°",
+         sprintf("%g°%s", abs(value), ifelse(value < 0, "S", "N")))
+}
+
+legend_labels <- function(keys) {
+  # The text shown for each STYLE_* key (they differ only where two
+  # datasets share a label).
+  labels <- keys
+  renamed <- keys %in% names(STYLE_LABELS)
+  labels[renamed] <- STYLE_LABELS[keys[renamed]]
+  unname(labels)
+}
+
+point_layers <- function() {
+  # The datasets' points, with one legend row per STYLE_* entry in
+  # LEGEND_ROWS order - including rows whose points are all off the map,
+  # as the app keeps them.
+  if (length(DATASETS) == 0) return(list())
+  points <- wrapped(project_points(load_all_points()))
+  keys <- names(STYLE_COLORS)
+  # A label with no configured style draws in grey, like the app's default.
+  extra <- setdiff(unique(points$key), keys)
+  with_extra <- function(values, default) {
+    c(values, stats::setNames(rep(default, length(extra)), extra))
+  }
+  colors <- with_extra(STYLE_COLORS, POINT_EDGE_COLOR)
+  fills <- with_extra(STYLE_FILLS, FALLBACK_STYLE$fill)
+  shapes <- with_extra(STYLE_SHAPES, FALLBACK_STYLE$shape)
+  sizes <- with_extra(STYLE_SIZES, FALLBACK_STYLE$size)
+  strokes <- with_extra(STYLE_STROKES, POINT_STROKE)
+  limits <- names(colors)
+  points$key <- factor(points$key, levels = limits)
+  shown <- if (is.null(LEGEND_ROWS)) keys else LEGEND_ROWS
+  title <- if (LEGEND$title == "") NULL else LEGEND$title
+  manual <- function(scale, values) {
+    scale(values = values, limits = limits, breaks = shown,
+          labels = legend_labels(shown), drop = FALSE, name = title)
+  }
+  # Legend key marker sizes = the mapped point sizes scaled by
+  # marker_scale, matching matplotlib's markerscale.
+  key_aes <- list(size = unname(sizes[shown]) * LEGEND$marker_scale,
+                  stroke = unname(strokes[shown]) / STROKE_PT)
+  legend <- if (length(shown) == 0) {
+    guides(color = "none", fill = "none", shape = "none")
+  } else {
+    guides(color = guide_legend(ncol = LEGEND$columns,
+                                override.aes = key_aes),
+           fill = guide_legend(ncol = LEGEND$columns),
+           shape = guide_legend(ncol = LEGEND$columns))
+  }
+  list(
+    geom_sf(data = points,
+            aes(color = key, fill = key, shape = key, size = key),
+            alpha = POINT_ALPHA,
+            stroke = unname(strokes[as.character(points$key)]) / STROKE_PT,
+            # TRUE, not the default NA: a row whose points are all off the
+            # map still gets its swatch.
+            show.legend = TRUE),
+    manual(scale_color_manual, colors),
+    manual(scale_fill_manual, fills),
+    manual(scale_shape_manual, shapes),
+    scale_size_manual(values = sizes, limits = limits, guide = "none"),
+    legend)
+}
+
+legend_anchor <- function(location) {
+  # The panel corner (or edge midpoint) a matplotlib legend location sits
+  # against. "best" picks a spot clear of the data in the app; ggplot2 has
+  # no equivalent, so it takes the upper right.
+  location <- switch(location, best = "upper right",
+                     right = "center right", center = "center center",
+                     location)
+  parts <- strsplit(location, " ")[[1]]
+  c(switch(parts[2], left = 0, right = 1, 0.5),
+    switch(parts[1], upper = 1, lower = 0, 0.5))
+}
+
+legend_frame <- function() {
+  if (!isTRUE(LEGEND$frame)) return(element_blank())
+  edge <- LEGEND$frame_edge_color
+  if (LEGEND$frame_width <= 0 || identical(edge, "none")) edge <- NA
+  fill <- if (identical(LEGEND$frame_color, "none")) NA else
+    grDevices::adjustcolor(LEGEND$frame_color, LEGEND$frame_alpha)
+  element_rect(fill = fill, colour = edge,
+               linewidth = LEGEND$frame_width / LINEWIDTH_PT)
+}
+
+legend_text <- function(size, bold, italic, colour) {
+  family <- if (nzchar(LEGEND$font_family)) LEGEND$font_family else NULL
+  element_text(size = size, face = text_face(bold, italic), colour = colour,
+               family = family)
 }
 
 build_map <- function() {
-  p <- ggplot()
-  if (BASEMAP != "simple") {
-    raster_layer <- basemap_geom()
-    if (!is.null(raster_layer)) p <- p + raster_layer
+  p <- ggplot() + basemap_layers()
+  grid_drawn <- FALSE
+  for (layer in NE_LAYERS) {
+    if (!grid_drawn && layer$z > Z_GRID) {
+      p <- p + graticule_layers()
+      grid_drawn <- TRUE
+    }
+    p <- p + base_layer_geom(layer)
   }
-  for (layer in NE_LAYERS) p <- p + base_layer_geom(layer)
-  if (length(DATASETS) > 0) {
-    points <- to_map_crs(load_all_points())
-    title <- if (LEGEND$title == "") NULL else LEGEND$title
-    # Legend key marker sizes = the mapped point sizes scaled by
-    # marker_scale, matching matplotlib's markerscale.
-    key_sizes <- unname(STYLE_SIZES) * LEGEND$marker_scale
-    p <- p +
-      geom_sf(data = points,
-              aes(color = label, fill = label, shape = label,
-                  size = label),
-              alpha = POINT_ALPHA, stroke = POINT_STROKE) +
-      scale_color_manual(values = STYLE_COLORS, name = title) +
-      scale_fill_manual(values = STYLE_FILLS, name = title) +
-      scale_shape_manual(values = STYLE_SHAPES, name = title) +
-      scale_size_manual(values = STYLE_SIZES, name = title,
-                        guide = "none") +
-      guides(
-        color = guide_legend(ncol = LEGEND$columns,
-                             override.aes = list(size = key_sizes)),
-        fill = guide_legend(ncol = LEGEND$columns),
-        shape = guide_legend(ncol = LEGEND$columns))
-  }
-  datum <- if (!is.null(GRID_INTERVAL)) sf::st_crs("EPSG:4326") else NULL
+  if (!grid_drawn) p <- p + graticule_layers()
+  p <- p + point_layers()
+  labelled <- !is.null(GRID_INTERVAL) && GRID_LABELS
+  # The grid is drawn as a layer above, so coord_sf only labels the axes.
+  datum <- if (labelled) sf::st_crs("EPSG:4326") else NA
   p <- p + coord_sf(crs = MAP_CRS, xlim = VIEW[1:2], ylim = VIEW[3:4],
                     expand = FALSE, datum = datum)
-  if (!is.null(GRID_INTERVAL)) {
+  if (labelled) {
     p <- p +
-      scale_x_continuous(breaks = seq(-180, 180, by = GRID_INTERVAL),
+      scale_x_continuous(breaks = seq(-540, 540, by = GRID_INTERVAL),
                          labels = lon_label) +
       scale_y_continuous(breaks = seq(-90, 90, by = GRID_INTERVAL),
                          labels = lat_label)
   }
-  grid_line <- if (!is.null(GRID_INTERVAL)) {
-    element_line(color = grDevices::adjustcolor("#787878", 0.7),
-                 linewidth = 0.19)
-  } else {
-    element_blank()
-  }
-  axis_text <- if (!is.null(GRID_INTERVAL) && GRID_LABELS) {
-    element_text(size = 7)
-  } else {
-    element_blank()
-  }
   p <- p + scale_bar_layers() + compass_layers()
-  p <- p + theme_void() + theme(
+  anchor <- legend_anchor(LEGEND$location)
+  # matplotlib's borderaxespad: half the legend font size off the frame.
+  inset <- 0.5 * LEGEND$fontsize / 72 / FIGSIZE
+  p + theme_void() + theme(
     panel.background = element_rect(fill = "white", color = NA),
     plot.background = element_rect(fill = "white", color = NA),
-    panel.grid.major = grid_line,
-    axis.text = axis_text,
+    panel.grid.major = element_blank(),
+    axis.text = if (labelled) element_text(size = 7) else element_blank(),
     axis.ticks = element_blank(),
-    legend.text = element_text(size = LEGEND$fontsize,
-                               face = text_face(LEGEND$label_bold,
-                                                LEGEND$label_italic)),
-    legend.title = element_text(size = LEGEND$title_fontsize,
-                                face = text_face(LEGEND$title_bold,
-                                                 LEGEND$title_italic)),
+    legend.text = legend_text(LEGEND$fontsize, LEGEND$label_bold,
+                              LEGEND$label_italic, LEGEND$label_color),
+    legend.title = legend_text(LEGEND$title_fontsize, LEGEND$title_bold,
+                               LEGEND$title_italic, LEGEND$title_color),
     # Approximates matplotlib's labelspacing (vertical gap per entry).
     legend.key.height = grid::unit(1 + LEGEND$label_spacing, "lines"),
-    legend.position = if (LEGEND$show) legend_position(LEGEND$location)
-                      else "none",
-    legend.background = if (LEGEND$frame)
-      element_rect(fill = grDevices::adjustcolor("white", 0.85),
-                   color = "#999999") else element_blank())
-  p
+    legend.key = element_blank(),
+    legend.position = if (LEGEND$show) "inside" else "none",
+    legend.position.inside = anchor + sign(0.5 - anchor) * inset,
+    legend.justification.inside = anchor,
+    legend.background = legend_frame())
 }
 
 # --------------------------------------------- compass and scale bar
@@ -585,11 +806,6 @@ compass_layers <- function() {
              colour = COMPASS$color))
 }
 
-
-legend_position <- function(location) {
-  # PyMappr legend locations approximated by ggplot2 sides.
-  if (location %in% c("upper left", "lower left")) "left" else "right"
-}
 
 text_face <- function(bold, italic) {
   # ggplot2 element_text face: bold/italic combinations (no underline).

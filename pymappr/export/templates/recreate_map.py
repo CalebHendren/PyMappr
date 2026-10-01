@@ -2,9 +2,11 @@
 
 # ------------------- pre-made functions (identical for every export) -----
 
+import functools
 import importlib
 import io
 import math
+import shutil
 import subprocess
 import sys
 import zipfile
@@ -80,33 +82,54 @@ WARP_GRID = (1600, 800)
 
 
 def download_archive(scale, category, name):
-    """Download a Natural Earth zip (cached next to this script)."""
+    """Download a Natural Earth zip (cached next to this script).
+
+    The download lands under a .part name and is renamed once complete, so
+    an interrupted one is never mistaken for a finished zip; a damaged zip
+    already in the cache is fetched again."""
     cache = SCRIPT_DIR / "naturalearth_cache"
     cache.mkdir(exist_ok=True)
     stem = name if category == "raster" else f"ne_{scale}_{name}"
     zip_path = cache / f"{stem}.zip"
+    if zip_path.exists() and not zipfile.is_zipfile(zip_path):
+        print(f"Re-downloading the damaged {zip_path.name}")
+        zip_path.unlink()
     if not zip_path.exists():
         url = (f"https://naturalearth.s3.amazonaws.com/"
                f"{scale}_{category}/{stem}.zip")
+        part = zip_path.with_name(zip_path.name + ".part")
         print(f"Downloading {url}")
-        urlretrieve(url, zip_path)
+        urlretrieve(url, part)
+        part.replace(zip_path)
     return zip_path
+
+
+def extract_archive(zip_path, folder, wanted):
+    """Unzip every file of *zip_path* flat into *folder*, unless *wanted* is
+    already there. It unpacks into a scratch folder that is renamed into
+    place at the end, so a failed extraction never looks finished."""
+    if (folder / wanted).exists():
+        return folder
+    scratch = folder.with_name(folder.name + ".part")
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir()
+    with zipfile.ZipFile(zip_path) as archive:
+        for entry in archive.namelist():
+            base = Path(entry).name
+            if base and not entry.endswith("/"):
+                (scratch / base).write_bytes(archive.read(entry))
+    shutil.rmtree(folder, ignore_errors=True)
+    scratch.replace(folder)
+    return folder
 
 
 def load_natural_earth(name, category, scale, member=None):
     """Load a Natural Earth vector layer, downloading it if needed."""
     zip_path = download_archive(scale, category, name)
     stem = f"ne_{scale}_{name}"
-    folder = zip_path.parent / stem
-    if not folder.exists():
-        folder.mkdir()
-        with zipfile.ZipFile(zip_path) as archive:
-            for entry in archive.namelist():
-                base = Path(entry).name
-                if base and not entry.endswith("/"):
-                    (folder / base).write_bytes(archive.read(entry))
-    shp = folder / f"{member or stem}.shp"
-    gdf = gpd.read_file(shp)
+    shp = f"{member or stem}.shp"
+    folder = extract_archive(zip_path, zip_path.parent / stem, shp)
+    gdf = gpd.read_file(folder / shp)
     gdf.columns = [c.lower() for c in gdf.columns]
     return gdf
 
@@ -146,7 +169,9 @@ def feature_min_zoom(gdf):
 
 # ------------------------------------------------------------- projection
 
+@functools.lru_cache(maxsize=None)
 def _transformer():
+    # Built once: a fine graticule alone projects hundreds of lines.
     from pyproj import Transformer
 
     return Transformer.from_crs("EPSG:4326", MAP_CRS, always_xy=True)
@@ -527,6 +552,7 @@ METRES_PER_MILE = 1609.344
 _NICE = (1.0, 2.0, 3.0, 5.0)
 
 
+@functools.lru_cache(maxsize=None)
 def _geod():
     from pyproj import Geod
 
@@ -789,20 +815,24 @@ def find_column(df, wanted, hints, what):
 
 
 def load_points(spec):
-    """Read one dataset (file or embedded CSV) with numeric lon/lat."""
+    """Read one dataset (file or embedded CSV) with numeric lon/lat.
+
+    Every column is read as text, like PyMappr does, so labels such as
+    "007", "1.50" or "NA" stay exactly as written and match the styles."""
+    as_text = {"dtype": str, "keep_default_na": False}
     if spec["inline_data"] is not None:
-        df = pd.read_csv(io.StringIO(spec["inline_data"]))
+        df = pd.read_csv(io.StringIO(spec["inline_data"]), **as_text)
     else:
         path = Path(spec["path"])
         if not path.is_absolute():
             path = SCRIPT_DIR / path
         suffix = path.suffix.lower()
         if suffix in (".xlsx", ".xlsm", ".xltx", ".xltm", ".xls", ".ods"):
-            df = pd.read_excel(path)
+            df = pd.read_excel(path, **as_text).fillna("")
         elif suffix in (".tsv", ".txt"):
-            df = pd.read_csv(path, sep="\t")
+            df = pd.read_csv(path, sep="\t", **as_text)
         else:
-            df = pd.read_csv(path)
+            df = pd.read_csv(path, **as_text)
     lon = find_column(df, spec["lon_col"], LON_HINTS, "longitude")
     lat = find_column(df, spec["lat_col"], LAT_HINTS, "latitude")
     df["_lon"] = pd.to_numeric(df[lon], errors="coerce")
@@ -854,12 +884,13 @@ def plot_dataset(ax, spec):
     labels = point_labels(df, spec)
     xs, ys = proj_forward(df["_lon"].to_numpy(), df["_lat"].to_numpy())
     offsets = wrap_offsets()
-    order = list(dict.fromkeys(list(STYLES) + sorted(set(labels))))
+    styles = spec["styles"]
+    order = list(dict.fromkeys(list(styles) + sorted(set(labels))))
     for label in order:
         mask = (labels == label).to_numpy()
         if not mask.any():
             continue
-        style = STYLES.get(label, FALLBACK_STYLE)
+        style = styles.get(label, FALLBACK_STYLE)
         px = np.concatenate([xs[mask] + off for off in offsets])
         py = np.tile(ys[mask], len(offsets))
         face, edge, lw = marker_paint(style)
@@ -956,21 +987,24 @@ def style_legend(fig, leg, header_rows):
 def add_legend(ax):
     """The app's legend: one row per group, or titled sections when the
     map is styled by two attribute columns."""
-    if not LEGEND["show"] or not STYLES:
+    # One row per style of every dataset: two datasets sharing a label keep
+    # a row each, in their own style, as in the app.
+    rows = [(label, style) for spec in DATASETS
+            for label, style in spec["styles"].items()]
+    if not LEGEND["show"] or not rows:
         return
     if LEGEND_SECTIONS is None:
-        rows = list(STYLES)
         if LEGEND_ROWS is not None:
             # LEGEND_ROWS is the whole legend, in order: a group left out of
             # it keeps its points but loses its row. Empty means every row
             # was hidden, which is not the same as "no ordering given".
             rank = {label: i for i, label in enumerate(LEGEND_ROWS)}
-            rows = sorted((r for r in rows if r in rank),
-                          key=lambda label: rank[label])
+            rows = sorted((row for row in rows if row[0] in rank),
+                          key=lambda row: rank[row[0]])
         if not rows:
             return
-        handles = [legend_handle(STYLES[label]) for label in rows]
-        for handle, label in zip(handles, rows):
+        handles = [legend_handle(style) for _label, style in rows]
+        for handle, (label, _style) in zip(handles, rows):
             handle.set_label(label)
         leg = ax.legend(handles=handles, **legend_kwargs())
         style_legend(ax.figure, leg, set())
