@@ -27,6 +27,10 @@ from pymappr.geo.layers import LayerStore  # noqa: E402
 
 OUT_DIR = REPO_ROOT / "docs" / "images"
 
+# The portrait frame make_screenshots.py uses: South America widened into the
+# Pacific so a lower-left legend covers no land or points.
+PORTRAIT_SOUTH_AMERICA = (-105, -33, -60, 40)
+
 
 def new_root(geometry: str) -> tk.Tk:
     """A Tk root in the app's light theme, as ``pymappr.app.main`` sets up."""
@@ -55,6 +59,20 @@ def select_tab(panel, title: str) -> None:
             panel.notebook.select(index)
             return
     raise SystemExit(f"no {title!r} tab in the control panel")
+
+
+def set_legend_location(app: PyMapprApp, location: str) -> None:
+    """Pick a legend position from the Legend tab's Position box."""
+    app.panel.legend_vars["location"].set(location)
+    app.on_legend_position()
+
+
+def zoom_to(app: PyMapprApp, extent: tuple) -> None:
+    """Frame the map on a (lon0, lon1, lat0, lat1) box, as zooming or
+    panning there would; the Limit to presets cannot reach it."""
+    app.renderer.set_extent(extent)
+    app.toolbar.update()
+    app.renderer.redraw()
 
 
 def grab_window(root: tk.Tk, path: Path) -> None:
@@ -88,7 +106,8 @@ def shot_main_and_layers(store: LayerStore) -> None:
     app = PyMapprApp(root, store, restore_session=False)
     root.update()
 
-    # 1. Grouped points with a legend, states + blue water (Data tab).
+    # 1. Grouped points with a legend, states + blue water (Data tab). The
+    #    legend goes lower left, over the Pacific; upper right covers Africa.
     load_sample(app, "south_america_beetles.csv", group_by="Genus")
     app.panel.continent_var.set("South America")
     app.on_continent()
@@ -96,13 +115,16 @@ def shot_main_and_layers(store: LayerStore) -> None:
     app.on_basemap()
     app.panel.layer_vars["states"].set(True)
     app.on_layer("states")
+    set_legend_location(app, "lower left")
     app.canvas.draw()
     grab_window(root, OUT_DIR / "app_points.png")
 
     # 2. The same beetles, but in the new Portrait orientation - the map is
-    #    reframed as a tall page instead of a wide band of ocean.
+    #    reframed as a tall page instead of a wide band of ocean, widened
+    #    west so the legend still has open water.
     app.panel.orientation_var.set("Portrait")
     app.on_orientation()
+    zoom_to(app, PORTRAIT_SOUTH_AMERICA)
     app.canvas.draw()
     grab_window(root, OUT_DIR / "app_portrait.png")
 
@@ -133,7 +155,11 @@ def shot_main_and_layers(store: LayerStore) -> None:
 
 def shot_publication(store: LayerStore) -> None:
     """Genus and Species joined into one legend line, in the publication
-    style: the Combine columns dialog, then the map it gives."""
+    style: the Combine columns dialog, then the map it gives.
+
+    The map stays landscape: in a portrait box the size of the app's canvas
+    the nine-row publication legend is half the map wide, and no frame that
+    keeps the continent large leaves that much open water."""
     root = new_root("1500x950+0+0")
     app = PyMapprApp(root, store, restore_session=False)
     root.update()
@@ -141,8 +167,6 @@ def shot_publication(store: LayerStore) -> None:
     load_sample(app, "south_america_beetles.csv", group_by="Genus")
     app.panel.continent_var.set("South America")
     app.on_continent()
-    app.panel.orientation_var.set("Portrait")
-    app.on_orientation()
     app.panel.basemap_var.set("relief")
     app.on_basemap()
 
@@ -157,6 +181,8 @@ def shot_publication(store: LayerStore) -> None:
     root.after(500, grab_and_accept)
     app.on_combine_columns()
     app.on_publication_style()
+    # After the style, so nothing it applies can move the legend back.
+    set_legend_location(app, "lower left")
     select_tab(app.panel, "Data")
     app.canvas.draw()
     grab_window(root, OUT_DIR / "app_publication.png")
