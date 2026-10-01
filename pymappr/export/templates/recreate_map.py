@@ -550,6 +550,10 @@ def draw_labels(ax, fig):
 
 METRES_PER_MILE = 1609.344
 _NICE = (1.0, 2.0, 3.0, 5.0)
+# Half the width of the triangle compass at size 1, in axes fraction, and
+# of the arrow's bold "N", in ems.
+COMPASS_TRIANGLE_HALF_WIDTH = 0.016
+COMPASS_N_HALF_WIDTH_EM = 0.425
 
 
 @functools.lru_cache(maxsize=None)
@@ -658,25 +662,43 @@ def draw_compass(ax):
     x, y = corner_anchor(COMPASS["position"], pad=0.025)
     size = max(float(COMPASS["size"]), 0.1)
     color = COMPASS["color"]
+    triangle = COMPASS["style"] == "triangle"
+    fontsize = (10 if triangle else 11) * size
+    # North is up the page in every corner: the head (or tip) sits *reach*
+    # above the "N". In a top corner the head is at the anchor and the
+    # compass hangs below it; in a bottom corner the "N" rests on the
+    # anchor, lifted by half its height (in points, as fonts are).
     reach = 0.07 * size
-    tail_y = y - reach if y > 0.5 else y + reach
-    if COMPASS["style"] == "triangle":
-        half = 0.016 * size
-        up = y > tail_y
-        base = tail_y + (0.02 * size if up else -0.02 * size)
+    top = y if y > 0.5 else y + reach
+    lift = 0.0 if y > 0.5 else 0.5 * fontsize
+    # Grown past size 1, the compass grows inwards, so its outer edge stays
+    # where size 1 puts it, inside the map.
+    inwards = -1.0 if x > 0.5 else 1.0
+    growth = max(size - 1.0, 0.0)
+    shift = 0.0
+    if triangle:
+        x += inwards * COMPASS_TRIANGLE_HALF_WIDTH * growth
+    else:
+        shift = inwards * COMPASS_N_HALF_WIDTH_EM * 11 * growth
+    coords = ax.transAxes + mtransforms.ScaledTranslation(
+        shift / 72, lift / 72, ax.figure.dpi_scale_trans)
+    if triangle:
+        half = COMPASS_TRIANGLE_HALF_WIDTH * size
+        label_y = top - reach
+        base = label_y + 0.02 * size
         ax.add_patch(Polygon(
-            [(x, y), (x - half, base), (x + half, base)], closed=True,
-            transform=ax.transAxes, facecolor=color, edgecolor="white",
+            [(x, top), (x - half, base), (x + half, base)], closed=True,
+            transform=coords, facecolor=color, edgecolor="white",
             linewidth=0.8 * size, zorder=Z_COMPASS, clip_on=False))
-        ax.text(x, tail_y, "N", transform=ax.transAxes, ha="center",
-                va="center", fontsize=10 * size, fontweight="bold",
+        ax.text(x, label_y, "N", transform=coords, ha="center",
+                va="center", fontsize=fontsize, fontweight="bold",
                 color=color, path_effects=LABEL_HALO, zorder=Z_COMPASS,
                 clip_on=False)
         return
     ax.annotate(
-        "N", xy=(x, y), xytext=(x, tail_y),
-        xycoords="axes fraction", textcoords="axes fraction",
-        ha="center", va="center", fontsize=11 * size, fontweight="bold",
+        "N", xy=(x, top), xytext=(x, top - reach),
+        xycoords=coords, textcoords=coords,
+        ha="center", va="center", fontsize=fontsize, fontweight="bold",
         color=color, path_effects=LABEL_HALO, zorder=Z_COMPASS,
         annotation_clip=False,
         arrowprops=dict(arrowstyle="-|>,head_width=0.28,head_length=0.55",

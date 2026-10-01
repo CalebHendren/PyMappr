@@ -1448,6 +1448,106 @@ def test_python_recovers_from_a_failed_extraction(tmp_path):
     assert not (tmp_path / "ne_110m_land.part").exists()
 
 
+# ------------------------------------------------------------ the compass
+
+CORNER_NAMES = ["upper left", "upper right", "lower left", "lower right"]
+
+
+def drawn_python_compass(position, style, size=1.0, figsize=(9, 6.5)):
+    """The exported script's compass on an Agg figure: the axes, the
+    annotation or triangle patch, and the "N"."""
+    matplotlib = pytest.importorskip("matplotlib")
+    matplotlib.use("Agg")
+    state = make_state(map={"compass_options": {
+        "position": position, "style": style, "size": size}})
+    ns = exec_python(codegen.generate_code(state, [], "Python"))
+    from matplotlib.backends.backend_agg import FigureCanvasAgg
+    fig = matplotlib.figure.Figure(figsize=figsize)
+    FigureCanvasAgg(fig)
+    ax = fig.add_axes([0.05, 0.05, 0.9, 0.9])
+    ns["draw_compass"](ax)
+    fig.canvas.draw()
+    return fig, ax
+
+
+def _display(ax, coords, xy):
+    transform = ax.transAxes if coords == "axes fraction" else coords
+    return transform.transform(xy)
+
+
+@pytest.mark.parametrize("position", CORNER_NAMES)
+def test_python_compass_arrow_points_north_in_every_corner(position):
+    _fig, ax = drawn_python_compass(position, "arrow")
+    annotation, = ax.texts
+    head = _display(ax, annotation.xycoords, annotation.xy)
+    label = _display(ax, annotation.anncoords, annotation.xyann)
+    assert head[1] > label[1]
+    assert head[0] == pytest.approx(label[0])
+    if position.startswith("upper"):  # top corners are unchanged
+        assert annotation.xy == pytest.approx(
+            (0.025 if "left" in position else 0.975, 0.975))
+
+
+@pytest.mark.parametrize("position", CORNER_NAMES)
+def test_python_compass_triangle_points_north_in_every_corner(position):
+    _fig, ax = drawn_python_compass(position, "triangle")
+    triangle, = ax.patches
+    label, = ax.texts
+    tip, *base = triangle.get_transform().transform(triangle.get_xy()[:3])
+    assert all(tip[1] > corner[1] for corner in base)
+    assert label.get_window_extent().y1 <= min(c[1] for c in base) + 1.0
+
+
+@pytest.mark.parametrize("style", ["arrow", "triangle"])
+@pytest.mark.parametrize("position", CORNER_NAMES)
+def test_python_compass_stays_inside_the_map(position, style):
+    fig, ax = drawn_python_compass(position, style, size=3.0,
+                                   figsize=(5, 4))
+    renderer = fig.canvas.get_renderer()
+    frame = ax.bbox
+    for artist in [*ax.texts, *ax.patches]:
+        box = artist.get_window_extent(renderer)
+        assert box.x0 >= frame.x0 - 1 and box.x1 <= frame.x1 + 1
+        assert box.y0 >= frame.y0 - 1 and box.y1 <= frame.y1 + 1
+
+
+@pytest.mark.parametrize("style", ["arrow", "triangle"])
+@pytest.mark.parametrize("position", CORNER_NAMES)
+def test_r_compass_points_north_in_every_corner(tmp_path, position, style):
+    state = make_state(map={"compass_options": {
+        "position": position, "style": style, "size": 3.0}})
+    code = codegen.generate_code(state, [], "R")
+    run_r_harness(tmp_path, code, """
+layers <- compass_layers()
+geoms <- vapply(layers, function(l) class(l$geom)[1], character(1))
+label <- layers[[which(geoms == "GeomText")]]$data
+frac <- function(x, y) {
+  c((x - VIEW[1]) / (VIEW[2] - VIEW[1]), (y - VIEW[3]) / (VIEW[4] - VIEW[3]))
+}
+n <- frac(label$x, label$y)
+if (COMPASS$style == "triangle") {
+  poly <- layers[[which(geoms == "GeomPolygon")]]$data
+  tip <- frac(poly$x[1], poly$y[1])
+  base <- frac(poly$x[2:3], poly$y[2:3])
+  stopifnot(tip[2] > max(base[3:4]), max(base[3:4]) > n[2])
+  xs <- c(poly$x, label$x)
+} else {
+  seg <- layers[[which(geoms == "GeomSegment")]]$data
+  start <- frac(seg$x, seg$y)
+  head <- frac(seg$xend, seg$yend)
+  stopifnot(head[2] > start[2], start[2] > n[2], head[1] == n[1])
+  xs <- c(seg$x, label$x)
+}
+# Grown to size 3, it still sits inside the frame.
+fx <- (xs - VIEW[1]) / (VIEW[2] - VIEW[1])
+stopifnot(all(fx > 0), all(fx < 1), n[2] > 0)
+if (startsWith(COMPASS$position, "upper")) {
+  top <- if (COMPASS$style == "triangle") tip[2] else head[2]
+  stopifnot(abs(top - 0.975) < 1e-9)
+}
+""")
+
+
 # ------------------------------- running whole exported R scripts (opt-in)
 #
 # These run a generated script's main() end to end with real R, sf and

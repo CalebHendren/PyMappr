@@ -765,44 +765,61 @@ scale_bar_layers <- function() {
   layers
 }
 
+# Half the width of the triangle compass at size 1, in panel fraction, and
+# of the arrow's bold "N", in ems.
+COMPASS_TRIANGLE_HALF_WIDTH <- 0.016
+COMPASS_N_HALF_WIDTH_EM <- 0.425
+
 compass_layers <- function() {
   if (!isTRUE(COMPASS$show)) return(list())
   anchor <- corner_anchor(COMPASS$position, pad = 0.025)
   x <- anchor[1]
   y <- anchor[2]
   size <- max(COMPASS$size, 0.1)
+  triangle <- identical(COMPASS$style, "triangle")
+  fontsize <- (if (triangle) 10 else 11) * size
+  # North is up the page in every corner: the head (or tip) sits `reach`
+  # above the "N". In a top corner the head is at the anchor and the
+  # compass hangs below it; in a bottom corner the "N" rests on the anchor,
+  # lifted by half its height (points, as fonts are, over the panel size).
   reach <- 0.07 * size
-  # The arrow runs downwards from the anchor at the top of the map and
-  # upwards at the bottom, so it never points off the panel.
-  tail_y <- if (y > 0.5) y - reach else y + reach
-  tip <- axes_to_data(x, y)
-  tail <- axes_to_data(x, tail_y)
-  if (identical(COMPASS$style, "triangle")) {
-    half <- 0.016 * size
-    up <- y > tail_y
-    base_y <- tail_y + (if (up) 0.02 * size else -0.02 * size)
+  top <- if (y > 0.5) y else y + reach + 0.5 * fontsize / 72 / FIGSIZE[2]
+  label_y <- top - reach
+  # Grown past size 1, the compass grows inwards, so its outer edge stays
+  # where size 1 puts it, inside the map.
+  inwards <- if (x > 0.5) -1 else 1
+  growth <- max(size - 1, 0)
+  if (triangle) {
+    x <- x + inwards * COMPASS_TRIANGLE_HALF_WIDTH * growth
+  } else {
+    x <- x + inwards * COMPASS_N_HALF_WIDTH_EM * 11 * growth / 72 /
+      FIGSIZE[1]
+  }
+  tip <- axes_to_data(x, top)
+  label <- axes_to_data(x, label_y)
+  if (triangle) {
+    half <- COMPASS_TRIANGLE_HALF_WIDTH * size
+    base_y <- label_y + 0.02 * size
     b1 <- axes_to_data(x - half, base_y)
     b2 <- axes_to_data(x + half, base_y)
     return(list(
       annotate("polygon", x = c(tip[1], b1[1], b2[1]),
                y = c(tip[2], b1[2], b2[2]), fill = COMPASS$color,
                colour = "white", linewidth = 0.28 * size),
-      annotate("text", x = tail[1], y = tail[2], label = "N",
-               fontface = "bold", size = 10 * size / 2.845,
+      annotate("text", x = label[1], y = label[2], label = "N",
+               fontface = "bold", size = fontsize / 2.845,
                colour = COMPASS$color)))
   }
   # Start the shaft clear of the "N", the way the app's shrinkA does.
-  shrink <- 0.014 * size
-  start_y <- tail_y + sign(y - tail_y) * shrink
-  start <- axes_to_data(x, start_y)
+  start <- axes_to_data(x, label_y + 0.014 * size)
   list(
     annotate("segment", x = start[1], y = start[2],
              xend = tip[1], yend = tip[2],
              arrow = grid::arrow(length = grid::unit(0.16 * size, "cm"),
                                  type = "closed"),
              colour = COMPASS$color, linewidth = 0.5 * size),
-    annotate("text", x = tail[1], y = tail[2], label = "N",
-             fontface = "bold", size = 11 * size / 2.845,
+    annotate("text", x = label[1], y = label[2], label = "N",
+             fontface = "bold", size = fontsize / 2.845,
              colour = COMPASS$color))
 }
 
