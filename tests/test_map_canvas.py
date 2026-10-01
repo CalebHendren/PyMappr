@@ -6,6 +6,7 @@ display (a headless Linux runner, typically).
 
 from __future__ import annotations
 
+import sys
 import time
 import tkinter as tk
 from types import SimpleNamespace
@@ -90,6 +91,14 @@ def test_later_burst_is_debounced_again(tk_root, canvas):
     assert canvas.applied == [(620, 400)]
 
 
+def _wait(root, ms):
+    """Run Tk's event loop for *ms* milliseconds."""
+    deadline = time.monotonic() + ms / 1000
+    while time.monotonic() < deadline:
+        root.update()
+        time.sleep(0.005)
+
+
 def test_the_held_picture_is_centred_on_whole_pixels(tk_root, canvas):
     # As matplotlib places it, so the held picture does not jump half a
     # pixel when the real resize lands.
@@ -97,3 +106,20 @@ def test_the_held_picture_is_centred_on_whole_pixels(tk_root, canvas):
     _resize(canvas, 401, 301)
     assert canvas._tkcanvas.coords(canvas._tkcanvas_image_region) == [
         200.0, 150.0]
+
+
+@pytest.mark.skipif(sys.platform == "darwin",
+                    reason="Tk reports no pixel ratio on macOS")
+def test_a_pixel_ratio_resize_cancels_a_waiting_one(tk_root, canvas):
+    # Mapping the window on a screen of another scale resizes the figure
+    # straight away; a resize still waiting from before must not land on
+    # top of it with a stale size.
+    _resize(canvas, 400, 300)
+    _resize(canvas, 420, 310)
+    assert canvas._resize_after_id is not None
+    canvas.applied.clear()
+    canvas._device_pixel_ratio = 3.0          # as if the scale had changed
+    canvas._update_device_pixel_ratio()
+    assert canvas._resize_after_id is None
+    _wait(tk_root, 4 * canvas.RESIZE_DELAY_MS)
+    assert (420, 310) not in canvas.applied

@@ -44,10 +44,23 @@ class DebouncedFigureCanvasTkAgg(FigureCanvasTkAgg):
         # redraw until the drag settles.
         self._tkcanvas.coords(self._tkcanvas_image_region,
                               int(width / 2), int(height / 2))
-        if self._resize_after_id is not None:
-            self._tkcanvas.after_cancel(self._resize_after_id)
+        self._cancel_pending_resize()
         self._resize_after_id = self._tkcanvas.after(
             self.RESIZE_DELAY_MS, self._apply_resize, width, height)
+
+    def _set_device_pixel_ratio(self, ratio):
+        # A new pixel ratio (the window mapped on a screen of another scale)
+        # resizes the figure at once, so a resize still waiting would land
+        # afterwards with a stale size.
+        changed = super()._set_device_pixel_ratio(ratio)
+        if changed:
+            self._cancel_pending_resize()
+        return changed
+
+    def _cancel_pending_resize(self):
+        if self._resize_after_id is not None:
+            self._tkcanvas.after_cancel(self._resize_after_id)
+            self._resize_after_id = None
 
     def _apply_resize(self, width, height):
         self._resize_after_id = None
