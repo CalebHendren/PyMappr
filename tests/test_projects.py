@@ -119,10 +119,38 @@ def test_list_rename_delete_projects(tmp_path):
     assert [p.stem for p in projects.list_projects(tmp_path)] == ["Renamed"]
 
 
+def test_rename_project_to_reserved_name(tmp_path):
+    # Renaming a project to a Windows reserved device name applies the
+    # safe_filename guard, so AUX becomes AUX_.pymappr
+    path = tmp_path / ("Original" + projects.PROJECT_EXTENSION)
+    projects.save_project(path, "Original", {})
+
+    renamed = projects.rename_project(path, "AUX")
+    assert renamed.stem == "AUX_"
+    assert renamed.suffix == projects.PROJECT_EXTENSION
+    assert renamed.exists()
+    assert not path.exists()
+
+
 def test_safe_filename():
     assert projects.safe_filename('sp: "wolf/spider"?') == "sp_ _wolf_spider__"
     assert projects.safe_filename("  ") == "Untitled"
     assert projects.safe_filename("plain name") == "plain name"
+
+
+def test_safe_filename_guards_reserved_names():
+    # Windows reserved device names get an underscore inserted after the
+    # part before the first dot, so they can be used as project names.
+    assert projects.safe_filename('CON') == 'CON_'
+    assert projects.safe_filename('com1') == 'com1_'
+    assert projects.safe_filename('NUL.tar') == 'NUL_.tar'
+    assert projects.safe_filename('prn') == 'prn_'
+    assert projects.safe_filename('aux') == 'aux_'
+    assert projects.safe_filename('lpt1') == 'lpt1_'
+    # Non-reserved names with reserved prefix are unchanged
+    assert projects.safe_filename('Console') == 'Console'
+    assert projects.safe_filename('CONTRACT') == 'CONTRACT'
+    assert projects.safe_filename('Communion') == 'Communion'
 
 
 def test_settings_and_projects_dir(tmp_path, monkeypatch):

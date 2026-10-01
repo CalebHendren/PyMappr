@@ -212,9 +212,12 @@ def build_dataset(frame: pd.DataFrame, mapping: ColumnMapping,
     lats, lat_errors = _parse_column(frame[mapping.latitude],
                                      parse_latitude, 90.0)
     bad = frame.index.isin(set(lon_errors) | set(lat_errors))
-    # 1-based, plus the header row; the longitude error wins, as it is the
-    # one a person reading the row left to right meets first.
-    skipped = [f"row {idx + 2}: {lon_errors.get(idx) or lat_errors[idx]}"
+    # 1-based row numbering: add 2 if headers are used (row 1 is headers,
+    # data starts at row 2), add 1 if no headers (data starts at row 1).
+    # The longitude error wins, as it is the one a person reading the row
+    # left to right meets first.
+    offset = 2 if mapping.use_headers else 1
+    skipped = [f"row {idx + offset}: {lon_errors.get(idx) or lat_errors[idx]}"
                for idx in frame.index[bad]]
 
     keys = [f"name{i + 1}" for i in range(len(name_cols))]

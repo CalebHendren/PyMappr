@@ -127,6 +127,37 @@ def test_bad_rows_skipped_and_reported(tmp_path):
     assert "row 5" in ds.skipped[1]
 
 
+def test_row_numbers_with_headers(tmp_path):
+    # With headers=True (the default), row numbering includes the header row.
+    # A bad row at index 1 (the second data row) reports as "row 3".
+    path = write(tmp_path, """\
+        Longitude,Latitude
+        -97.7,30.3
+        bad,bad
+    """)
+    frame = read_table(path)
+    mapping = ColumnMapping(longitude="Longitude", latitude="Latitude",
+                           names=[], use_headers=True)
+    ds = build_dataset(frame, mapping)
+    assert len(ds.skipped) == 1
+    assert "row 3" in ds.skipped[0]
+
+
+def test_row_numbers_without_headers(tmp_path):
+    # Without headers (use_headers=False), row numbering starts at 1 with no
+    # header offset. A bad row at index 0 (the first data row) reports as "row 1".
+    path = write(tmp_path, """\
+        bad,bad
+        -97.7,30.3
+    """)
+    frame = read_table(path, headers=False)
+    mapping = ColumnMapping(longitude="Column 1", latitude="Column 2",
+                           names=[], use_headers=False)
+    ds = build_dataset(frame, mapping)
+    assert len(ds.skipped) == 1
+    assert "row 1" in ds.skipped[0]
+
+
 def test_explicit_mapping_overrides_guess(tmp_path):
     path = write(tmp_path, """\
         ignored,x,y
