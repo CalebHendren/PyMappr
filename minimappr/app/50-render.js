@@ -4,6 +4,8 @@ function setAttrs(e, attrs){ for(const k in attrs) e.setAttribute(k, attrs[k]); 
 function el(tag, attrs){ const e=document.createElementNS(svgNS,tag); return attrs ? setAttrs(e, attrs) : e; }
 function clearNode(node){ while(node.firstChild) node.removeChild(node.firstChild); }
 let sceneSize={w:0,h:0};
+let stageNotes=[];
+let pointXY=[];   // screen positions of the drawn points, for the "Best" legend spot
 
 // Follow one pointer (mouse, pen or finger) from pointerdown until it lifts.
 // Capturing it keeps the moves coming to `node` when the pointer leaves it.
@@ -66,8 +68,8 @@ const rowsIds=new WeakMap(); let nextRowsId=1;
 function rowsId(rows){ let id=rowsIds.get(rows); if(!id) rowsIds.set(rows, id=nextRowsId++); return id; }
 
 function renderNow(){
-  const stage=$("#stage");
-  const W=stage.clientWidth, H=stage.clientHeight;
+  const wrap=$("#mapwrap");
+  const W=wrap.clientWidth, H=wrap.clientHeight;
   sceneSize={w:W,h:H};
   svg.setAttribute("viewBox",`0 0 ${W} ${H}`);
   svg.setAttribute("width",W); svg.setAttribute("height",H);
@@ -80,10 +82,12 @@ function renderNow(){
   const path = d3.geoPath(proj);
   const [[rx0,ry0],[rx1,ry1]] = rect;
   const rw=rx1-rx0, rh=ry1-ry0;
+  // Warnings gathered while drawing, for the status line.
+  stageNotes=[];
   const useRect = silhouetteIsRect();
   const pd = currentProjDef();
   const projKey = JSON.stringify([opts.projection, opts.extent, opts.centerLon, opts.centerLat,
-    opts.orientation, W, H, view]);
+    opts.orientation, W, H, view, rect]);
   const sphereD = useRect ? "" : cachedPath(projKey, "sphere", ()=>path({type:"Sphere"}));
 
   // background (mat), and the clip for everything inside the map rectangle
@@ -102,9 +106,10 @@ function renderNow(){
       ? el("rect",{x:rx0,y:ry0,width:rw,height:rh,fill:oceanFill,stroke:"none"})
       : el("path",{d:sphereD, fill:oceanFill, stroke:"none"}));
     if(opts.graticule>0){
-      const step=opts.graticule;
+      // Lines run to the projection's latitude limit, not d3's default 80.
+      const step=opts.graticule, ml=pd.maxLat;
       base.appendChild(el("path",{d:cachedPath(projKey, "grat"+step,
-          ()=>path(d3.geoGraticule().step([step,step])())),
+          ()=>path(d3.geoGraticule().extentMinor([[-180,-ml],[180,ml]]).step([step,step])())),
         fill:"none", stroke:"#9aa3ac", "stroke-width":0.5, "stroke-opacity":0.7}));
     }
     if(opts.showLand){
@@ -125,14 +130,18 @@ function renderNow(){
   // points: one <g> per style carries the colour, opacity and stroke, and the
   // marker outline is built once per group; each point is a translated path.
   const visible=datasets.filter(d=>d.visible);
-  const resolved=visible.map(ds=>({ds, res:resolveGroups(ds)}));
+  const offsets=paletteOffsets();
+  const resolved=visible.map(ds=>({ds, res:resolveGroups(ds, offsets.get(ds.id))}));
+  const warning=legendWarning(visible.filter(d=>d.rows.length));
+  if(warning) stageNotes.push(warning);
   const edge=opts.pointEdgeWidth>0 ? opts.pointEdgeColor : null;
-  const pKey=JSON.stringify([projKey, opts.labels, edge, opts.pointEdgeWidth, resolved.map(({ds,res})=>[
+  const pKey=JSON.stringify([projKey, opts.labels, edge, opts.pointEdgeWidth, filterSig(), resolved.map(({ds,res})=>[
     rowsId(ds.rows), ds.rows.length, ds.groupBy, ds.colorBy, ds.symbolBy, ds.opacity ?? 1,
     res.groups.map(g=>[g.rows.length, g.style.color, g.style.marker, g.style.size])])]);
   if(pKey!==pointsKey){
     pointsKey=pKey;
     const ptsG=layers.points; clearNode(ptsG);
+    pointXY=[];
     // Labels sit on a white halo (a stroked copy underneath, which every SVG
     // editor draws, unlike paint-order) so they read over borders and coasts.
     const haloG=el("g",{"font-family":"sans-serif","font-size":10,fill:"#ffffff",stroke:"#ffffff",
@@ -156,6 +165,7 @@ function renderNow(){
           // than draw them under the clip.
           if(xy[0]<rx0-r_ || xy[0]>rx1+r_ || xy[1]<ry0-r_ || xy[1]>ry1+r_) continue;
           g.appendChild(el("path",{d, transform:`translate(${xy[0].toFixed(2)},${xy[1].toFixed(2)})`}));
+          pointXY.push(xy);
           if(opts.labels && r.label){
             const t=el("text",{x:(xy[0]+r_+2).toFixed(2), y:(xy[1]+3).toFixed(2)});
             t.textContent=r.label; labelsG.appendChild(t);
@@ -179,10 +189,13 @@ function renderNow(){
     }
     // Counts belong on the row text here too - reading opts.legCounts only
     // in the attribute branch is what used to make "Show point counts" do
-    // nothing at all in plain Group-by mode.
+    // nothing at all in plain Group-by mode. They count what is drawn, so
+    // they follow the filter.
     const total=res.groups.reduce((a,g)=>a+g.rows.length,0);
     const sizes={}, place={}, first={};
     let rows=res.groups.map((grp,i)=>{
+      // A group the filter emptied has nothing on the map to describe.
+      if(!grp.rows.length) return null;
       const o=ds.overrides[rowKey("group",grp.label)];
       // Hidden rows keep their points on the map but leave the legend.
       if(isHidden(o)) return null;
@@ -214,13 +227,18 @@ function renderNow(){
   overlay.appendChild(useRect || isZoomed()
     ? el("rect",{x:rx0,y:ry0,width:rw,height:rh,fill:"none",stroke:"#5a6068","stroke-width":1})
     : el("path",{d:sphereD, fill:"none", stroke:"#5a6068","stroke-width":1}));
+  if(gridLabelsShown()) drawGridLabels(overlay, proj, rect);
   if(opts.title){
-    const t=el("text",{x:W/2, y:26, "text-anchor":"middle","font-family":"sans-serif",
+    const t=el("text",{x:(rx0+rx1)/2, y:26, "text-anchor":"middle","font-family":"sans-serif",
       "font-size":19,"font-weight":700,fill:"#1d2127"});
     t.textContent=opts.title; overlay.appendChild(t);
   }
   if(opts.compass) drawCompass(overlay, rect, legendBox);
+  scaleBarNote=null;
   if(opts.scaleBar) drawScaleBar(overlay, proj, rect, legendBox);
+  // A bar that silently fails to appear is worse than one that says why.
+  if(scaleBarNote) stageNotes.push(scaleBarNote);
+  syncControlStates();
 
   updateSwatches(resolved);
   $("#emptyHint").style.display = visible.some(d=>d.rows.length) ? "none":"block";
@@ -228,63 +246,51 @@ function renderNow(){
   scheduleSave();
 }
 
+// PyMappr's tick labels: 30°W, 10°S, 0°, 180°. Mirrors format_lon/format_lat.
+function formatLon(v){
+  v=((v+180)%360+360)%360-180;
+  const a=Number(Math.abs(v).toFixed(6));
+  return (v===0 || a===180) ? `${a}°` : `${a}°${v<0?"W":"E"}`;
+}
+function formatLat(v){
+  const a=Number(Math.abs(v).toFixed(6));
+  return v===0 ? "0°" : `${a}°${v<0?"S":"N"}`;
+}
+// Degree labels and ticks along the bottom and left of the frame: a tick on
+// every grid line, and a label on every line when they fit, otherwise on a
+// round multiple of the spacing (every 30° on a 1° grid, say).
+const LABEL_STEPS=[1,2,5,10,15,20,30,45,60,90,180];
+function drawGridLabels(parent, proj, rect){
+  const [[x0,y0],[x1,y1]]=rect, step=opts.graticule, fs=10;
+  const g=el("g",{"font-family":"sans-serif","font-size":fs, fill:"#3d444b"});
+  const ticks=[];
+  const pxPerDeg=Math.abs(proj([1,0])[0]-proj([0,0])[0]);
+  const labelStep=needPx=>LABEL_STEPS.find(s=>s%step===0 && s*pxPerDeg>=needPx) || 180;
+  const lonStep=labelStep(textWidth("180°W", fs, "sans-serif")+8);
+  for(let lon=-180; lon<=180+1e-9; lon+=step){
+    const x=proj([lon,0])[0];
+    if(x<x0-0.5 || x>x1+0.5) continue;
+    ticks.push(`M${x.toFixed(2)},${y1}v4`);
+    if(Math.round(lon)%lonStep!==0) continue;
+    const t=el("text",{x:x.toFixed(2), y:(y1+4+fs).toFixed(2), "text-anchor":"middle"});
+    t.textContent=formatLon(lon); g.appendChild(t);
+  }
+  const latStep=labelStep(fs+4);
+  for(let lat=-90; lat<=90+1e-9; lat+=step){
+    const y=proj([0,lat])[1];
+    if(y<y0-0.5 || y>y1+0.5) continue;
+    ticks.push(`M${x0},${y.toFixed(2)}h-4`);
+    if(Math.round(lat)%latStep!==0) continue;
+    const t=el("text",{x:x0-6, y:(y+fs*0.35).toFixed(2), "text-anchor":"end"});
+    t.textContent=formatLat(lat); g.appendChild(t);
+  }
+  g.appendChild(el("path",{d:ticks.join(""), stroke:"#5a6068", "stroke-width":1, fill:"none"}));
+  parent.appendChild(g);
+}
+
 // Whether two {x,y,w,h} boxes overlap.
 function boxesMeet(a, b){
   return !!(a && b) && a.x<b.x+b.w && b.x<a.x+a.w && a.y<b.y+b.h && b.y<a.y+a.h;
-}
-
-// The north arrow sits top right, or top left when the legend is there.
-function drawCompass(parent, rect, avoid){
-  const [[x0,y0],[x1]] = rect;
-  let cx=x1-26;
-  const cy=y0+34;
-  if(boxesMeet({x:cx-12, y:cy-38, w:24, h:56}, avoid)) cx=x0+26;
-  const g=el("g");
-  g.appendChild(el("line",{x1:cx,y1:cy+16,x2:cx,y2:cy-14,stroke:"#1a1a1a","stroke-width":1.6}));
-  g.appendChild(el("path",{d:poly([[cx,cy-20],[cx-4,cy-11],[cx+4,cy-11]]),fill:"#1a1a1a"}));
-  const t=el("text",{x:cx,y:cy-24,"text-anchor":"middle","font-family":"sans-serif",
-    "font-size":13,"font-weight":700,fill:"#1a1a1a"}); t.textContent="N";
-  g.appendChild(t); parent.appendChild(g);
-}
-
-// A scale bar of a round length (1, 2 or 5 x 10^n km) near a fifth of the
-// frame width. Projections stretch distances, so it is measured across the
-// centre of the frame and holds there; the globe gets none. Bottom left,
-// clear of the on-screen status bar, or bottom right when the legend is in
-// the way.
-const EARTH_KM=6371.0088;
-function drawScaleBar(parent, proj, rect, avoid){
-  if(currentProjDef().globe || !proj.invert) return;
-  const [[x0,y0],[x1,y1]]=rect;
-  const cx=(x0+x1)/2, cy=(y0+y1)/2, half=50;
-  const a=proj.invert([cx-half,cy]), b=proj.invert([cx+half,cy]);
-  if(!a || !b || ![...a,...b].every(Number.isFinite)) return;
-  const kmPerPx=d3.geoDistance(a,b)*EARTH_KM/(2*half);
-  if(!(kmPerPx>0) || !Number.isFinite(kmPerPx)) return;
-  const target=(x1-x0)*0.2*kmPerPx;
-  const pow=10**Math.floor(Math.log10(target));
-  const km=Number(([5,2,1].map(m=>m*pow).find(v=>v<=target)||pow).toPrecision(2));
-  const len=km/kmPerPx;
-  const label=km.toLocaleString("en-US")+" km";
-  const labelW=textWidth(label, 11, "sans-serif", false, false);
-  const w=Math.max(len, labelW), h=24, by=y1-30;
-  let bx=x0+14;
-  if(boxesMeet({x:bx, y:by-h+6, w, h}, avoid)) bx=x1-14-w;
-  const x=bx+(w-len)/2;
-  const bar=`M${x.toFixed(2)},${(by-5).toFixed(2)}V${by.toFixed(2)}H${(x+len).toFixed(2)}V${(by-5).toFixed(2)}`;
-  const g=el("g");
-  // a white halo under the bar and the label keeps both legible on any fill
-  g.appendChild(el("path",{d:bar, fill:"none", stroke:"#ffffff", "stroke-width":4,
-    "stroke-opacity":0.85, "stroke-linejoin":"round", "stroke-linecap":"round"}));
-  g.appendChild(el("path",{d:bar, fill:"none", stroke:"#1a1a1a", "stroke-width":1.4,
-    "stroke-linejoin":"miter"}));
-  for(const halo of [true,false]){
-    const t=el("text",{x:(x+len/2).toFixed(2), y:(by-9).toFixed(2), "text-anchor":"middle",
-      "font-family":"sans-serif", "font-size":11, fill:halo?"#ffffff":"#1a1a1a"});
-    if(halo) setAttrs(t, {stroke:"#ffffff", "stroke-width":3, "stroke-opacity":0.85, "stroke-linejoin":"round"});
-    t.textContent=label; g.appendChild(t);
-  }
-  parent.appendChild(g);
 }
 
 function legendItems(entries, attrLegends){
@@ -301,8 +307,14 @@ function legendItems(entries, attrLegends){
   for(const {ds,res} of attrLegends){
     const prefix=(manyDatasets && opts.legDatasetPrefix) ? ds.name+": " : "";
     // Ordering by count needs the numbers even when they are not shown.
+    // Like the rows, they follow the filter.
     const counts=(opts.legCounts||ordersByCount())
-      ? legendCounts(ds.rows,res.colorKey,res.symbolKey) : null;
+      ? legendCounts(res.shown,res.colorKey,res.symbolKey) : null;
+    // The values still on the map under a filter; null means no filtering,
+    // which the nested key treats differently from "all happen to show".
+    const shownOf=key=>(res.filtering && key) ? new Set(res.shown.map(r=>r._attr[key]??"")) : null;
+    const shownColors=shownOf(res.colorKey), shownSymbols=shownOf(res.symbolKey);
+    const isShown=(set,v)=>!set || set.has(v);
     const total=counts?counts["_total"]:0;
     const countOf=key=>(counts&&counts[key])||0;
     const lab=(v,key,o)=>legendLabel(overrideLabel(o)||v, counts?counts[key]:null, total);
@@ -325,20 +337,24 @@ function legendItems(entries, attrLegends){
       // to work out which colour each symbol goes with by hunting the map.
       const kidsOf=childrenByOwner(res);
       const rows=[];
-      // Every colour group is listed. MiniMappr has no filter, so the only
-      // way a group ends up childless is forced nesting, where each symbol
-      // is claimed by the first group it appears under - and dropping those
-      // would take colours off the legend that are still drawn on the map.
       const parents=ordered(Object.keys(res.colorMap),
         cv=>rowKey("color",cv), v=>countKey("c",v));
       for(const cv of parents){
         const color=res.colorMap[cv];
         const parentOverride=ov(rowKey("color",cv));
+        if(!isShown(shownColors,cv)) continue;
+        const shownKids=(kidsOf.get(cv)||[]).filter(sv=>isShown(shownSymbols,sv));
+        // A childless group means the filter hid everything inside it, so it
+        // goes too - but only while a filter is running. Forcing nesting onto
+        // crossed columns also leaves groups childless, because each symbol
+        // is claimed by the first group it appears under; dropping those
+        // would take colours off the legend that are still drawn on the map.
+        if(!shownKids.length && shownSymbols && !opts.legEmptyGroups) continue;
         // Hiding a group hides the block it heads: its children are drawn in
         // its colour, so leaving them behind would orphan them.
         if(isHidden(parentOverride)) continue;
         const kids=ordered(
-          kidsOf.get(cv)||[],
+          shownKids,
           sv=>rowKey("pair",cv,sv), k=>countKey("p",cv,k))
           .filter(sv=>!isHidden(ov(rowKey("pair",cv,sv))));
         rows.push({label:lab(cv,countKey("c",cv),parentOverride), depth:0,
@@ -355,7 +371,8 @@ function legendItems(entries, attrLegends){
     // Genuinely crossed: a shape really does appear in every colour here, so
     // the neutral symbol swatches are honest and the two keys stay separate.
     if(Object.keys(res.colorMap).length){
-      const values=ordered(Object.keys(res.colorMap), v=>rowKey("color",v), v=>countKey("c",v))
+      const values=ordered(Object.keys(res.colorMap).filter(v=>isShown(shownColors,v)),
+        v=>rowKey("color",v), v=>countKey("c",v))
         .filter(v=>!isHidden(ov(rowKey("color",v))));
       const rows=values.map(v=>({label:lab(v,countKey("c",v),ov(rowKey("color",v))), colorOnly:true,
         style:applyOverride({color:res.colorMap[v],marker:"Circle",size:ds.base.size},
@@ -363,7 +380,8 @@ function legendItems(entries, attrLegends){
       if(rows.length) sections.push({title:sectionTitle(prefix,res.colorKey||"Colour"), rows});
     }
     if(Object.keys(res.symbolMap).length){
-      const values=ordered(Object.keys(res.symbolMap), v=>rowKey("symbol",v), v=>countKey("s",v))
+      const values=ordered(Object.keys(res.symbolMap).filter(v=>isShown(shownSymbols,v)),
+        v=>rowKey("symbol",v), v=>countKey("s",v))
         .filter(v=>!isHidden(ov(rowKey("symbol",v))));
       const rows=values.map(v=>({label:lab(v,countKey("s",v),ov(rowKey("symbol",v))), symbolOnly:true,
         style:applyOverride({color:opts.legSymbolColor,marker:res.symbolMap[v],size:ds.base.size},
@@ -472,7 +490,7 @@ function drawLegend(parent, W, H, entries, attrLegends){
   const font=opts.legFontFamily||"sans-serif";
   const titleFs=opts.legTitleFont||fs;
   const pad=opts.legPad, gap=opts.legSwatchGap;
-  const rowH=fs*(1.05+opts.legRowSpacing), swW=fs*1.7*scale;
+  const rowH=fs*(1.05+opts.legRowSpacing), swW=fs*opts.legSwatchWidth*scale;
   const g=el("g"); g.style.cursor="move";
 
   // A nested key's group rows head a block of children, so they take the
@@ -480,7 +498,7 @@ function drawLegend(parent, W, H, entries, attrLegends){
   // when every swatch sits in the same column.
   const indent=fs*0.3*opts.legIndent;
   const titleH=Math.max(rowH, titleFs*(1.05+opts.legRowSpacing));
-  const gapH=rowH*0.4, colGap=16;
+  const gapH=rowH*0.4, colGap=opts.legColSpacing;
   const cols=Math.max(1,Math.round(opts.legCols));
   const titleW=text=>textWidth(text, titleFs, font, opts.legTitleBold, opts.legTitleItalic);
   // Across several columns, a title that names the whole legend (the typed
@@ -516,16 +534,21 @@ function drawLegend(parent, W, H, entries, attrLegends){
   const boxH=pad*2 + headerH + Math.max(0,...colH);
 
   // position
+  // Second character picks the horizontal edge, first the vertical one;
+  // "c" centres on that axis.
+  // Spots are inside the map frame, as PyMappr's legend is inside its axes;
+  // placed against the window, a portrait map's legend sat out on the side
+  // bar, which the export crop then had to keep.
+  const [[fx0,fy0],[fx1,fy1]]=frameRect;
+  const at=p=>{
+    const m=2, hx=p[1], vy=p[0];
+    return [hx==="r" ? fx1-boxW-m : hx==="l" ? fx0+m : (fx0+fx1-boxW)/2,
+            vy==="t" ? fy0+m+(opts.title?30:0) : vy==="b" ? fy1-boxH-m : (fy0+fy1-boxH)/2];
+  };
   let bx,by;
   if(legendDrag){ bx=legendDrag.x*W; by=legendDrag.y*H; }
-  else {
-    const m=14, p=opts.legPos;
-    // Second character picks the horizontal edge, first the vertical one;
-    // "c" centres on that axis.
-    const hx=p[1], vy=p[0];
-    bx = hx==="r" ? W-boxW-m : hx==="l" ? m : (W-boxW)/2;
-    by = vy==="t" ? m+(opts.title?30:0) : vy==="b" ? H-boxH-m : (H-boxH)/2;
-  }
+  else if(opts.legPos==="best") [bx,by]=at(bestLegendSpot(at, boxW, boxH));
+  else [bx,by]=at(opts.legPos);
   bx=Math.max(2,Math.min(bx,W-boxW-2)); by=Math.max(2,Math.min(by,H-boxH-2));
 
   if(opts.legShadow){
@@ -602,9 +625,42 @@ function drawLegend(parent, W, H, entries, attrLegends){
   return {x:bx, y:by, w:boxW, h:boxH};
 }
 
+// matplotlib's loc="best", which PyMappr offers: of the nine spots, the one
+// that covers the fewest points, trying them in matplotlib's order so a tie
+// goes the same way.
+const BEST_ORDER=["tr","tl","bl","br","cr","cl","bc","tc","cc"];
+function bestLegendSpot(at, w, h){
+  let best=BEST_ORDER[0], fewest=Infinity;
+  for(const spot of BEST_ORDER){
+    const [x,y]=at(spot);
+    let n=0;
+    for(const [px,py] of pointXY) if(px>=x && px<=x+w && py>=y && py<=y+h) n++;
+    if(n<fewest){ fewest=n; best=spot; }
+    if(!n) break;
+  }
+  return best;
+}
+
 function updateStagebar(){
+  if(flash && Date.now()<flash.until){ setStagebar(flash.text); return; }
+  // While the filter hides anything, say how much, as PyMappr's status does.
+  const fds=datasets.find(d=>d.id===filter.dsId);
+  if(fds && filterSig()){
+    const shown=shownRows(fds).length;
+    if(shown!==fds.rows.length){
+      setStagebar(`Filter: showing ${shown} of ${fds.rows.length} points of ${fds.name}.`);
+      return;
+    }
+  }
   const n=datasets.reduce((a,d)=>a+(d.visible?d.rows.length:0),0);
   const shown=datasets.filter(d=>d.visible).length;
-  $("#stagebar").textContent = n ? `${n} point${n!==1?"s":""} · ${shown} dataset${shown!==1?"s":""} · ${opts.projection}` : opts.projection;
+  setStagebar(n ? `${n} point${n!==1?"s":""} · ${shown} dataset${shown!==1?"s":""} · ${opts.projection}` : opts.projection);
+}
+// The status line: one line of state, then any warnings from the render.
+function setStagebar(text){
+  const bar=$("#stagebar"); bar.textContent=text;
+  for(const note of stageNotes){
+    const d=document.createElement("div"); d.className="note"; d.textContent=note; bar.appendChild(d);
+  }
 }
 

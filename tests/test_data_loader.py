@@ -2,10 +2,11 @@ import textwrap
 
 import pytest
 
-from pymappr.data_loader import (ColumnMapping, build_dataset,
-                                build_manual_dataset, combine_name_columns,
-                                guess_mapping, headers_look_like_data,
-                                list_sheets, load_csv, read_table)
+from pymappr.files.data_loader import (ColumnMapping, build_dataset,
+                                       build_manual_dataset,
+                                       combine_name_columns, guess_mapping,
+                                       headers_look_like_data, list_sheets,
+                                       load_csv, read_table)
 
 
 def write(tmp_path, text, name="points.csv"):

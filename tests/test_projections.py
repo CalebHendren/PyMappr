@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import numpy as np
 
-from pymappr.projections import (GLOBE, LAMBERT_PROJECTIONS, PROJECTIONS,
-                                 default_origin, get_projection,
-                                 has_custom_origin, is_globe, is_lambert)
+from pymappr.geo.projections import (GLOBE, LAMBERT_PROJECTIONS, PROJECTIONS,
+                                     default_origin, get_projection,
+                                     has_custom_origin, is_globe, is_lambert)
 
 
 def test_world_and_lambert_projections_listed():

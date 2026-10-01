@@ -9,7 +9,7 @@ Two things live here:
   a function that already had fifteen.
 * the builders that turn a styled dataset into legend rows.
 
-Splitting the rows out of :mod:`pymappr.styles` keeps that module about
+Splitting the rows out of :mod:`pymappr.styling.styles` keeps that module about
 styling points; this one is about describing them. Everything here is
 pure - it returns rows, it never touches matplotlib - which is what lets
 the app, the exported Python script and the tests share one implementation.
@@ -21,9 +21,9 @@ from dataclasses import asdict, dataclass
 
 import pandas as pd
 
-from pymappr.options import values_from_dict
-from pymappr.styles import (ROW_SEP, PointStyle, apply_override, owner_map,
-                            resolve_nesting, row_key)
+from pymappr.styling.options import values_from_dict
+from pymappr.styling.styles import (ROW_SEP, PointStyle, apply_override,
+                                    owner_map, resolve_nesting, row_key)
 
 __all__ = ["NEUTRAL_MARKER_COLOR", "LEGEND_LOCATIONS", "HIERARCHY_MODES",
            "ENTRY_ORDERS", "COUNT_FORMATS", "GROUP_SWATCHES", "FONT_FAMILIES",
@@ -32,8 +32,8 @@ __all__ = ["NEUTRAL_MARKER_COLOR", "LEGEND_LOCATIONS", "HIERARCHY_MODES",
            "legend_sections", "order_labels", "ROW_SEP", "row_key",
            "override_label", "is_hidden", "manual_order"]
 
-# Legend rows are keyed by :func:`pymappr.styles.row_key` - the same tagging
-# :func:`legend_counts` uses.
+# Legend rows are keyed by :func:`pymappr.styling.styles.row_key` - the same
+# tagging :func:`legend_counts` uses.
 
 # Marker color used in the legend's "symbol" key, where shape (not color)
 # carries the meaning. Only meaningful for crossed data, where a shape really

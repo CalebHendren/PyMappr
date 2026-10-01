@@ -4,20 +4,90 @@ the city / airport / port markers."""
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 import matplotlib.transforms as mtransforms
 import numpy as np
 
-from pymappr.layers import BATHYMETRY_STEPS, LAYER_SPECS, BoundedCache
+from pymappr.geo.layers import BATHYMETRY_STEPS, LAYER_SPECS, BoundedCache
 from pymappr.renderer.tables import (BATHYMETRY_COLORS, FILL_COLORS,
                                      FILL_LAYERS, LINE_LAYERS, POINT_LAYERS,
                                      Z_BATHYMETRY, Z_LAKE_FILL, Z_OCEAN,
                                      Z_POINT_LAYERS, Z_SATELLITE)
 
-# Warped-basemap grid (columns x rows) for projected satellite rendering,
-# and the coarser one used while the globe is being dragged: a full warp is
-# most of the cost of a spin step, and the drag only needs a preview.
-_WARP_GRID = (1600, 800)
-_DRAG_WARP_GRID = (400, 200)
+# Source basemap pixels per screen pixel. Handing imshow the whole 5400x2700
+# world made matplotlib convert and resample all 14.6M pixels on every draw,
+# whatever was on screen - ~1000 ms a frame, which is what made panning a
+# colorized basemap lag. Drawing from the pyramid level and crop the view
+# actually needs costs ~70 ms instead, and the pixels come out the same.
+# A little over 1 keeps bilinear sampling honest without paying for detail
+# nobody can see.
+_OVERSAMPLE = 1.3
+# While the globe is mid-spin a coarse preview will do; the release rebuilds
+# at full detail (see MouseMixin._on_canvas_release).
+_DRAG_OVERSAMPLE = 0.35
+# The crop is grown by this much of the view span on each side, so a small pan
+# or zoom reuses it instead of re-cropping.
+_CROP_MARGIN = 0.15
+# A crop is reused while it spans no more than this much of what the view
+# needs. Slack enough to pan and zoom a little without re-cropping, tight
+# enough that a zoom never leaves imshow resampling mostly-offscreen pixels.
+_CROP_REUSE = 2.0
+# A warp grid never exceeds this, however large the window: the inverse
+# transform is per-point, so this bounds the cost of one settle pass.
+_MAX_WARP_PX = 2400
+
+
+@dataclass
+class _Crop:
+    """A basemap image prepared for one region of one view.
+
+    Kept on the artist so a view change can tell whether the crop already
+    loaded still serves: re-cropping is only needed when the detail level
+    changes or the view moves outside *region*.
+    """
+
+    image: np.ndarray
+    extent: tuple[float, float, float, float]
+    level: int
+    region: tuple[float, float, float, float]
+    px: tuple[int, int] = (0, 0)
+    oversample: float = 0.0
+    proj_key: object = None
+
+    def matches(self, px: tuple[int, int], oversample: float,
+                proj_key: object) -> bool:
+        return (self.px == px and self.oversample == oversample
+                and self.proj_key == proj_key)
+
+    def covers(self, region: tuple[float, float, float, float]) -> bool:
+        x0, x1, y0, y1 = region
+        rx0, rx1, ry0, ry1 = self.region
+        return rx0 <= x0 and rx1 >= x1 and ry0 <= y0 and ry1 >= y1
+
+    def oversized(self, region: tuple[float, float, float, float],
+                  factor: float) -> bool:
+        """Whether this crop spans more than *factor* times *region*.
+
+        Covering the view is not enough to justify reuse: zoom in far enough
+        and a crop still covers everything while most of its pixels have gone
+        off screen, which is the cost this whole mechanism exists to avoid.
+        The factor is the slack that stops a small zoom from re-cropping."""
+        x0, x1, y0, y1 = region
+        rx0, rx1, ry0, ry1 = self.region
+        return ((rx1 - rx0) > (x1 - x0) * factor
+                or (ry1 - ry0) > (y1 - y0) * factor)
+
+
+def _require_key(key: str, table: dict, what: str) -> None:
+    """Reject an unknown layer key before any state records it.
+
+    The toggles below note the key in their "visible" set and only then look
+    it up, so without this an unknown key would leave that set holding a name
+    nothing can draw - and every later ``_sync_resolutions`` would raise on
+    it, turning a typo here into a crash on the next pan."""
+    if key not in table:
+        raise KeyError(f"unknown {what}: {key!r}")
 
 
 class LayersMixin:
@@ -41,7 +111,9 @@ class LayersMixin:
         # Keyed by projection, so bounded: a globe spin is a new projection
         # at every step.
         self._point_xy_cache = BoundedCache(maxsize=32)
-        self._warp_cache = BoundedCache(maxsize=3)
+        # Keyed by projection, mode and crop, so a pan that leaves the current
+        # crop behind can find the neighbouring one again.
+        self._warp_cache = BoundedCache(maxsize=12)
 
     _RASTER_MODES = {"relief", "relief_alt", "relief_grey", "blue_marble"}
 
@@ -52,19 +124,22 @@ class LayersMixin:
         is_raster = mode in self._RASTER_MODES
         artist_key = f"raster_{mode}"
         if is_raster and artist_key not in self._artists:
+            crop = self._basemap_crop(mode)
             with self._preserving_view():
-                img, extent = self._warped_basemap(mode)
                 artists = []
                 for off in self._offsets():
-                    x0, x1, y0, y1 = extent
                     # aspect="auto" keeps the axes from locking to equal
                     # (imshow's default), which would letterbox any non-2:1
                     # extent - breaking portrait framing and re-fit sizing.
+                    x0, x1, y0, y1 = crop.extent
                     artist = self.ax.imshow(
-                        img, extent=(x0 + off, x1 + off, y0, y1),
+                        crop.image, extent=(x0 + off, x1 + off, y0, y1),
                         origin="upper", interpolation="bilinear",
                         aspect="auto", zorder=Z_SATELLITE)
                     artist._pym_offset = off
+                    # Left unstamped, so the refresh below gives each copy the
+                    # crop its own slice of the world needs.
+                    artist._pym_crop = None
                     artists.append(artist)
                 self._artists[artist_key] = artists
         # Show only the active raster; hide all others.
@@ -73,19 +148,118 @@ class LayersMixin:
             for artist in self._artists.get(rkey, []):
                 artist.set_visible(rmode == mode)
         self._sync_wrap_copies()
+        # Each wrap copy covers a different slice of the world, so let the
+        # view-driven refresh give every visible one its own crop.
+        self._refresh_basemap()
 
-    def _warped_basemap(self, mode: str) -> tuple[np.ndarray, tuple]:
-        """The basemap image in the current projection, plus its extent."""
-        img = self.store.basemap_image(mode)
+    # ------------------------------------------------------- basemap detail
+
+    def _axes_px(self, dpi: float | None = None) -> tuple[int, int]:
+        """The map axes' size in pixels, at *dpi* (the figure's own if None).
+
+        Exports render at their own dpi without touching ``fig.dpi``, so the
+        dpi has to be passed in or a 200-dpi save would be handed the crop
+        sized for a 100-dpi screen."""
+        pos = self.ax.get_position()
+        fig_w, fig_h = self.fig.get_size_inches()
+        scale = self.fig.dpi if dpi is None else dpi
+        return (max(int(pos.width * float(fig_w) * scale), 1),
+                max(int(pos.height * float(fig_h) * scale), 1))
+
+    def _basemap_oversample(self) -> float:
+        return _DRAG_OVERSAMPLE if self._globe_drag else _OVERSAMPLE
+
+    def _view_region(self, margin: float = 0.0) -> tuple[float, ...]:
+        """The view in map coordinates, optionally grown by *margin* of its
+        own span on each side."""
+        x0, x1 = sorted(self.ax.get_xlim())
+        y0, y1 = sorted(self.ax.get_ylim())
+        mx, my = (x1 - x0) * margin, (y1 - y0) * margin
+        return x0 - mx, x1 + mx, y0 - my, y1 + my
+
+    def _clip_to_world(self, region: tuple[float, ...]) -> tuple | None:
+        """*region* intersected with the projection's bounds, or None when it
+        falls entirely outside (a wrap copy that is off screen)."""
+        x0, x1, y0, y1 = region
+        wx0, wx1, wy0, wy1 = self.proj.bounds
+        x0, x1 = max(x0, wx0), min(x1, wx1)
+        y0, y1 = max(y0, wy0), min(y1, wy1)
+        if x1 <= x0 or y1 <= y0:
+            return None
+        return x0, x1, y0, y1
+
+    def _pyramid_level(self, mode: str, span: float, px: int) -> int:
+        """Index of the coarsest mipmap level still carrying enough detail for
+        a view *span* map-units wide drawn *px* pixels wide."""
+        levels = self.store.basemap_pyramid(mode)
+        fraction = max(span / self.proj.world_width, 1e-9)
+        want = self._basemap_oversample() * px
+        index = 0
+        for i, level in enumerate(levels):
+            if level.shape[1] * fraction >= want:
+                index = i
+            else:
+                break
+        return index
+
+    def _basemap_crop(self, mode: str, region: tuple | None = None,
+                      dpi: float | None = None,
+                      level: int | None = None) -> _Crop:
+        """The basemap covering *region* (the padded view by default), at the
+        detail the current view and dpi call for."""
+        if region is None:
+            region = self._clip_to_world(self._view_region(_CROP_MARGIN))
+            if region is None:  # a degenerate view; fall back to the world
+                region = self.proj.bounds
+        px = self._axes_px(dpi)
+        if level is None:
+            level = self._pyramid_level(mode, region[1] - region[0], px[0])
         if self.proj.is_geographic:
-            return img, (-180, 180, -90, 90)
-        grid = _DRAG_WARP_GRID if self._globe_drag else _WARP_GRID
-        cache_key = (self.proj.key, mode, grid)
+            crop = self._crop_geographic(mode, region, level)
+        else:
+            crop = self._warp_projected(mode, region, px[0], px[1], level)
+        crop.px = px
+        crop.oversample = self._basemap_oversample()
+        crop.proj_key = self.proj.key
+        return crop
+
+    def _crop_geographic(self, mode: str, region: tuple,
+                         level: int) -> _Crop:
+        """A slice of the mipmap for an unprojected (lon/lat) view.
+
+        The slice is a numpy view, so this costs nothing beyond picking the
+        level - the saving is entirely in what imshow is then asked to
+        resample."""
+        lon0, lon1, lat0, lat1 = region
+        img = self.store.basemap_pyramid(mode)[level]
+        h, w = img.shape[:2]
+        c0 = max(int(np.floor((lon0 + 180.0) / 360.0 * w)), 0)
+        c1 = min(int(np.ceil((lon1 + 180.0) / 360.0 * w)) + 1, w)
+        r0 = max(int(np.floor((90.0 - lat1) / 180.0 * h)), 0)
+        r1 = min(int(np.ceil((90.0 - lat0) / 180.0 * h)) + 1, h)
+        c1, r1 = max(c1, c0 + 1), max(r1, r0 + 1)
+        extent = (c0 / w * 360.0 - 180.0, c1 / w * 360.0 - 180.0,
+                  90.0 - r1 / h * 180.0, 90.0 - r0 / h * 180.0)
+        return _Crop(img[r0:r1, c0:c1], extent, level, region)
+
+    def _warp_projected(self, mode: str, region: tuple, px_w: int,
+                        px_h: int, level: int) -> _Crop:
+        """Inverse-warp the basemap into a projected view.
+
+        The grid covers the visible region at screen resolution rather than
+        the whole projection at a fixed 1600x800: a zoomed-in projected map
+        used to be resampled up from a world-wide grid, so this is sharper as
+        well as cheaper."""
+        x0, x1, y0, y1 = region
+        over = self._basemap_oversample()
+        nx = int(min(max(px_w * over, 2), _MAX_WARP_PX))
+        ny = int(min(max(px_h * over, 2), _MAX_WARP_PX))
+        img = self.store.basemap_pyramid(mode)[level]
+        cache_key = (self.proj.key, mode, level, nx, ny,
+                     round(x0, 6), round(x1, 6), round(y0, 6), round(y1, 6))
         if cache_key not in self._warp_cache:
-            wx0, wx1, wy0, wy1 = self.proj.bounds
-            nx, ny = grid
-            xs = np.linspace(wx0, wx1, nx)
-            ys = np.linspace(wy1, wy0, ny)  # top row first (origin="upper")
+            xs = np.linspace(x0, x1, nx)
+            ys = np.linspace(y1, y0, ny)  # top row first (origin="upper")
             gx, gy = np.meshgrid(xs, ys)
             lons, lats = self.proj.inverse(gx.ravel(), gy.ravel())
             lons, lats = lons.reshape(gy.shape), lats.reshape(gy.shape)
@@ -101,8 +275,60 @@ class LayersMixin:
             warped = np.zeros((ny, nx, 4), dtype=np.uint8)
             warped[..., :3] = img[rows, cols]
             warped[..., 3] = np.where(valid, 255, 0)
-            self._warp_cache[cache_key] = (warped, (wx0, wx1, wy0, wy1))
-        return self._warp_cache[cache_key]
+            self._warp_cache[cache_key] = warped
+        return _Crop(self._warp_cache[cache_key], (x0, x1, y0, y1), level,
+                     region)
+
+    def _refresh_basemap(self, dpi: float | None = None) -> None:
+        """Point each visible raster artist at the crop its part of the view
+        needs. Runs on every view change, but only re-crops when the detail
+        level changed or the view left the crop already loaded."""
+        mode = self._basemap
+        if mode not in self._RASTER_MODES:
+            return
+        artists = self._artists.get(f"raster_{mode}")
+        if not artists:
+            return
+        px = self._axes_px(dpi)
+        over = self._basemap_oversample()
+        vx0, vx1, vy0, vy1 = self._view_region()
+        # One level for every copy, taken from the whole view rather than each
+        # copy's slice: a wrap copy showing a thin sliver would otherwise pick
+        # a finer level than the primary and the seam would change sharpness
+        # mid-pan.
+        level = self._pyramid_level(mode, vx1 - vx0, px[0])
+        for artist in artists:
+            if not artist.get_visible():
+                continue
+            # A wrap copy is drawn one world-width over, so it shows the slice
+            # of the world the view covers once shifted back.
+            off = float(getattr(artist, "_pym_offset", 0.0))
+            raw = (vx0 - off, vx1 - off, vy0, vy1)
+            needed = self._clip_to_world(raw)
+            if needed is None:
+                continue
+            # The margin is grown on the *unclipped* view, then clipped. Grown
+            # on the clipped sliver instead, a copy at the world's edge would
+            # get a margin a fraction of a sliver wide and leave its crop again
+            # on the very next frame.
+            padded = self._clip_to_world(self._pad(raw, _CROP_MARGIN)) or needed
+            current = getattr(artist, "_pym_crop", None)
+            if (current is not None and current.matches(px, over, self.proj.key)
+                    and current.level == level and current.covers(needed)
+                    and not current.oversized(padded, _CROP_REUSE)):
+                continue
+            crop = self._basemap_crop(mode, padded, dpi, level=level)
+            x0, x1, y0, y1 = crop.extent
+            with self._preserving_view():
+                artist.set_data(crop.image)
+                artist.set_extent((x0 + off, x1 + off, y0, y1))
+            artist._pym_crop = crop
+
+    @staticmethod
+    def _pad(region: tuple, margin: float) -> tuple:
+        x0, x1, y0, y1 = region
+        mx, my = (x1 - x0) * margin, (y1 - y0) * margin
+        return x0 - mx, x1 + mx, y0 - my, y1 + my
 
     def _source_directory(self, source: str) -> str:
         """The Natural Earth directory the *source* layer should currently
@@ -242,6 +468,7 @@ class LayersMixin:
         """Toggle a line layer (countries, states, disputed_lines, reefs,
         ...). Switching countries off swaps in the continent outlines so
         coastlines/continent borders stay visible."""
+        _require_key(key, LINE_LAYERS, "line layer")
         if visible:
             self._line_visible.add(key)
             self._show_line_layer(key)
@@ -300,6 +527,7 @@ class LayersMixin:
     def set_fill_layer(self, key: str, visible: bool) -> None:
         """Toggle an on/off fill layer: land, glaciers, ice_shelves, urban,
         parks, playas, deserts, disputed."""
+        _require_key(key, FILL_LAYERS, "fill layer")
         if visible:
             self._fill_visible.add(key)
             self._show_fill_layer(key)
@@ -346,6 +574,7 @@ class LayersMixin:
     def set_point_layer(self, key: str, visible: bool) -> None:
         """Toggle a point-marker layer: cities, airports, ports. City
         markers respect :meth:`set_capitals_only`."""
+        _require_key(key, POINT_LAYERS, "point layer")
         if visible:
             self._point_layers_visible.add(key)
         else:

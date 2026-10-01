@@ -1,16 +1,77 @@
 /* zoom + pan over the map */
-const stageEl=$("#stage");
-stageEl.addEventListener("wheel",e=>{
-  e.preventDefault();
-  const r=svg.getBoundingClientRect();
-  const sx=e.clientX-r.left, sy=e.clientY-r.top;
+const mapWrap=$("#mapwrap");
+// Zoom by `factor` keeping the screen point (sx, sy) where it is.
+function zoomAbout(factor, sx, sy){
   const oldK=view.k;
-  const newK=clamp(oldK*Math.exp(-e.deltaY*0.0015), 1, 12);
+  const newK=clamp(oldK*factor, 1, 12);
   if(newK===oldK) return;
-  const lx=(sx-view.x)/oldK, ly=(sy-view.y)/oldK; // point under cursor, in scene coords
+  const lx=(sx-view.x)/oldK, ly=(sy-view.y)/oldK; // that point, in scene coords
   view.k=newK; view.x=sx-newK*lx; view.y=sy-newK*ly;
   clampView(); render();
+}
+// The buttons and keys zoom about the middle of the frame, x1.5 a step as
+// PyMappr's buttons do.
+function zoomStep(factor){
+  const [[x0,y0],[x1,y1]]=frameRect;
+  zoomAbout(factor, (x0+x1)/2, (y0+y1)/2);
+}
+function resetZoom(){ view={k:1,x:0,y:0}; render(); }
+mapWrap.addEventListener("wheel",e=>{
+  e.preventDefault();
+  const r=svg.getBoundingClientRect();
+  zoomAbout(Math.exp(-e.deltaY*0.0015), e.clientX-r.left, e.clientY-r.top);
 },{passive:false});
+$("#zoomIn").addEventListener("click",()=>zoomStep(1.5));
+$("#zoomOut").addEventListener("click",()=>zoomStep(1/1.5));
+$("#zoomReset").addEventListener("click",resetZoom);
+// + / - / 0 zoom from the keyboard, except while typing or in a dialog;
+// with Ctrl or Cmd they stay the browser's own page zoom.
+document.addEventListener("keydown",e=>{
+  if(e.ctrlKey || e.metaKey || e.altKey || e.defaultPrevented) return;
+  if(e.target.closest && e.target.closest("input,select,textarea,[contenteditable]")) return;
+  if($$(".modal-bg.on").length) return;
+  if(e.key==="+" || e.key==="=") zoomStep(1.5);
+  else if(e.key==="-" || e.key==="_") zoomStep(1/1.5);
+  else if(e.key==="0") resetZoom();
+  else return;
+  e.preventDefault();
+});
+// Frame the data after an import, as PyMappr does: the box around every
+// visible point plus 15% (at least 2 degrees), clamped to the world. The
+// zoom is within the region's own frame, so data wider than the region
+// leaves the region as it is; the globe is left alone.
+function zoomToData(){
+  const rows=datasets.filter(d=>d.visible).flatMap(d=>d.rows);
+  if(!rows.length || currentProjDef().globe){ render(); return; }
+  let lo0=Infinity, lo1=-Infinity, la0=Infinity, la1=-Infinity;
+  for(const r of rows){ lo0=Math.min(lo0,r.lon); lo1=Math.max(lo1,r.lon);
+    la0=Math.min(la0,r.lat); la1=Math.max(la1,r.lat); }
+  const px=Math.max((lo1-lo0)*0.15, 2), py=Math.max((la1-la0)*0.15, 2);
+  lo0=Math.max(lo0-px,-180); lo1=Math.min(lo1+px,180);
+  la0=Math.max(la0-py,-90); la1=Math.min(la1+py,90);
+  view={k:1,x:0,y:0};
+  const W=mapWrap.clientWidth, H=mapWrap.clientHeight;
+  const rect=drawRect(W,H), proj=buildProjection(W,H);
+  let bx0=Infinity, bx1=-Infinity, by0=Infinity, by1=-Infinity;
+  for(const pt of boxSample(lo0,lo1,la0,la1).coordinates){
+    const xy=proj(pt);
+    if(!xy || !Number.isFinite(xy[0]) || !Number.isFinite(xy[1])) continue;
+    bx0=Math.min(bx0,xy[0]); bx1=Math.max(bx1,xy[0]); by0=Math.min(by0,xy[1]); by1=Math.max(by1,xy[1]);
+  }
+  const [[rx0,ry0],[rx1,ry1]]=rect;
+  if(!(bx1>bx0) || !(by1>by0)){ render(); return; }
+  const k=clamp(Math.min((rx1-rx0)/(bx1-bx0), (ry1-ry0)/(by1-by0)), 1, 12);
+  // A whole world is shorter than a landscape frame; zoomed in too little
+  // to fill the frame, it would show blank bands where its round outline
+  // used to be. Nearly global data keeps the whole map instead.
+  const sb=d3.geoPath(proj).bounds({type:"Sphere"});
+  const fill=Math.max((rx1-rx0)/(sb[1][0]-sb[0][0]), (ry1-ry0)/(sb[1][1]-sb[0][1]));
+  if(k>1.05 && k>=fill-1e-6){
+    view={k, x:(rx0+rx1)/2-k*(bx0+bx1)/2, y:(ry0+ry1)/2-k*(by0+by1)/2};
+    frameRect=rect; clampView();
+  }
+  render();
+}
 // Pointer events, so a finger or a pen drags, spins and places like a mouse.
 svg.addEventListener("pointerdown",e=>{
   if(e.button!==0 || !e.isPrimary) return;
@@ -85,13 +146,16 @@ function normalizeDataset(d){
   ds.opacity = typeof ds.opacity==="number" && isFinite(ds.opacity) ? ds.opacity : 1;
   ds.visible = ds.visible!==false;
   ds.varySymbols = !!ds.varySymbols;
-  for(const k of ["groupBy","colorBy","symbolBy"])
-    if(ds[k]!=null && !ds.columns.includes(ds[k])) ds[k]=null;
   if(!Array.isArray(ds.rows) && ds._import && Array.isArray(ds._import.rows) && ds._import.mapping)
     ds.rows = pointsFromMapping(ds._import, ds._import.mapping).points;
   if(!Array.isArray(ds.rows)) return null;
   ds.rows = ds.rows.filter(r=>r && isFinite(r.lon) && isFinite(r.lat))
                    .map(r=>r._attr ? r : {...r, _attr:{}});
+  // Rows rebuilt from the table lack the combined columns; work them out
+  // again before checking which columns the choices below may name.
+  applyCombined(ds);
+  for(const k of ["groupBy","colorBy","symbolBy"])
+    if(ds[k]!=null && !ds.columns.includes(ds[k])) ds[k]=null;
   if(ds.source==="manual" && !ds._manual){
     ds._manual={legend:ds.name, order:"latlon", base:ds.base,
       text:ds.rows.map(r=>`${r.lat.toFixed(5)}, ${r.lon.toFixed(5)}`+(r.label?", "+r.label:"")).join("\n")};
@@ -135,7 +199,7 @@ function syncMapControls(){
   // Legend controls come back from the same table that defines them, so a
   // new setting cannot end up rendering from a restored value while its
   // control still shows the default.
-  for(const [id,kind] of LEGEND_CONTROLS){
+  for(const [id,kind] of [...LEGEND_CONTROLS, ...MAP_CONTROLS]){
     const node=$("#"+id);
     if(!node) continue;
     if(kind==="bool") node.checked=opts[id]; else node.value=opts[id];
@@ -157,7 +221,7 @@ darkMQ.addEventListener("change",()=>{ if(themeSel.value==="system") applyTheme(
 const restored=loadState();
 applyTheme();
 if(restored) syncMapControls();
-let rt; new ResizeObserver(()=>{ clearTimeout(rt); rt=setTimeout(render,60); }).observe($("#stage"));
+let rt; new ResizeObserver(()=>{ clearTimeout(rt); rt=setTimeout(render,60); }).observe(mapWrap);
 syncOrigin(!restored);   // keep any restored centre/extent when reloading
 syncStylePanel();
 renderDatasetList();

@@ -5,8 +5,75 @@ function makeDataset(name, columns, rows, base){
     id:nextId++, name, visible:true, columns, rows,
     base: base || {color:"#d62728", marker:"Circle", size:30},
     groupBy: columns[0]||null, colorBy:null, symbolBy:null, varySymbols:false,
-    overrides:{}, opacity:1, source:"csv",
+    overrides:{}, opacity:1, source:"csv", combined:[],
   };
+}
+
+// Combine columns: join attribute columns (Genus + Species) into one more
+// column, so a legend row reads "Eleusis chapadensis" without editing the
+// file. Blank parts are skipped rather than leaving a stray separator.
+// Mirrors data_loader.combine_name_columns.
+function combinedValue(attr, parts, sep){
+  return parts.map(p=>String(attr[p]??"").trim()).filter(Boolean).join(sep);
+}
+function combinedName(existing, parts, sep){
+  const base=parts.join(sep).trim()||"Combined";
+  let name=base, k=2;
+  while(existing.includes(name)) name=`${base} (${k++})`;
+  return name;
+}
+// The columns a dataset has before any combining: its table's attribute
+// columns, or, with no table, whatever is not a combined column.
+function baseColumns(ds){
+  const imp=ds._import;
+  if(imp && Array.isArray(imp.columns) && imp.mapping)
+    return imp.columns.filter(c=>imp.mapping[c]==="attr");
+  const made=new Set((ds.combined||[]).map(c=>c && c.name));
+  return ds.columns.filter(c=>!made.has(c));
+}
+// Combined columns are kept as recipes and worked out again whenever the
+// rows are rebuilt - an imported dataset's rows come back from its table on
+// load and on edit, which would otherwise lose them. A recipe whose parts
+// are gone, or whose name a real column has since taken, is dropped.
+function applyCombined(ds){
+  ds.columns=baseColumns(ds);
+  const kept=[];
+  for(const c of Array.isArray(ds.combined) ? ds.combined : []){
+    if(!c || typeof c.name!=="string" || !Array.isArray(c.parts) || c.parts.length<2) continue;
+    if(ds.columns.includes(c.name) || !c.parts.every(p=>ds.columns.includes(p))) continue;
+    const sep=typeof c.sep==="string" ? c.sep : " ";
+    for(const r of ds.rows) r._attr[c.name]=combinedValue(r._attr, c.parts, sep);
+    ds.columns.push(c.name);
+    kept.push({name:c.name, parts:[...c.parts], sep});
+  }
+  ds.combined=kept;
+}
+
+// Rows that could not be read, listed the way PyMappr lists them: the first
+// dozen, then how many more.
+const MAX_SKIPPED_SHOWN=12;
+function showNotice(title, lead, lines){
+  $("#noticeTitle").textContent=title;
+  $("#noticeLead").textContent=lead;
+  const list=$("#noticeList"); list.innerHTML="";
+  for(const line of lines.slice(0,MAX_SKIPPED_SHOWN)){
+    const li=document.createElement("li"); li.textContent=line; list.appendChild(li);
+  }
+  const more=lines.length-MAX_SKIPPED_SHOWN;
+  if(more>0){ const li=document.createElement("li"); li.className="muted";
+    li.textContent=`… and ${more} more`; list.appendChild(li); }
+  openModal("noticeModal");
+}
+function reportSkipped(imported, skipped){
+  if(!imported){
+    showNotice("No usable rows", "No rows had valid coordinates."
+      + (skipped.length ? " First problems:" : ""), skipped);
+    return false;
+  }
+  if(skipped.length)
+    showNotice("Some rows skipped",
+      `Imported ${imported} row${imported!==1?"s":""}; skipped ${skipped.length}:`, skipped);
+  return true;
 }
 // The manual dataset that placed points are appended to: the selected one
 // if it is manual, otherwise a fresh "Placed points" set.
@@ -54,16 +121,18 @@ function pointsFromMapping(parsed, mapping){
   const labelCol = columns.find(c=>mapping[c]==="label");
   const lonCol = columns.find(c=>mapping[c]==="lon");
   const latCol = columns.find(c=>mapping[c]==="lat");
-  const out=[]; let bad=0;
-  for(const row of rows){
+  // Problems name the row as the file numbers it, header row included.
+  const first = parsed.headers===false ? 1 : 2;
+  const out=[], skipped=[];
+  rows.forEach((row,i)=>{
     try{
       const lon=parseCoordinate(row[lonCol], "longitude");
       const lat=parseCoordinate(row[latCol], "latitude");
       const attr={}; attrCols.forEach(c=>attr[c]=row[c]);
       out.push({lon,lat,label:labelCol?row[labelCol]:null,_attr:attr});
-    }catch(e){ bad++; }
-  }
-  return {points:out, attrCols, bad};
+    }catch(e){ skipped.push(`row ${i+first}: ${e.message}`); }
+  });
+  return {points:out, attrCols, skipped};
 }
 
 /* UI: datasets panel */
@@ -110,6 +179,7 @@ function renderDatasetList(){
   // imported ones reopen their table (as CSV text) and column mapping.
   $("#btnEdit").disabled = !selectedDataset();
   $("#btnRemove").disabled = !selectedDataset();
+  $("#btnCombine").disabled = !(selectedDataset() && selectedDataset().columns.length>=2);
 }
 // The list's colour chip: the first group's colour.
 function swatchColor(res){ return res.groups[0] ? res.groups[0].style.color : "#888"; }
@@ -160,6 +230,7 @@ function fillSelect(sel, values, current){
 }
 function syncStylePanel(){
   const ds=selectedDataset();
+  syncFilterBar(ds);
   if(!ds){ $("#styleControls").style.display="none"; $("#styleFor").textContent="Select a dataset to style it."; return; }
   $("#styleControls").style.display="block";
   $("#styleFor").innerHTML="Styling <b>"+escapeHtml(ds.name)+"</b>";
@@ -174,34 +245,79 @@ function syncStylePanel(){
   $("#opacityRange").value=ds.opacity; $("#opacityVal").textContent=Number(ds.opacity).toFixed(2);
   renderGroupOverrides(ds);
 }
+// The filter bar follows the selected dataset. Moving to another dataset, or
+// losing the filtered column to an edit, starts it over with nothing hidden.
+function syncFilterBar(ds){
+  const bar=$("#filterbar");
+  if(!ds || filter.dsId!==ds.id || (filter.column && !ds.columns.includes(filter.column)))
+    filter={dsId:ds?ds.id:null, column:null, hidden:new Set()};
+  const show=!!ds && ds.columns.length>0;
+  if(bar.hidden===show){ bar.hidden=!show; render(); }   // the map's height changes
+  if(!show) return;
+  fillSelect($("#filterCol"), [{value:"",label:"None"}].concat(ds.columns), filter.column||"");
+  renderFilterValues(ds);
+}
+// One checkbox per value of the filtered column, in order of appearance.
+function renderFilterValues(ds){
+  const box=$("#filterVals"); box.innerHTML="";
+  const on=!!(ds && filter.column);
+  $("#filterAll").disabled=!on; $("#filterNone").disabled=!on;
+  if(!on) return;
+  for(const v of uniqueInOrder(ds.rows.map(r=>r._attr[filter.column]??""))){
+    const lab=document.createElement("label");
+    const cb=document.createElement("input"); cb.type="checkbox"; cb.checked=!filter.hidden.has(v);
+    cb.addEventListener("change",()=>{
+      if(cb.checked) filter.hidden.delete(v); else filter.hidden.add(v);
+      render();
+    });
+    lab.appendChild(cb); lab.appendChild(document.createTextNode(v||"(blank)"));
+    box.appendChild(lab);
+  }
+}
+
 // Every legend row of a dataset, as {key, value, style, depth} - groups in
 // group-by mode, or colour values, symbol values and nested pairs in the
-// two-attribute modes. Mirrors PyMapprApp._legend_rows.
+// two-attribute modes - in the order the legend draws them under manual
+// order. Mirrors layout.editor_rows.
 function legendRowsFor(ds){
   const res=resolveGroups(ds);
   if(res.mode!=="attr"){
-    return res.groups.map(g=>({key:rowKey("group",g.label), value:g.label,
-                               style:g.style, depth:0}));
+    return inManualOrder(ds, res.groups.map(g=>({key:rowKey("group",g.label), value:g.label,
+                                                 style:g.style, depth:0})));
   }
-  const rows=[];
   if(res.nested){
-    const kidsOf=childrenByOwner(res);
+    const kidsOf=childrenByOwner(res), rows=[];
     for(const [cv,color] of Object.entries(res.colorMap)){
       rows.push({key:rowKey("color",cv), value:cv, depth:0,
                  style:{color,marker:"Circle",size:ds.base.size}});
-      for(const sv of kidsOf.get(cv)||[])
-        rows.push({key:rowKey("pair",cv,sv), value:sv, depth:1,
-                   style:{color,marker:res.symbolMap[sv],size:ds.base.size}});
+      rows.push(...inManualOrder(ds, (kidsOf.get(cv)||[]).map(sv=>
+        ({key:rowKey("pair",cv,sv), value:sv, depth:1,
+          style:{color,marker:res.symbolMap[sv],size:ds.base.size}}))));
     }
-    return rows;
+    return inManualOrder(ds, rows, true);
   }
-  for(const [cv,color] of Object.entries(res.colorMap))
-    rows.push({key:rowKey("color",cv), value:cv, depth:0,
-               style:{color,marker:"Circle",size:ds.base.size}});
-  for(const [sv,marker] of Object.entries(res.symbolMap))
-    rows.push({key:rowKey("symbol",sv), value:sv, depth:0,
-               style:{color:opts.legSymbolColor,marker,size:ds.base.size}});
-  return rows;
+  return inManualOrder(ds, Object.entries(res.colorMap).map(([cv,color])=>
+      ({key:rowKey("color",cv), value:cv, depth:0, style:{color,marker:"Circle",size:ds.base.size}})))
+    .concat(inManualOrder(ds, Object.entries(res.symbolMap).map(([sv,marker])=>
+      ({key:rowKey("symbol",sv), value:sv, depth:0,
+        style:{color:opts.legSymbolColor,marker,size:ds.base.size}}))));
+}
+// Rows sorted by their manual position, rows never placed keeping the order
+// the data gave them. With `blocks`, each depth-0 row carries the children
+// under it, so moving a genus moves its species too. Mirrors layout._ordered.
+function inManualOrder(ds, rows, blocks){
+  const items=blocks ? rowBlocks(rows) : rows;
+  const position=blocks ? b=>manualOrder(ds.overrides[b[0].key]) : r=>manualOrder(ds.overrides[r.key]);
+  const sorted=items.map((item,i)=>[item,i])
+    .sort((a,b)=>(position(a[0])-position(b[0])) || (a[1]-b[1]))
+    .map(([item])=>item);
+  return blocks ? sorted.flat() : sorted;
+}
+// A list of rows cut into blocks: each depth-0 row with the depth-1 rows under it.
+function rowBlocks(rows){
+  const blocks=[];
+  for(const r of rows){ if(r.depth===0 || !blocks.length) blocks.push([r]); else blocks[blocks.length-1].push(r); }
+  return blocks;
 }
 
 function renderGroupOverrides(ds){
@@ -257,13 +373,23 @@ function renderGroupOverrides(ds){
 
 // Moving writes a position for every row, not just the two that swapped: a
 // partial ordering would let untouched rows fall to the end. A nested child
-// may only move inside its own parent's block.
+// may only move inside its own parent's block, and a parent moves with its
+// children. Colour rows and symbol rows are separate keys and never swap.
 function moveRow(ds, rows, index, step){
-  const target=index+step;
-  if(target<0 || target>=rows.length) return;
-  if(rows[index].depth!==rows[target].depth) return;
-  const reordered=[...rows];
-  [reordered[index],reordered[target]]=[reordered[target],reordered[index]];
+  const kind=r=>r.key.split(ROW_SEP)[0], row=rows[index];
+  let reordered;
+  if(row.depth===0){
+    const blocks=rowBlocks(rows);
+    const at=blocks.findIndex(b=>b[0]===row), to=at+step;
+    if(to<0 || to>=blocks.length || kind(blocks[to][0])!==kind(row)) return;
+    [blocks[at],blocks[to]]=[blocks[to],blocks[at]];
+    reordered=blocks.flat();
+  } else {
+    const target=index+step;
+    if(target<0 || target>=rows.length || rows[target].depth!==row.depth) return;
+    reordered=[...rows];
+    [reordered[index],reordered[target]]=[reordered[target],reordered[index]];
+  }
   reordered.forEach((r,position)=>setOverride(ds,r.key,{order:position}));
   // Moving is meaningless while the legend sorts itself, so switch it over.
   opts.legOrder="manual";

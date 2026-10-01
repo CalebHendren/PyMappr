@@ -88,7 +88,7 @@ POINT_EDGE_COLOR = "#ffffff"
 POINT_EDGE_WIDTH = 0.5
 # The point half of the "Publication style" preset: a thin black outline, so
 # the white points of the black & white palette still show (the legend half
-# is pymappr.legend.PUBLICATION_LEGEND).
+# is pymappr.styling.legend.PUBLICATION_LEGEND).
 PUBLICATION_POINT_EDGE = ("#000000", 0.6)
 
 

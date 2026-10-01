@@ -7,7 +7,10 @@
 - ``overlays``: the north arrow and the scale bar
 - ``labels``: place-name labels
 - ``points``: the user's points and the legend
-- ``mouse``: spinning the globe and dragging the legend, labels and scale bar
+- ``mouse``: panning the map, spinning the globe, and dragging the legend,
+  labels and scale bar
+- ``blit``: the map snapshot every screen render leaves, which a drag shifts
+  instead of re-rendering
 
 ``tables`` holds the layer styles and draw order (shared with the code
 export), and ``geometry`` the pure framing maths.

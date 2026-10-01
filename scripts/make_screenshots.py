@@ -5,7 +5,8 @@
 
 ``--out`` writes somewhere else (a quick render check without touching the
 docs), and ``--all`` adds a few extra scenes that exercise more layers.
-Points are styled through pymappr.layout, exactly as the app styles them.
+Points are styled through pymappr.styling.layout, exactly as the app styles
+them.
 """
 
 from __future__ import annotations
@@ -23,15 +24,18 @@ from matplotlib.figure import Figure  # noqa: E402
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
-from pymappr.data_loader import combine_name_columns, load_csv  # noqa: E402
-from pymappr.decorations import CompassOptions  # noqa: E402
-from pymappr.layers import LayerStore  # noqa: E402
-from pymappr.layout import layout_points, with_default_title  # noqa: E402
-from pymappr.legend import PUBLICATION_LEGEND, LegendOptions  # noqa: E402
-from pymappr.projects import DatasetEntry  # noqa: E402
+from pymappr.files.data_loader import (  # noqa: E402
+    combine_name_columns, load_csv)
+from pymappr.files.projects import DatasetEntry  # noqa: E402
+from pymappr.geo.layers import LayerStore  # noqa: E402
 from pymappr.renderer import MapRenderer  # noqa: E402
-from pymappr.styles import (BLACK_AND_WHITE, DEFAULT_PALETTE,  # noqa: E402
-                            PUBLICATION_POINT_EDGE)
+from pymappr.styling.decorations import CompassOptions  # noqa: E402
+from pymappr.styling.layout import (  # noqa: E402
+    layout_points, with_default_title)
+from pymappr.styling.legend import (  # noqa: E402
+    PUBLICATION_LEGEND, LegendOptions)
+from pymappr.styling.styles import (  # noqa: E402
+    BLACK_AND_WHITE, DEFAULT_PALETTE, PUBLICATION_POINT_EDGE)
 
 DPI = 110
 SAMPLES = REPO_ROOT / "sample_data"
@@ -85,7 +89,8 @@ def readme_scenes(store: LayerStore) -> dict:
 
     # The publication style: Genus and Species combined into one legend
     # line, black & white outlined markers in varied shapes, and a plain
-    # boxed legend with italic names.
+    # boxed legend with italic names. Shading by genus and sorting A-Z make
+    # each genus a block of rows in one shade, its shapes restarting.
     dataset, label = combine_name_columns(beetles.dataset,
                                           ["Genus", "Species"])
     r = new_renderer(store)
@@ -94,8 +99,10 @@ def readme_scenes(store: LayerStore) -> dict:
     r.set_orientation("portrait")
     r.set_point_edge(*PUBLICATION_POINT_EDGE)
     show_points(r, DatasetEntry(dataset=dataset, name=beetles.name,
-                                group_by=label, vary_symbols=True),
-                BLACK_AND_WHITE, location="lower right", **PUBLICATION_LEGEND)
+                                group_by=label, color_by="Genus",
+                                vary_symbols=True),
+                BLACK_AND_WHITE, location="lower right", order="az",
+                **PUBLICATION_LEGEND)
     scenes["publication_style.png"] = (r, True)
 
     # Seabirds grouped by family on Mollweide, with a plain legend.
@@ -245,7 +252,10 @@ def main() -> int:
             # Portrait renders drop their blank orientation side bars.
             renderer.save_image(str(path), fmt="png", dpi=DPI)
         else:
-            renderer.fig.savefig(path, dpi=DPI, facecolor="white")
+            # Saving the figure directly still needs the basemap cut for the
+            # export dpi, not for the notional screen.
+            with renderer.basemap_detail_for(DPI):
+                renderer.fig.savefig(path, dpi=DPI, facecolor="white")
         print("wrote", path)
     return 0
 

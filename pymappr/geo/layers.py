@@ -63,6 +63,10 @@ def _res(*steps) -> tuple[tuple[float, str], ...]:
 _Z50 = 1.0
 _Z10 = 3.5
 
+# The raster basemap's mipmap stops halving once its shorter side reaches this;
+# no view is ever coarse enough to want less.
+_PYRAMID_FLOOR = 64
+
 LAYER_SPECS = {
     # ------------------------------------------------------------ political
     "countries": LayerSpec(
@@ -214,7 +218,7 @@ def default_data_dir() -> Path:
     if getattr(sys, "frozen", False):
         base = Path(getattr(sys, "_MEIPASS", "")) or Path(sys.executable).parent
         return base / "data"
-    return Path(__file__).resolve().parent.parent / "data"
+    return Path(__file__).resolve().parents[2] / "data"
 
 
 class LayerStore:
@@ -234,6 +238,7 @@ class LayerStore:
         self._projected = BoundedCache(maxsize=48)
         self._labels: dict[str, pd.DataFrame] = {}
         self._basemaps: dict[str, np.ndarray] = {}
+        self._basemap_pyramids: dict[str, list[np.ndarray]] = {}
         self._cache_root: Path | None | bool = False  # False = not probed yet
 
     def _cache_dir(self) -> Path | None:
@@ -527,6 +532,32 @@ class LayerStore:
             with Image.open(path) as img:
                 self._basemaps[mode] = np.asarray(img.convert("RGB"))
         return self._basemaps[mode]
+
+    def basemap_pyramid(self, mode: str = "relief") -> list[np.ndarray]:
+        """The basemap as a mipmap pyramid, finest level first.
+
+        Level 0 is the full 5400x2700 image; each further level is a
+        Lanczos-filtered halving, down to a thumbnail. The renderer draws from
+        the level that roughly matches the pixels on screen, which is what
+        keeps a pan affordable: handing ``imshow`` the full image makes
+        matplotlib convert and resample all 14.6M pixels on *every* draw,
+        however little of it is visible.
+
+        Pre-filtering with Lanczos here, once, also beats letting matplotlib
+        bilinear-downsample the full image on each draw - so the coarse levels
+        are no blurrier than what they replace.
+        """
+        if mode not in self._basemap_pyramids:
+            from PIL import Image
+
+            levels = [self.basemap_image(mode)]
+            img = Image.fromarray(levels[0])
+            while min(img.size) > _PYRAMID_FLOOR:
+                img = img.resize((img.size[0] // 2, img.size[1] // 2),
+                                 Image.LANCZOS)
+                levels.append(np.asarray(img))
+            self._basemap_pyramids[mode] = levels
+        return self._basemap_pyramids[mode]
 
     def has_basemap(self, mode: str) -> bool:
         """Check whether the raster file for *mode* is downloaded."""

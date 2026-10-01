@@ -27,7 +27,8 @@ datas = [
     (str(DATA_DIR / "icon"), "data/icon"),
     # The code export reads its script templates as text rather than
     # importing them, so they have to be collected by hand.
-    (str(REPO_ROOT / "pymappr" / "templates"), "pymappr/templates"),
+    (str(REPO_ROOT / "pymappr" / "export" / "templates"),
+     "pymappr/export/templates"),
 ]
 binaries = []
 

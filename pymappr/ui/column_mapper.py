@@ -17,7 +17,7 @@ from typing import Callable
 
 import pandas as pd
 
-from pymappr.data_loader import ColumnMapping, guess_mapping
+from pymappr.files.data_loader import ColumnMapping, guess_mapping
 
 _UNSET = "(choose\N{HORIZONTAL ELLIPSIS})"
 PREVIEW_ROWS = 8

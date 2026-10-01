@@ -62,19 +62,37 @@
   .tabpage.active{display:block}
 
   #stage{flex:1 1 auto;min-width:0;position:relative;background:var(--stage);display:flex;
-    align-items:center;justify-content:center;overflow:hidden}
-  #mapwrap{position:absolute;inset:0}
+    flex-direction:column;overflow:hidden}
+  #mapwrap{position:relative;flex:1 1 auto;min-height:0}
+  /* the bar under the map: the filter, as in PyMappr, whose values scroll
+     sideways, and the zoom buttons; on a narrow screen they take a row each */
+  #mapbar{flex:0 0 auto;display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;padding:6px 10px;
+    background:var(--panel);border-top:1px solid var(--line)}
+  #filterbar{flex:1 1 320px;display:flex;align-items:center;gap:8px;min-width:0}
+  #filterbar[hidden]{display:none}
+  #filterbar .lbl{color:var(--muted);font-size:12.5px;white-space:nowrap}
+  #filterbar select{width:auto;max-width:170px;padding:5px 7px}
+  #filterbar .btn{flex:0 0 auto}
+  #filterVals{flex:1 1 auto;min-width:0;display:flex;gap:12px;overflow-x:auto;white-space:nowrap;padding:2px 0}
+  #filterVals label{display:inline-flex;align-items:center;gap:5px;font-size:12.5px;flex:0 0 auto;cursor:pointer}
   /* touch-action:none hands touch drags to the map (pan, spin, place, move
      the legend) instead of scrolling the page. */
-  svg#map{width:100%;height:100%;display:block;cursor:grab;touch-action:none;
+  svg#map{position:absolute;inset:0;width:100%;height:100%;display:block;cursor:grab;touch-action:none;
     user-select:none;-webkit-user-select:none}
   svg#map.panning{cursor:grabbing}
+  #zoomctl{margin-left:auto;display:flex;border:1px solid var(--line);border-radius:7px;overflow:hidden}
+  #zoomctl button{width:34px;height:30px;border:none;border-left:1px solid var(--line);
+    background:var(--panel);color:var(--ink);font-size:16px;line-height:1;padding:0}
+  #zoomctl button:first-child{border-left:none}
+  #zoomctl button:hover{background:var(--hover)}
   #stage .hint{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
     color:var(--stage-muted);text-align:center;max-width:340px;pointer-events:none}
   #stage .hint .lead{font-size:15px;font-weight:600;color:var(--stage-ink)}
-  #stagebar{position:absolute;left:10px;bottom:10px;display:flex;gap:8px;align-items:center;
+  #stagebar{position:absolute;left:10px;bottom:10px;max-width:min(560px,calc(100% - 20px));
     background:var(--stagebar-bg);border:1px solid var(--line);border-radius:7px;padding:4px 8px;
-    font-size:12px;color:var(--muted);backdrop-filter:blur(3px)}
+    font-size:12px;color:var(--muted);backdrop-filter:blur(3px);pointer-events:none}
+  #stagebar .note{color:var(--err);margin-top:2px}
+  .subopts{margin:2px 0 8px 24px}
 
   /* controls */
   .sec{border:1px solid var(--line2);border-radius:var(--radius);margin:10px 0;background:var(--panel2)}
@@ -106,6 +124,8 @@
   .btn.pri{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
   .btn.pri:hover{filter:brightness(1.05)}
   .btn.sm{padding:6px 9px;font-size:12px}
+  .btn:disabled,input:disabled,select:disabled{opacity:.5;cursor:default}
+  .btn:disabled:hover{background:var(--panel)}
   .btn.full{width:100%}
   .btn.on{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
   .btnrow{display:flex;gap:7px;flex-wrap:wrap}
@@ -146,6 +166,7 @@
   .err{color:var(--err);font-size:12.5px;margin-top:8px}
   .mbody ul{margin:8px 0;padding-left:20px}
   .mbody li{margin:4px 0}
+  ul.notice{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px}
   kbd{background:var(--kbd);border:1px solid var(--line);border-bottom-width:2px;border-radius:4px;padding:0 5px;font:inherit;font-size:11px}
   @media (max-width:820px){
     #side{flex-basis:300px}
@@ -237,6 +258,11 @@
                 <button class="btn sm" id="btnRemove" disabled>Remove</button>
                 <button class="btn sm" id="btnClear">Clear all</button>
               </div>
+              <div class="btnrow" style="margin-top:7px">
+                <button class="btn sm" id="btnCombine" disabled>Combine columns…</button>
+              </div>
+              <p class="hintline">Combine columns joins e.g. Genus and Species into one
+                column and groups by it, so a legend row reads <i>Eleusis chapadensis</i>.</p>
             </div>
           </details>
         </section>
@@ -265,7 +291,7 @@
                   </select></div>
                 <div class="row"><label class="lbl grow">Point outline</label>
                   <input type="color" id="pointEdgeColor" value="#ffffff" aria-label="Point outline colour">
-                  <input type="number" id="pointEdgeWidth" min="0" max="3" step="0.1" value="0.6"
+                  <input type="number" id="pointEdgeWidth" min="0" max="3" step="0.1" value="0.5"
                     style="width:64px" aria-label="Point outline width" title="Width in px (0 = none)"></div>
                 <p class="hintline">The outline keeps overlapping points apart. Use a black one with
                   <b>Black &amp; white</b>, whose white points need it.</p>
@@ -313,7 +339,8 @@
                   <input type="number" id="centerLon" step="5" style="width:96px"></div>
                 <div class="row"><label class="lbl grow">Centre latitude</label>
                   <input type="number" id="centerLat" step="5" style="width:96px"></div>
-                <p class="hintline">Centre for the Globe and Lambert projections.</p>
+                <p class="hintline">Centre for the Globe and Lambert projections. Scroll or
+                use + and − to zoom; drag to pan.</p>
               </div>
               <label class="block">Orientation</label>
               <div class="seg" id="orientSeg">
@@ -339,10 +366,15 @@
               <label class="block">Graticule (grid)</label>
               <div class="seg" id="gratSeg">
                 <button data-grat="0" class="on">Off</button>
+                <button data-grat="1">1°</button>
+                <button data-grat="5">5°</button>
                 <button data-grat="10">10°</button>
                 <button data-grat="20">20°</button>
                 <button data-grat="30">30°</button>
               </div>
+              <label class="check"><input type="checkbox" id="gridHideLabels"> Hide grid labels</label>
+              <p class="hintline">Degree labels are drawn on Equirectangular only; other
+                projections curve the grid.</p>
             </div>
           </details>
 
@@ -352,7 +384,53 @@
               <label class="block">Map title</label>
               <input type="text" id="mapTitle" placeholder="(optional)">
               <label class="check"><input type="checkbox" id="showCompass"> Compass (north arrow)</label>
-              <label class="check"><input type="checkbox" id="showScaleBar"> Scale bar (true at the map centre)</label>
+              <div class="subopts">
+                <div class="row"><label class="lbl grow">Position</label>
+                  <select id="compassPos" class="grow">
+                    <option value="upper right">Upper right</option>
+                    <option value="upper left">Upper left</option>
+                    <option value="lower left">Lower left</option>
+                    <option value="lower right">Lower right</option>
+                  </select></div>
+                <div class="row"><label class="lbl grow">Style</label>
+                  <select id="compassStyle" class="grow">
+                    <option value="arrow">Arrow with N</option>
+                    <option value="triangle">Filled triangle</option>
+                  </select></div>
+                <div class="row"><label class="lbl grow">Size</label>
+                  <input type="number" id="compassSize" min="0.5" max="3" step="0.1" value="1" style="width:74px"></div>
+              </div>
+              <label class="check"><input type="checkbox" id="showScaleBar"> Scale bar</label>
+              <div class="subopts">
+                <div class="row"><label class="lbl grow">Units</label>
+                  <select id="scaleUnits" class="grow">
+                    <option value="km">Kilometres</option>
+                    <option value="mi">Miles</option>
+                    <option value="both">Both</option>
+                  </select></div>
+                <div class="row"><label class="lbl grow">Position</label>
+                  <select id="scalePos" class="grow">
+                    <option value="lower left">Lower left</option>
+                    <option value="lower right">Lower right</option>
+                    <option value="upper left">Upper left</option>
+                    <option value="upper right">Upper right</option>
+                  </select></div>
+                <div class="row"><label class="lbl grow">Style</label>
+                  <select id="scaleStyle" class="grow">
+                    <option value="segmented">Segmented</option>
+                    <option value="plain">Plain bar</option>
+                  </select></div>
+                <div class="row"><label class="lbl grow">Length</label>
+                  <select id="scaleLengthMode" class="grow">
+                    <option value="auto">Automatic</option>
+                    <option value="fixed">Fixed</option>
+                  </select>
+                  <input type="number" id="scaleFixed" min="0.1" max="100000" step="10" value="100"
+                    style="width:90px" aria-label="Fixed length, in the chosen units" disabled></div>
+                <button class="btn sm" id="scaleReset" disabled>Reset position</button>
+                <p class="hintline">Drag the bar to place it; double-click it to snap back. On a
+                  world map the scale changes with latitude; the bar is accurate where it stands.</p>
+              </div>
               <label class="check"><input type="checkbox" id="showLabels"> Point labels (from a Label column)</label>
               <div class="row"><label class="lbl">Background</label><input type="color" id="matColor" value="#ffffff"></div>
               <div class="row"><label class="lbl grow">Border weight</label>
@@ -379,6 +457,7 @@
                   <option value="br">Bottom right</option>
                   <option value="bc">Bottom centre</option>
                   <option value="bl">Bottom left</option>
+                  <option value="best">Best (covers the fewest points)</option>
                 </select></div>
               <label class="block">Title <span class="muted">(blank = grouping column)</span></label>
               <input type="text" id="legTitle" placeholder="(auto)">
@@ -423,6 +502,9 @@
               <div class="row"><label class="lbl grow">Title separator</label>
                 <input type="text" id="legTitleSeparator" value=" / " style="width:74px"></div>
               <label class="check"><input type="checkbox" id="legDatasetPrefix" checked> Prefix sections with the dataset name</label>
+              <label class="check"><input type="checkbox" id="legEmptyGroups"> Keep groups with no visible rows</label>
+              <p class="hintline">Only matters while the filter bar below the map hides
+                every entry inside a group.</p>
             </div>
           </details>
 
@@ -450,9 +532,14 @@
             <summary>Layout</summary>
             <div class="body">
               <div class="row"><label class="lbl grow">Columns</label>
-                <input type="number" id="legCols" min="1" max="5" step="1" value="1" style="width:74px"></div>
+                <input type="number" id="legCols" min="1" max="6" step="1" value="1" style="width:74px"></div>
+              <div class="row"><label class="lbl grow">Column spacing</label>
+                <input type="number" id="legColSpacing" min="0" max="80" step="2" value="16" style="width:74px"></div>
               <div class="row"><label class="lbl grow">Marker scale</label>
-                <input type="number" id="legScale" min="0.5" max="3" step="0.25" value="1" style="width:74px"></div>
+                <input type="number" id="legScale" min="0.1" max="6" step="0.05" value="1" style="width:74px"></div>
+              <div class="row"><label class="lbl grow">Swatch width</label>
+                <input type="number" id="legSwatchWidth" min="0.5" max="8" step="0.1" value="1.7" style="width:74px"
+                  title="In font sizes"></div>
               <div class="row"><label class="lbl grow">Row spacing</label>
                 <input type="number" id="legRowSpacing" min="0" max="3" step="0.1" value="0.5" style="width:74px"></div>
               <div class="row"><label class="lbl grow">Swatch gap</label>
@@ -522,15 +609,41 @@
         <!-- export tab -->
         <section class="tabpage" data-page="export">
           <details class="sec" open>
+            <summary>Publication style</summary>
+            <div class="body">
+              <button class="btn full" id="btnPublication">Apply publication style</button>
+              <p class="hintline">Black &amp; white points with black outlines and varied shapes,
+                a plain boxed legend with italic names, and 600 DPI export. Entries restyled under
+                <b>Per-group overrides</b> keep their styling.</p>
+            </div>
+          </details>
+          <details class="sec" open>
             <summary>Export image</summary>
             <div class="body">
-              <div class="row"><label class="lbl grow">PNG width (px)</label>
-                <input type="number" id="pngWidth" min="600" max="8000" step="100" value="2000" style="width:96px"></div>
-              <div class="btnrow" style="margin-top:6px">
-                <button class="btn pri" id="btnPng">Download PNG</button>
-                <button class="btn" id="btnSvg">Download SVG</button>
-              </div>
-              <p class="hintline">The image is cropped to the map frame and its decorations.</p>
+              <div class="row"><label class="lbl grow">Format</label>
+                <select id="exportFormat" class="grow">
+                  <option value="png">PNG</option>
+                  <option value="jpeg">JPEG</option>
+                  <option value="webp">WebP</option>
+                  <option value="tiff">TIFF</option>
+                  <option value="pdf">PDF (the map as an image)</option>
+                  <option value="svg">SVG (vector)</option>
+                </select></div>
+              <div class="row"><label class="lbl grow">Width</label>
+                <input type="number" id="exportWidth" min="0.5" max="200" step="0.5" value="9" style="width:80px">
+                <select id="exportUnit" style="width:auto" aria-label="Width unit">
+                  <option value="in">in</option>
+                  <option value="cm">cm</option>
+                </select></div>
+              <div class="row"><label class="lbl grow">DPI</label>
+                <input type="number" id="exportDpi" list="dpiChoices" min="50" max="2400" step="1" value="200" style="width:80px">
+                <datalist id="dpiChoices"><option value="100"></option><option value="150"></option>
+                  <option value="200"></option><option value="300"></option><option value="600"></option></datalist></div>
+              <p class="muted" id="exportSize"></p>
+              <button class="btn pri full" id="btnExport">Download</button>
+              <p class="err" id="exportErr"></p>
+              <p class="hintline">The image is cropped to the map frame and its decorations. PNG, JPEG,
+                TIFF and PDF carry the DPI, so they open at their print size.</p>
             </div>
           </details>
           <details class="sec">
@@ -549,13 +662,32 @@
     </aside>
 
     <div id="stage">
-      <div id="mapwrap"><svg id="map" xmlns="http://www.w3.org/2000/svg"></svg></div>
-      <div class="hint" id="emptyHint">
-        <div class="lead">A blank world, ready for points</div>
-        <div style="margin-top:6px">Add a CSV, paste a table, type coordinates, or load a sample dataset
-          from the <b>Data</b> tab.</div>
+      <div id="mapwrap">
+        <svg id="map" xmlns="http://www.w3.org/2000/svg"></svg>
+        <div class="hint" id="emptyHint">
+          <div class="lead">A blank world, ready for points</div>
+          <div style="margin-top:6px">Add a CSV, paste a table, type coordinates, or load a sample dataset
+            from the <b>Data</b> tab.</div>
+        </div>
+        <div id="stagebar"></div>
       </div>
-      <div id="stagebar"></div>
+      <!-- the bar under the map: the filter (which values of the selected
+           dataset are drawn) and the zoom buttons, kept off the map so they
+           never cover a corner the legend, compass or scale bar may use -->
+      <div id="mapbar">
+        <div id="filterbar" hidden>
+          <label for="filterCol" class="lbl">Filter by</label>
+          <select id="filterCol"></select>
+          <button class="btn sm" id="filterAll" disabled>All</button>
+          <button class="btn sm" id="filterNone" disabled>None</button>
+          <div id="filterVals" aria-label="Values to show"></div>
+        </div>
+        <div id="zoomctl" role="group" aria-label="Zoom">
+          <button id="zoomIn" title="Zoom in (+)" aria-label="Zoom in">+</button>
+          <button id="zoomOut" title="Zoom out (−)" aria-label="Zoom out">−</button>
+          <button id="zoomReset" title="Whole map (0)" aria-label="Show the whole map">⤢</button>
+        </div>
+      </div>
     </div>
   </main>
 </div>
@@ -573,7 +705,8 @@
           <option value="lonlat">Longitude, Latitude</option>
         </select></div>
       <label class="block">One point per line: <code>38, -100</code>. Add a label with
-        <code>38, -100, Site A</code>. Decimal degrees or DMS.</label>
+        <code>38, -100, Site A</code>. Separate with commas, semicolons or tabs;
+        decimal degrees or DMS.</label>
       <textarea id="mText" placeholder="38.9, -77.0, Washington&#10;51.5, -0.12, London&#10;-33.9, 151.2, Sydney"></textarea>
       <div class="row wrap" style="margin-top:8px">
         <label class="lbl">Shape</label><select id="mMarker" style="flex:0 0 130px"></select>
@@ -612,6 +745,7 @@
     <div class="mbody">
       <div class="row"><label class="lbl" style="flex:0 0 96px">Dataset name</label>
         <input type="text" id="mapName" class="grow"></div>
+      <label class="check"><input type="checkbox" id="mapHeaders" checked> First row contains column headers</label>
       <p class="muted" style="margin:10px 0 6px">Tell MiniMappr which columns hold the coordinates.
         The rest become attributes you can group, colour, or symbolise by.</p>
       <table class="maptbl"><thead><tr><th>Column</th><th>Sample</th><th>Role</th></tr></thead>
@@ -625,6 +759,24 @@
   </div>
 </div>
 
+<!-- Combine columns modal -->
+<div class="modal-bg" id="combineModal">
+  <div class="modal">
+    <h3>Combine columns</h3>
+    <div class="mbody">
+      <label class="block">Join these columns, in this order:</label>
+      <div id="cCols"></div>
+      <div class="row"><label class="lbl" style="flex:0 0 96px">Separator</label>
+        <input type="text" id="cSep" value=" " style="width:74px"></div>
+      <p class="muted" id="cPreview"></p>
+    </div>
+    <div class="mfoot">
+      <button class="btn" data-close="combineModal">Cancel</button>
+      <button class="btn pri" id="cOk">Add column</button>
+    </div>
+  </div>
+</div>
+
 <!-- About modal -->
 <div class="modal-bg" id="aboutModal">
   <div class="modal">
@@ -633,8 +785,8 @@
       <p>MiniMappr is a browser build of
         <a href="https://github.com/CalebHendren/PyMappr" target="_blank" rel="noopener">PyMappr</a>,
         a remake of <a href="https://www.simplemappr.net/" target="_blank" rel="noopener">SimpleMappr</a>.
-        It plots points from a CSV or manual entry onto a projected world map and exports PNG or SVG.
-        Everything runs in the page; no data leaves the browser.</p>
+        It plots points from a CSV or manual entry onto a projected world map and exports PNG, JPEG,
+        WebP, TIFF, PDF or SVG. Everything runs in the page; no data leaves the browser.</p>
       <p><b>Not in this web version.</b> Use desktop
         <a href="https://github.com/CalebHendren/PyMappr/releases" target="_blank" rel="noopener">PyMappr</a> for:</p>
       <ul>
@@ -649,11 +801,24 @@
         <a href="https://github.com/topojson/world-atlas" target="_blank" rel="noopener">world-atlas</a>
         (derived from <a href="https://www.naturalearthdata.com/" target="_blank" rel="noopener">Natural Earth</a>,
         public domain). Everything is inlined into this one HTML file.</p>
+      <p>If MiniMappr is useful to you, you can support its development on
+        <a href="https://ko-fi.com/calebhendren" target="_blank" rel="noopener">Ko-fi</a>.</p>
     </div>
     <div class="mfoot"><button class="btn pri" data-close="aboutModal">Close</button></div>
   </div>
 </div>
 
+<!-- Notice modal (skipped rows); last, so it opens above any other modal -->
+<div class="modal-bg" id="noticeModal">
+  <div class="modal">
+    <h3 id="noticeTitle">Notice</h3>
+    <div class="mbody">
+      <p id="noticeLead"></p>
+      <ul id="noticeList" class="notice"></ul>
+    </div>
+    <div class="mfoot"><button class="btn pri" data-close="noticeModal">OK</button></div>
+  </div>
+</div>
 <!-- inlined libraries (d3-array, d3-geo, d3-geo-projection, topojson-client) -->
 <script>// https://d3js.org/d3-array/ v3.2.4 Copyright 2010-2023 Mike Bostock
 !function(t,n){"object"==typeof exports&&"undefined"!=typeof module?n(exports):"function"==typeof define&&define.amd?define(["exports"],n):n((t="undefined"!=typeof globalThis?globalThis:t||self).d3=t.d3||{})}(this,(function(t){"use strict";function n(t,n){return null==t||null==n?NaN:t<n?-1:t>n?1:t>=n?0:NaN}function r(t,n){return null==t||null==n?NaN:n<t?-1:n>t?1:n>=t?0:NaN}function e(t){let e,f,i;function u(t,n,r=0,o=t.length){if(r<o){if(0!==e(n,n))return o;do{const e=r+o>>>1;f(t[e],n)<0?r=e+1:o=e}while(r<o)}return r}return 2!==t.length?(e=n,f=(r,e)=>n(t(r),e),i=(n,r)=>t(n)-r):(e=t===n||t===r?t:o,f=t,i=t),{left:u,center:function(t,n,r=0,e=t.length){const o=u(t,n,r,e-1);return o>r&&i(t[o-1],n)>-i(t[o],n)?o-1:o},right:function(t,n,r=0,o=t.length){if(r<o){if(0!==e(n,n))return o;do{const e=r+o>>>1;f(t[e],n)<=0?r=e+1:o=e}while(r<o)}return r}}}function o(){return 0}function f(t){return null===t?NaN:+t}const i=e(n),u=i.right,l=i.left,c=e(f).center;var s=u;const a=d(m),h=d((function(t){const n=m(t);return(t,r,e,o,f)=>{n(t,r,(e<<=2)+0,(o<<=2)+0,f<<=2),n(t,r,e+1,o+1,f),n(t,r,e+2,o+2,f),n(t,r,e+3,o+3,f)}}));function d(t){return function(n,r,e=r){if(!((r=+r)>=0))throw new RangeError("invalid rx");if(!((e=+e)>=0))throw new RangeError("invalid ry");let{data:o,width:f,height:i}=n;if(!((f=Math.floor(f))>=0))throw new RangeError("invalid width");if(!((i=Math.floor(void 0!==i?i:o.length/f))>=0))throw new RangeError("invalid height");if(!f||!i||!r&&!e)return n;const u=r&&t(r),l=e&&t(e),c=o.slice();return u&&l?(p(u,c,o,f,i),p(u,o,c,f,i),p(u,c,o,f,i),y(l,o,c,f,i),y(l,c,o,f,i),y(l,o,c,f,i)):u?(p(u,o,c,f,i),p(u,c,o,f,i),p(u,o,c,f,i)):l&&(y(l,o,c,f,i),y(l,c,o,f,i),y(l,o,c,f,i)),n}}function p(t,n,r,e,o){for(let f=0,i=e*o;f<i;)t(n,r,f,f+=e,1)}function y(t,n,r,e,o){for(let f=0,i=e*o;f<e;++f)t(n,r,f,f+i,e)}function m(t){const n=Math.floor(t);if(n===t)return function(t){const n=2*t+1;return(r,e,o,f,i)=>{if(!((f-=i)>=o))return;let u=t*e[o];const l=i*t;for(let t=o,n=o+l;t<n;t+=i)u+=e[Math.min(f,t)];for(let t=o,c=f;t<=c;t+=i)u+=e[Math.min(f,t+l)],r[t]=u/n,u-=e[Math.max(o,t-l)]}}(t);const r=t-n,e=2*t+1;return(t,o,f,i,u)=>{if(!((i-=u)>=f))return;let l=n*o[f];const c=u*n,s=c+u;for(let t=f,n=f+c;t<n;t+=u)l+=o[Math.min(i,t)];for(let n=f,a=i;n<=a;n+=u)l+=o[Math.min(i,n+c)],t[n]=(l+r*(o[Math.max(f,n-s)]+o[Math.min(i,n+s)]))/e,l-=o[Math.max(f,n-c)]}}function g(t,n){let r=0;if(void 0===n)for(let n of t)null!=n&&(n=+n)>=n&&++r;else{let e=-1;for(let o of t)null!=(o=n(o,++e,t))&&(o=+o)>=o&&++r}return r}function v(t){return 0|t.length}function M(t){return!(t>0)}function w(t){return"object"!=typeof t||"length"in t?t:Array.from(t)}function b(t,n){let r,e=0,o=0,f=0;if(void 0===n)for(let n of t)null!=n&&(n=+n)>=n&&(r=n-o,o+=r/++e,f+=r*(n-o));else{let i=-1;for(let u of t)null!=(u=n(u,++i,t))&&(u=+u)>=u&&(r=u-o,o+=r/++e,f+=r*(u-o))}if(e>1)return f/(e-1)}function A(t,n){const r=b(t,n);return r?Math.sqrt(r):r}function x(t,n){let r,e;if(void 0===n)for(const n of t)null!=n&&(void 0===r?n>=n&&(r=e=n):(r>n&&(r=n),e<n&&(e=n)));else{let o=-1;for(let f of t)null!=(f=n(f,++o,t))&&(void 0===r?f>=f&&(r=e=f):(r>f&&(r=f),e<f&&(e=f)))}return[r,e]}class N{constructor(){this._partials=new Float64Array(32),this._n=0}add(t){const n=this._partials;let r=0;for(let e=0;e<this._n&&e<32;e++){const o=n[e],f=t+o,i=Math.abs(t)<Math.abs(o)?t-(f-o):o-(f-t);i&&(n[r++]=i),t=f}return n[r]=t,this._n=r+1,this}valueOf(){const t=this._partials;let n,r,e,o=this._n,f=0;if(o>0){for(f=t[--o];o>0&&(n=f,r=t[--o],f=n+r,e=r-(f-n),!e););o>0&&(e<0&&t[o-1]<0||e>0&&t[o-1]>0)&&(r=2*e,n=f+r,r==n-f&&(f=n))}return f}}class InternMap extends Map{constructor(t,n=k){if(super(),Object.defineProperties(this,{_intern:{value:new Map},_key:{value:n}}),null!=t)for(const[n,r]of t)this.set(n,r)}get(t){return super.get(E(this,t))}has(t){return super.has(E(this,t))}set(t,n){return super.set(_(this,t),n)}delete(t){return super.delete(S(this,t))}}class InternSet extends Set{constructor(t,n=k){if(super(),Object.defineProperties(this,{_intern:{value:new Map},_key:{value:n}}),null!=t)for(const n of t)this.add(n)}has(t){return super.has(E(this,t))}add(t){return super.add(_(this,t))}delete(t){return super.delete(S(this,t))}}function E({_intern:t,_key:n},r){const e=n(r);return t.has(e)?t.get(e):r}function _({_intern:t,_key:n},r){const e=n(r);return t.has(e)?t.get(e):(t.set(e,r),r)}function S({_intern:t,_key:n},r){const e=n(r);return t.has(e)&&(r=t.get(e),t.delete(e)),r}function k(t){return null!==t&&"object"==typeof t?t.valueOf():t}function T(t){return t}function F(t,...n){return U(t,T,T,n)}function I(t,...n){return U(t,Array.from,T,n)}function j(t,n){for(let r=1,e=n.length;r<e;++r)t=t.flatMap((t=>t.pop().map((([n,r])=>[...t,n,r]))));return t}function q(t,n,...r){return U(t,T,n,r)}function R(t,n,...r){return U(t,Array.from,n,r)}function O(t){if(1!==t.length)throw new Error("duplicate key");return t[0]}function U(t,n,r,e){return function t(o,f){if(f>=e.length)return r(o);const i=new InternMap,u=e[f++];let l=-1;for(const t of o){const n=u(t,++l,o),r=i.get(n);r?r.push(t):i.set(n,[t])}for(const[n,r]of i)i.set(n,t(r,f));return n(i)}(t,0)}function L(t,n){return Array.from(n,(n=>t[n]))}function P(t,...n){if("function"!=typeof t[Symbol.iterator])throw new TypeError("values is not iterable");t=Array.from(t);let[r]=n;if(r&&2!==r.length||n.length>1){const e=Uint32Array.from(t,((t,n)=>n));return n.length>1?(n=n.map((n=>t.map(n))),e.sort(((t,r)=>{for(const e of n){const n=C(e[t],e[r]);if(n)return n}}))):(r=t.map(r),e.sort(((t,n)=>C(r[t],r[n])))),L(t,e)}return t.sort(z(r))}function z(t=n){if(t===n)return C;if("function"!=typeof t)throw new TypeError("compare is not a function");return(n,r)=>{const e=t(n,r);return e||0===e?e:(0===t(r,r))-(0===t(n,n))}}function C(t,n){return(null==t||!(t>=t))-(null==n||!(n>=n))||(t<n?-1:t>n?1:0)}var D=Array.prototype.slice;function G(t){return()=>t}const B=Math.sqrt(50),H=Math.sqrt(10),J=Math.sqrt(2);function K(t,n,r){const e=(n-t)/Math.max(0,r),o=Math.floor(Math.log10(e)),f=e/Math.pow(10,o),i=f>=B?10:f>=H?5:f>=J?2:1;let u,l,c;return o<0?(c=Math.pow(10,-o)/i,u=Math.round(t*c),l=Math.round(n*c),u/c<t&&++u,l/c>n&&--l,c=-c):(c=Math.pow(10,o)*i,u=Math.round(t/c),l=Math.round(n/c),u*c<t&&++u,l*c>n&&--l),l<u&&.5<=r&&r<2?K(t,n,2*r):[u,l,c]}function Q(t,n,r){if(!((r=+r)>0))return[];if((t=+t)===(n=+n))return[t];const e=n<t,[o,f,i]=e?K(n,t,r):K(t,n,r);if(!(f>=o))return[];const u=f-o+1,l=new Array(u);if(e)if(i<0)for(let t=0;t<u;++t)l[t]=(f-t)/-i;else for(let t=0;t<u;++t)l[t]=(f-t)*i;else if(i<0)for(let t=0;t<u;++t)l[t]=(o+t)/-i;else for(let t=0;t<u;++t)l[t]=(o+t)*i;return l}function V(t,n,r){return K(t=+t,n=+n,r=+r)[2]}function W(t,n,r){let e;for(;;){const o=V(t,n,r);if(o===e||0===o||!isFinite(o))return[t,n];o>0?(t=Math.floor(t/o)*o,n=Math.ceil(n/o)*o):o<0&&(t=Math.ceil(t*o)/o,n=Math.floor(n*o)/o),e=o}}function X(t){return Math.max(1,Math.ceil(Math.log(g(t))/Math.LN2)+1)}function Y(){var t=T,n=x,r=X;function e(e){Array.isArray(e)||(e=Array.from(e));var o,f,i,u=e.length,l=new Array(u);for(o=0;o<u;++o)l[o]=t(e[o],o,e);var c=n(l),a=c[0],h=c[1],d=r(l,a,h);if(!Array.isArray(d)){const t=h,r=+d;if(n===x&&([a,h]=W(a,h,r)),(d=Q(a,h,r))[0]<=a&&(i=V(a,h,r)),d[d.length-1]>=h)if(t>=h&&n===x){const t=V(a,h,r);isFinite(t)&&(t>0?h=(Math.floor(h/t)+1)*t:t<0&&(h=(Math.ceil(h*-t)+1)/-t))}else d.pop()}for(var p=d.length,y=0,m=p;d[y]<=a;)++y;for(;d[m-1]>h;)--m;(y||m<p)&&(d=d.slice(y,m),p=m-y);var g,v=new Array(p+1);for(o=0;o<=p;++o)(g=v[o]=[]).x0=o>0?d[o-1]:a,g.x1=o<p?d[o]:h;if(isFinite(i)){if(i>0)for(o=0;o<u;++o)null!=(f=l[o])&&a<=f&&f<=h&&v[Math.min(p,Math.floor((f-a)/i))].push(e[o]);else if(i<0)for(o=0;o<u;++o)if(null!=(f=l[o])&&a<=f&&f<=h){const t=Math.floor((a-f)*i);v[Math.min(p,t+(d[t]<=f))].push(e[o])}}else for(o=0;o<u;++o)null!=(f=l[o])&&a<=f&&f<=h&&v[s(d,f,0,p)].push(e[o]);return v}return e.value=function(n){return arguments.length?(t="function"==typeof n?n:G(n),e):t},e.domain=function(t){return arguments.length?(n="function"==typeof t?t:G([t[0],t[1]]),e):n},e.thresholds=function(t){return arguments.length?(r="function"==typeof t?t:G(Array.isArray(t)?D.call(t):t),e):r},e}function Z(t,n){let r;if(void 0===n)for(const n of t)null!=n&&(r<n||void 0===r&&n>=n)&&(r=n);else{let e=-1;for(let o of t)null!=(o=n(o,++e,t))&&(r<o||void 0===r&&o>=o)&&(r=o)}return r}function $(t,n){let r,e=-1,o=-1;if(void 0===n)for(const n of t)++o,null!=n&&(r<n||void 0===r&&n>=n)&&(r=n,e=o);else for(let f of t)null!=(f=n(f,++o,t))&&(r<f||void 0===r&&f>=f)&&(r=f,e=o);return e}function tt(t,n){let r;if(void 0===n)for(const n of t)null!=n&&(r>n||void 0===r&&n>=n)&&(r=n);else{let e=-1;for(let o of t)null!=(o=n(o,++e,t))&&(r>o||void 0===r&&o>=o)&&(r=o)}return r}function nt(t,n){let r,e=-1,o=-1;if(void 0===n)for(const n of t)++o,null!=n&&(r>n||void 0===r&&n>=n)&&(r=n,e=o);else for(let f of t)null!=(f=n(f,++o,t))&&(r>f||void 0===r&&f>=f)&&(r=f,e=o);return e}function rt(t,n,r=0,e=1/0,o){if(n=Math.floor(n),r=Math.floor(Math.max(0,r)),e=Math.floor(Math.min(t.length-1,e)),!(r<=n&&n<=e))return t;for(o=void 0===o?C:z(o);e>r;){if(e-r>600){const f=e-r+1,i=n-r+1,u=Math.log(f),l=.5*Math.exp(2*u/3),c=.5*Math.sqrt(u*l*(f-l)/f)*(i-f/2<0?-1:1);rt(t,n,Math.max(r,Math.floor(n-i*l/f+c)),Math.min(e,Math.floor(n+(f-i)*l/f+c)),o)}const f=t[n];let i=r,u=e;for(et(t,r,n),o(t[e],f)>0&&et(t,r,e);i<u;){for(et(t,i,u),++i,--u;o(t[i],f)<0;)++i;for(;o(t[u],f)>0;)--u}0===o(t[r],f)?et(t,r,u):(++u,et(t,u,e)),u<=n&&(r=u+1),n<=u&&(e=u-1)}return t}function et(t,n,r){const e=t[n];t[n]=t[r],t[r]=e}function ot(t,r=n){let e,o=!1;if(1===r.length){let f;for(const i of t){const t=r(i);(o?n(t,f)>0:0===n(t,t))&&(e=i,f=t,o=!0)}}else for(const n of t)(o?r(n,e)>0:0===r(n,n))&&(e=n,o=!0);return e}function ft(t,n,r){if(t=Float64Array.from(function*(t,n){if(void 0===n)for(let n of t)null!=n&&(n=+n)>=n&&(yield n);else{let r=-1;for(let e of t)null!=(e=n(e,++r,t))&&(e=+e)>=e&&(yield e)}}(t,r)),(e=t.length)&&!isNaN(n=+n)){if(n<=0||e<2)return tt(t);if(n>=1)return Z(t);var e,o=(e-1)*n,f=Math.floor(o),i=Z(rt(t,f).subarray(0,f+1));return i+(tt(t.subarray(f+1))-i)*(o-f)}}function it(t,n,r=f){if(!isNaN(n=+n)){if(e=Float64Array.from(t,((n,e)=>f(r(t[e],e,t)))),n<=0)return nt(e);if(n>=1)return $(e);var e,o=Uint32Array.from(t,((t,n)=>n)),i=e.length-1,u=Math.floor(i*n);return rt(o,u,0,i,((t,n)=>C(e[t],e[n]))),(u=ot(o.subarray(0,u+1),(t=>e[t])))>=0?u:-1}}function ut(t,n){return[t,n]}function lt(t,r=n){if(1===r.length)return nt(t,r);let e,o=-1,f=-1;for(const n of t)++f,(o<0?0===r(n,n):r(n,e)<0)&&(e=n,o=f);return o}var ct=st(Math.random);function st(t){return function(n,r=0,e=n.length){let o=e-(r=+r);for(;o;){const e=t()*o--|0,f=n[o+r];n[o+r]=n[e+r],n[e+r]=f}return n}}function at(t){if(!(o=t.length))return[];for(var n=-1,r=tt(t,ht),e=new Array(r);++n<r;)for(var o,f=-1,i=e[n]=new Array(o);++f<o;)i[f]=t[f][n];return e}function ht(t){return t.length}function dt(t){return t instanceof InternSet?t:new InternSet(t)}function pt(t,n){const r=t[Symbol.iterator](),e=new Set;for(const t of n){const n=yt(t);if(e.has(n))continue;let o,f;for(;({value:o,done:f}=r.next());){if(f)return!1;const t=yt(o);if(e.add(t),Object.is(n,t))break}}return!0}function yt(t){return null!==t&&"object"==typeof t?t.valueOf():t}t.Adder=N,t.InternMap=InternMap,t.InternSet=InternSet,t.ascending=n,t.bin=Y,t.bisect=s,t.bisectCenter=c,t.bisectLeft=l,t.bisectRight=u,t.bisector=e,t.blur=function(t,n){if(!((n=+n)>=0))throw new RangeError("invalid r");let r=t.length;if(!((r=Math.floor(r))>=0))throw new RangeError("invalid length");if(!r||!n)return t;const e=m(n),o=t.slice();return e(t,o,0,r,1),e(o,t,0,r,1),e(t,o,0,r,1),t},t.blur2=a,t.blurImage=h,t.count=g,t.cross=function(...t){const n="function"==typeof t[t.length-1]&&function(t){return n=>t(...n)}(t.pop()),r=(t=t.map(w)).map(v),e=t.length-1,o=new Array(e+1).fill(0),f=[];if(e<0||r.some(M))return f;for(;;){f.push(o.map(((n,r)=>t[r][n])));let i=e;for(;++o[i]===r[i];){if(0===i)return n?f.map(n):f;o[i--]=0}}},t.cumsum=function(t,n){var r=0,e=0;return Float64Array.from(t,void 0===n?t=>r+=+t||0:o=>r+=+n(o,e++,t)||0)},t.descending=r,t.deviation=A,t.difference=function(t,...n){t=new InternSet(t);for(const r of n)for(const n of r)t.delete(n);return t},t.disjoint=function(t,n){const r=n[Symbol.iterator](),e=new InternSet;for(const n of t){if(e.has(n))return!1;let t,o;for(;({value:t,done:o}=r.next())&&!o;){if(Object.is(n,t))return!1;e.add(t)}}return!0},t.every=function(t,n){if("function"!=typeof n)throw new TypeError("test is not a function");let r=-1;for(const e of t)if(!n(e,++r,t))return!1;return!0},t.extent=x,t.fcumsum=function(t,n){const r=new N;let e=-1;return Float64Array.from(t,void 0===n?t=>r.add(+t||0):o=>r.add(+n(o,++e,t)||0))},t.filter=function(t,n){if("function"!=typeof n)throw new TypeError("test is not a function");const r=[];let e=-1;for(const o of t)n(o,++e,t)&&r.push(o);return r},t.flatGroup=function(t,...n){return j(I(t,...n),n)},t.flatRollup=function(t,n,...r){return j(R(t,n,...r),r)},t.fsum=function(t,n){const r=new N;if(void 0===n)for(let n of t)(n=+n)&&r.add(n);else{let e=-1;for(let o of t)(o=+n(o,++e,t))&&r.add(o)}return+r},t.greatest=ot,t.greatestIndex=function(t,r=n){if(1===r.length)return $(t,r);let e,o=-1,f=-1;for(const n of t)++f,(o<0?0===r(n,n):r(n,e)>0)&&(e=n,o=f);return o},t.group=F,t.groupSort=function(t,r,e){return(2!==r.length?P(q(t,r,e),(([t,r],[e,o])=>n(r,o)||n(t,e))):P(F(t,e),(([t,e],[o,f])=>r(e,f)||n(t,o)))).map((([t])=>t))},t.groups=I,t.histogram=Y,t.index=function(t,...n){return U(t,T,O,n)},t.indexes=function(t,...n){return U(t,Array.from,O,n)},t.intersection=function(t,...n){t=new InternSet(t),n=n.map(dt);t:for(const r of t)for(const e of n)if(!e.has(r)){t.delete(r);continue t}return t},t.least=function(t,r=n){let e,o=!1;if(1===r.length){let f;for(const i of t){const t=r(i);(o?n(t,f)<0:0===n(t,t))&&(e=i,f=t,o=!0)}}else for(const n of t)(o?r(n,e)<0:0===r(n,n))&&(e=n,o=!0);return e},t.leastIndex=lt,t.map=function(t,n){if("function"!=typeof t[Symbol.iterator])throw new TypeError("values is not iterable");if("function"!=typeof n)throw new TypeError("mapper is not a function");return Array.from(t,((r,e)=>n(r,e,t)))},t.max=Z,t.maxIndex=$,t.mean=function(t,n){let r=0,e=0;if(void 0===n)for(let n of t)null!=n&&(n=+n)>=n&&(++r,e+=n);else{let o=-1;for(let f of t)null!=(f=n(f,++o,t))&&(f=+f)>=f&&(++r,e+=f)}if(r)return e/r},t.median=function(t,n){return ft(t,.5,n)},t.medianIndex=function(t,n){return it(t,.5,n)},t.merge=function(t){return Array.from(function*(t){for(const n of t)yield*n}(t))},t.min=tt,t.minIndex=nt,t.mode=function(t,n){const r=new InternMap;if(void 0===n)for(let n of t)null!=n&&n>=n&&r.set(n,(r.get(n)||0)+1);else{let e=-1;for(let o of t)null!=(o=n(o,++e,t))&&o>=o&&r.set(o,(r.get(o)||0)+1)}let e,o=0;for(const[t,n]of r)n>o&&(o=n,e=t);return e},t.nice=W,t.pairs=function(t,n=ut){const r=[];let e,o=!1;for(const f of t)o&&r.push(n(e,f)),e=f,o=!0;return r},t.permute=L,t.quantile=ft,t.quantileIndex=it,t.quantileSorted=function(t,n,r=f){if((e=t.length)&&!isNaN(n=+n)){if(n<=0||e<2)return+r(t[0],0,t);if(n>=1)return+r(t[e-1],e-1,t);var e,o=(e-1)*n,i=Math.floor(o),u=+r(t[i],i,t);return u+(+r(t[i+1],i+1,t)-u)*(o-i)}},t.quickselect=rt,t.range=function(t,n,r){t=+t,n=+n,r=(o=arguments.length)<2?(n=t,t=0,1):o<3?1:+r;for(var e=-1,o=0|Math.max(0,Math.ceil((n-t)/r)),f=new Array(o);++e<o;)f[e]=t+e*r;return f},t.rank=function(t,r=n){if("function"!=typeof t[Symbol.iterator])throw new TypeError("values is not iterable");let e=Array.from(t);const o=new Float64Array(e.length);2!==r.length&&(e=e.map(r),r=n);const f=(t,n)=>r(e[t],e[n]);let i,u;return(t=Uint32Array.from(e,((t,n)=>n))).sort(r===n?(t,n)=>C(e[t],e[n]):z(f)),t.forEach(((t,n)=>{const r=f(t,void 0===i?t:i);r>=0?((void 0===i||r>0)&&(i=t,u=n),o[t]=u):o[t]=NaN})),o},t.reduce=function(t,n,r){if("function"!=typeof n)throw new TypeError("reducer is not a function");const e=t[Symbol.iterator]();let o,f,i=-1;if(arguments.length<3){if(({done:o,value:r}=e.next()),o)return;++i}for(;({done:o,value:f}=e.next()),!o;)r=n(r,f,++i,t);return r},t.reverse=function(t){if("function"!=typeof t[Symbol.iterator])throw new TypeError("values is not iterable");return Array.from(t).reverse()},t.rollup=q,t.rollups=R,t.scan=function(t,n){const r=lt(t,n);return r<0?void 0:r},t.shuffle=ct,t.shuffler=st,t.some=function(t,n){if("function"!=typeof n)throw new TypeError("test is not a function");let r=-1;for(const e of t)if(n(e,++r,t))return!0;return!1},t.sort=P,t.subset=function(t,n){return pt(n,t)},t.sum=function(t,n){let r=0;if(void 0===n)for(let n of t)(n=+n)&&(r+=n);else{let e=-1;for(let o of t)(o=+n(o,++e,t))&&(r+=o)}return r},t.superset=pt,t.thresholdFreedmanDiaconis=function(t,n,r){const e=g(t),o=ft(t,.75)-ft(t,.25);return e&&o?Math.ceil((r-n)/(2*o*Math.pow(e,-1/3))):1},t.thresholdScott=function(t,n,r){const e=g(t),o=A(t);return e&&o?Math.ceil((r-n)*Math.cbrt(e)/(3.49*o)):1},t.thresholdSturges=X,t.tickIncrement=V,t.tickStep=function(t,n,r){r=+r;const e=(n=+n)<(t=+t),o=e?V(n,t,r):V(t,n,r);return(e?-1:1)*(o<0?1/-o:o)},t.ticks=Q,t.transpose=at,t.union=function(...t){const n=new InternSet;for(const r of t)for(const t of r)n.add(t);return n},t.variance=b,t.zip=function(){return at(arguments)}}));
@@ -723,6 +888,11 @@ const BLACK_AND_WHITE = ["#000000","#ffffff","#808080"];
 const PALETTES = {"Default": DEFAULT_PALETTE,
   "Colourblind safe (Okabe-Ito)": OKABE_ITO,
   "Black & white": BLACK_AND_WHITE};
+// The outline filled markers get by default, and the one the publication
+// style sets. Match POINT_EDGE_COLOR / POINT_EDGE_WIDTH and
+// PUBLICATION_POINT_EDGE in styles.py.
+const POINT_EDGE_COLOR="#ffffff", POINT_EDGE_WIDTH=0.5;
+const PUBLICATION_POINT_EDGE=["#000000", 0.6];
 // The palette in use is a map-wide setting (opts.palette), not a per-dataset one.
 function palette(){ return PALETTES[opts.palette] || DEFAULT_PALETTE; }
 const BASE_MARKERS = ["Circle","Square","Triangle","Triangle down","Triangle left",
@@ -817,7 +987,10 @@ function detectDelim(text){
   let best=",", n=-1; for(const d in counts){ if(counts[d]>n){n=counts[d];best=d;} }
   return best;
 }
-function parseDelimited(text){
+// headers: whether the first row names the columns; undefined guesses it
+// (headersLookLikeData). Without headers every row is data and the columns
+// are "Column 1", "Column 2", ... Mirrors data_loader.read_table.
+function parseDelimited(text, headers){
   text = text.replace(/^﻿/,"");
   const delim = detectDelim(text);
   const rows=[]; let field="", row=[], q=false;
@@ -836,10 +1009,64 @@ function parseDelimited(text){
   }
   if(field.length||row.length){ row.push(field); rows.push(row); }
   const clean = rows.filter(r=>r.some(v=>v!==""));
-  if(!clean.length) return {columns:[],rows:[]};
-  const header = clean[0].map((h,i)=>h.trim()||("Column "+(i+1)));
-  const data = clean.slice(1).map(r=>{ const o={}; header.forEach((h,i)=>o[h]=(r[i]??"").trim()); return o; });
-  return {columns:header, rows:data};
+  if(!clean.length) return {columns:[],rows:[],headers:headers!==false};
+  if(headers===undefined) headers=!headersLookLikeData(clean[0]);
+  const width=Math.max(...clean.map(r=>r.length));
+  const header = headers
+    ? uniqueNames(clean[0].map((h,i)=>h.trim()||("Column "+(i+1))))
+    : Array.from({length:width},(_,i)=>"Column "+(i+1));
+  const data = clean.slice(headers?1:0).map(r=>{ const o={}; header.forEach((h,i)=>o[h]=(r[i]??"").trim()); return o; });
+  return {columns:header, rows:data, headers};
+}
+// Two headers that read the same would share one attribute key, and the
+// second would silently overwrite the first; number the repeats instead.
+function uniqueNames(names){
+  const seen=new Set();
+  return names.map(n=>{ let name=n, k=2; while(seen.has(name)) name=`${n} (${k++})`;
+    seen.add(name); return name; });
+}
+// Whether the header row is really data: a file whose first row is
+// coordinates ("38,-100") reads into numeric-looking column names, where
+// real headers are words. Two or more numeric headers means data. Mirrors
+// data_loader.headers_look_like_data.
+function headersLookLikeData(cells){
+  return cells.filter(c=>/^[+-]?(\d+\.?\d*|\.\d+)(e[+-]?\d+)?$/i.test(String(c).trim())).length>=2;
+}
+
+// Which columns hold the coordinates, from the headers first and then by
+// position: the last two columns are Longitude, Latitude unless the values
+// say otherwise. Every other column becomes an attribute. Mirrors
+// data_loader.guess_mapping.
+const LON_HINTS=["lon","lng","long","longitude","x"];
+const LAT_HINTS=["lat","latitude","y"];
+// An exact hint ("lng"), then a header starting with one ("Long."), then one
+// containing the whole word ("decimalLongitude"). Short hints never match
+// inside other words: "x" and "y" sit in Taxon, Family and Locality.
+function matchColumn(columns, hints){
+  const lowered=new Map(columns.map(c=>[c.toLowerCase().trim(), c]));
+  const rules=[(low,h)=>low===h, (low,h)=>h.length>1 && low.startsWith(h),
+               (low,h)=>h.length>4 && low.includes(h)];
+  for(const rule of rules)
+    for(const hint of hints)
+      for(const [low,original] of lowered)
+        if(rule(low,hint)) return original;
+  return null;
+}
+function beyondLatitude(rows, column){
+  return rows.some(r=>{ const n=Number(String(r[column]??"").trim()); return Math.abs(n)>90; });
+}
+function guessMapping(parsed){
+  const {columns, rows}=parsed;
+  let lon=matchColumn(columns, LON_HINTS), lat=matchColumn(columns, LAT_HINTS);
+  if(lon==null || lat==null || lon===lat){
+    if(columns.length<2) return Object.fromEntries(columns.map(c=>[c,"attr"]));
+    lon=columns[columns.length-2]; lat=columns[columns.length-1];
+    // typed-in "lat, lon" files import the right way round this way
+    if(beyondLatitude(rows, lat) && !beyondLatitude(rows, lon)) [lon,lat]=[lat,lon];
+  }
+  const map={};
+  for(const c of columns) map[c] = c===lon ? "lon" : c===lat ? "lat" : "attr";
+  return map;
 }
 
 /* styling logic (ported from styles.py) */
@@ -860,13 +1087,15 @@ function groupPoints(rows, groupBy){
   if(!groupBy) return [["All points", rows]];
   return [...bucketBy(rows, r=>r._attr[groupBy]??"")].map(([lab,sub])=>[lab||"(blank)", sub]);
 }
-function defaultStyles(labels, colorKeys, varySymbols, base){
+// `offset` starts the colours further into the palette, so several datasets
+// on one map get distinct default colours. Mirrors styles.default_styles.
+function defaultStyles(labels, colorKeys, varySymbols, base, offset=0){
   const styles={}, pal=palette();
   if(!colorKeys){
     labels.forEach((lab,i)=>{
       styles[lab]= labels.length===1
         ? {color:base.color, marker:base.marker, size:base.size}
-        : {color:pal[i%pal.length],
+        : {color:pal[(i+offset)%pal.length],
            marker:varySymbols?MARKER_CYCLE[i%MARKER_CYCLE.length]:base.marker, size:base.size};
     });
     return styles;
@@ -875,10 +1104,64 @@ function defaultStyles(labels, colorKeys, varySymbols, base){
   for(const key of colorKeys) if(!order.has(key)) order.set(key, order.size);
   labels.forEach((lab,i)=>{
     const key=colorKeys[i]; const s=seen[key]||0; seen[key]=s+1;
-    styles[lab]={color:pal[order.get(key)%pal.length],
+    styles[lab]={color:pal[(order.get(key)+offset)%pal.length],
       marker:MARKER_CYCLE[s%MARKER_CYCLE.length], size:base.size};
   });
   return styles;
+}
+// Where each dataset's colours start in the palette: group-by datasets pick
+// up where the last visible one stopped, advancing by their number of
+// groups, so a second dataset is not red again. Symbol-by datasets colour by
+// value and take no part. Mirrors layout.layout_points' palette_offset.
+function paletteOffsets(){
+  const out=new Map(); let offset=0;
+  for(const ds of datasets){
+    out.set(ds.id, offset);
+    if(ds.visible && ds.rows.length && !ds.symbolBy) offset+=groupPoints(ds.rows, ds.groupBy).length;
+  }
+  return out;
+}
+
+// More shapes than this stop being easy to tell apart. Matches
+// LEGIBLE_MARKER_LIMIT in styles.py.
+const LEGIBLE_MARKER_LIMIT=6;
+// How many shapes a reader has to tell apart: under nesting, the most
+// symbol values inside one colour group (shapes restart per group);
+// otherwise every symbol value. Mirrors styles.marker_load.
+function markerLoad(rows, colorKey, symbolKey, hierarchy){
+  if(!symbolKey || !rows.length) return 0;
+  if(!resolveNesting(rows, colorKey, symbolKey, hierarchy))
+    return new Set(rows.map(r=>r._attr[symbolKey]??"")).size;
+  const per=new Map();
+  for(const r of rows){
+    const c=r._attr[colorKey]??"";
+    if(!per.has(c)) per.set(c, new Set());
+    per.get(c).add(r._attr[symbolKey]??"");
+  }
+  return Math.max(...[...per.values()].map(s=>s.size));
+}
+// A warning for the status line when the map asks too much of its shapes,
+// or when forced nesting leaves the key not describing the map; null when
+// all is well. Mirrors PyMapprApp._warn_marker_load, wording included.
+function legendWarning(visible){
+  if(opts.legHierarchy==="always"){
+    for(const ds of visible){
+      if(!ds.symbolBy || !ds.colorBy) continue;
+      if(resolveNesting(ds.rows, ds.colorBy, ds.symbolBy, "auto")) continue;
+      return `${ds.name}: “${ds.symbolBy}” does not nest inside “${ds.colorBy}”, so each `
+        + "shape is listed under the first colour it appears in. Set Hierarchy to Auto for "
+        + "two independent keys.";
+    }
+  }
+  let worst=0, worstDs=null;
+  for(const ds of visible){
+    const load=markerLoad(ds.rows, ds.colorBy, ds.symbolBy, opts.legHierarchy);
+    if(load>worst){ worst=load; worstDs=ds; }
+  }
+  if(worst<=LEGIBLE_MARKER_LIMIT) return null;
+  return `${worstDs.name}: “${worstDs.symbolBy}” needs ${worst} shapes, more than the `
+    + `${LEGIBLE_MARKER_LIMIT} that stay easy to tell apart. Consider a Color by column that `
+    + "groups them, or filtering to fewer values.";
 }
 // True when every value of symbolKey sits under exactly one value of colorKey -
 // a hierarchy (genus/species) rather than a cross-product. Nesting is what makes
@@ -1004,6 +1287,8 @@ const PROJ_DEFS = {
   "Lambert: Asia":{make:()=>d3.geoConicConformal().parallels([15,65]), maxLat:90, origin:[95,30], lambert:true, region:"Asia"},
   "Lambert: S. America":{make:()=>d3.geoConicConformal().parallels([-42,-5]), maxLat:90, origin:[-60,-32], lambert:true, region:"South America"},
   "Lambert: Africa":{make:()=>d3.geoAzimuthalEqualArea(), maxLat:90, origin:[20,5], lambert:true, azimuthal:true, region:"Africa"},
+  // Centred wherever the user puts it; no region of its own.
+  "Lambert Azimuthal (custom)":{make:()=>d3.geoAzimuthalEqualArea(), maxLat:90, origin:[0,0], lambert:true, azimuthal:true},
 };
 const OCEAN_COLORS = {none:null, grey:"#dcdcdc", blue:"#d4e6f4"};
 // Every legend control, as [element id, kind, default]. One table drives the
@@ -1025,8 +1310,8 @@ const LEGEND_CONTROLS = [
   ["legSectionTitles", "bool", true],
   ["legTitleSeparator", "str", " / "],
   ["legDatasetPrefix", "bool", true],
-  // No "keep empty groups" here: PyMappr needs it because its filter bar can
-  // hide every row inside a group, and MiniMappr has no filter.
+  // Only matters while the filter bar hides every row inside a group.
+  ["legEmptyGroups", "bool", false],
   // nested keys
   ["legIndent", "num", 3],
   ["legBoldGroups", "bool", true],
@@ -1036,6 +1321,8 @@ const LEGEND_CONTROLS = [
   // layout
   ["legCols", "num", 1],
   ["legScale", "num", 1],
+  ["legSwatchWidth", "num", 1.7],        // in font sizes
+  ["legColSpacing", "num", 16],          // px between columns
   ["legRowSpacing", "num", 0.5],
   ["legSwatchGap", "num", 8],
   ["legPad", "num", 9],
@@ -1061,8 +1348,33 @@ const LEGEND_CONTROLS = [
   ["legTitleItalic", "bool", false],
   ["legTitleUnderline", "bool", false],
 ];
+// Map settings that are a plain control each, in the same form: the compass,
+// scale bar, grid label and export options. The legend table's listener and restore serve these
+// too.
+const MAP_CONTROLS = [
+  ["compassPos", "str", "upper right"],
+  ["compassStyle", "str", "arrow"],        // arrow | triangle
+  ["compassSize", "num", 1],
+  ["scaleUnits", "str", "km"],             // km | mi | both
+  ["scalePos", "str", "lower left"],
+  ["scaleStyle", "str", "segmented"],      // segmented | plain
+  ["scaleLengthMode", "str", "auto"],      // auto | fixed
+  ["scaleFixed", "num", 100],              // in scaleUnits, for a fixed length
+  ["gridHideLabels", "bool", false],       // degree labels on Equirectangular
+  ["exportFormat", "str", "png"],          // png | jpeg | webp | tiff | pdf | svg
+  ["exportWidth", "num", 9],               // print width; PyMappr's figure is 9 in
+  ["exportUnit", "str", "in"],             // in | cm
+  ["exportDpi", "num", 200],               // PyMappr's default export DPI
+];
 // Changing one of these re-derives the rows; the rest only restyle. Kept for
 // readability - MiniMappr rebuilds the whole SVG either way.
+// The legend half of the publication style: a plain white box with a thin
+// black border, and italic entries because taxon names are set in italics.
+// Mirrors legend.PUBLICATION_LEGEND; its 9/10 pt text is a step up from
+// PyMappr's 8/9 pt defaults, and so is 13/14 px from MiniMappr's 12/13.
+const PUBLICATION_LEGEND = {legFrame:true, legFrameColor:"#ffffff", legFrameAlpha:1,
+  legFrameEdge:"#000000", legFrameWidth:0.5, legRadius:0, legShadow:false,
+  legLabelItalic:true, legFont:13, legTitleFont:14};
 const LEGEND_CONTENT_KEYS = new Set(["legHierarchy", "legOrder", "legCounts",
   "legCountFormat", "legBlankLabel", "legSectionTitles", "legTitleSeparator",
   "legDatasetPrefix", "legEmptyGroups", "legGroupSwatch"]);
@@ -1074,10 +1386,11 @@ const opts = {
   matColor:"#ffffff", lineWidth:1, palette:"Default", scaleBar:false,
   // The outline drawn around filled markers (open markers outline in their
   // own colour). White keeps overlapping points apart; width 0 turns it off.
-  // Matches POINT_EDGE_COLOR / POINT_EDGE_WIDTH in styles.py.
-  pointEdgeColor:"#ffffff", pointEdgeWidth:0.6,
+  pointEdgeColor:POINT_EDGE_COLOR, pointEdgeWidth:POINT_EDGE_WIDTH,
 };
-for(const [id,,value] of LEGEND_CONTROLS) opts[id]=value;
+for(const [id,,value] of [...LEGEND_CONTROLS, ...MAP_CONTROLS]) opts[id]=value;
+// Where the scale bar was dragged to, as frame fractions; null = its corner.
+opts.scaleAnchor=null;
 let currentProjection=null;     // the d3 projection from the last render()
 let placeMode=false;            // click-to-place points onto the map
 let placeDsId=null;             // manual dataset placed points go into
@@ -1097,16 +1410,43 @@ function clampView(){
   view.y=clamp(view.y, ry1*(1-view.k), ry0*(1-view.k));
 }
 
+/* filter bar */
+// Which values of one column of the selected dataset the filter bar hides.
+// Not saved, as in PyMappr, and dropped when the selection moves to another
+// dataset. Hidden values are kept rather than shown ones, so a point placed
+// with a new value shows up instead of being filtered out unseen.
+let filter={dsId:null, column:null, hidden:new Set()};
+function filterSig(){
+  return filter.column && filter.hidden.size
+    ? JSON.stringify([filter.dsId, filter.column, [...filter.hidden]]) : "";
+}
+// The rows the map draws. Remembered per row array and filter, since the
+// render, the legend and the status line all ask.
+const shownCache=new WeakMap();
+function shownRows(ds){
+  if(filter.dsId!==ds.id || !filter.column || !filter.hidden.size) return ds.rows;
+  const sig=filterSig(), hit=shownCache.get(ds.rows);
+  if(hit && hit.sig===sig) return hit.rows;
+  const col=filter.column;
+  const rows=ds.rows.filter(r=>!filter.hidden.has(r._attr[col]??""));
+  shownCache.set(ds.rows, {sig, rows});
+  return rows;
+}
+
 /* dataset styling resolution */
-function resolveGroups(ds){
-  // returns {mode, groups:[{label,style,rows}], legend:{...}}
+// Colours and shapes are worked out from the whole dataset, so a group keeps
+// its look while the filter hides others; only the drawn rows are filtered.
+// Mirrors layout.group_styles / layout._attribute_layout.
+function resolveGroups(ds, offset){
+  // returns {mode, groups:[{label,style,rows}], shown, filtering, ...}
   const rows = ds.rows;
+  const shown = shownRows(ds), filtering = shown!==rows;
   if(ds.symbolBy){
     const nestedNow = resolveNesting(rows, ds.colorBy, ds.symbolBy, opts.legHierarchy);
     const owner = nestedNow ? ownerMap(rows, ds.symbolBy, ds.colorBy) : null;
     const {colorMap,symbolMap} = attributeStyleMaps(rows, ds.colorBy, ds.symbolBy, nestedNow, owner);
     const defColor = Object.values(colorMap)[0]||palette()[0];
-    const combos = bucketBy(rows, r=>(r._attr[ds.colorBy]??"")+ROW_SEP+(r._attr[ds.symbolBy]??""));
+    const combos = bucketBy(shown, r=>(r._attr[ds.colorBy]??"")+ROW_SEP+(r._attr[ds.symbolBy]??""));
     const groups = [...combos.values()].map(sub=>{
       const cv=sub[0]._attr[ds.colorBy]??"", sv=sub[0]._attr[ds.symbolBy]??"";
       const label = [cv,sv].filter(Boolean).join(" / ") || "All points";
@@ -1124,16 +1464,20 @@ function resolveGroups(ds){
       return {label, rows:sub, style};
     });
     return {mode:"attr", groups, colorMap, symbolMap, colorKey:ds.colorBy, symbolKey:ds.symbolBy,
-            nested:nestedNow, owner};
+            nested:nestedNow, owner, shown, filtering};
   }
   const grp = groupPoints(rows, ds.groupBy);
   const labels = grp.map(g=>g[0]);
   const colorKeys = ds.colorBy ? grp.map(g=>{ const r=g[1][0]; return r?(r._attr[ds.colorBy]??""):""; }) : null;
-  const styles = defaultStyles(labels, colorKeys, ds.varySymbols, ds.base);
-  const groups = grp.map(([label,sub])=>({label, rows:sub, style:{...styles[label]}}));
+  if(offset===undefined) offset=paletteOffsets().get(ds.id)||0;
+  const styles = defaultStyles(labels, colorKeys, ds.varySymbols, ds.base, offset);
+  // A group the filter empties keeps its place and style, with no rows.
+  const shownBy = filtering ? new Map(groupPoints(shown, ds.groupBy)) : null;
+  const groups = grp.map(([label,sub])=>({label, rows:shownBy ? (shownBy.get(label)||[]) : sub,
+                                          style:{...styles[label]}}));
   if(!ds.groupBy && groups.length===1) groups[0].label = ds.name;
   for(const g of groups) g.style=applyOverride(g.style, ds.overrides[rowKey("group",g.label)]);
-  return {mode:"group", groups};
+  return {mode:"group", groups, shown, filtering};
 }
 
 /* projection + frame */
@@ -1169,16 +1513,25 @@ function silhouetteIsRect(){
   if(pd.maxLat<90) return true;
   return false;
 }
+// Degree labels along the left and bottom edges, as PyMappr's axis ticks
+// are: only on the plain lon/lat projection, where a meridian is a straight
+// vertical line. They sit outside the frame, which gives up room for them.
+function gridLabelsShown(){
+  return opts.graticule>0 && !opts.gridHideLabels && opts.projection==="Equirectangular";
+}
+const GRID_LABEL_W=36, GRID_LABEL_H=16;
 function drawRect(W,H){
   const pad=12;
+  const left=pad+(gridLabelsShown()?GRID_LABEL_W:0), bottom=pad+(gridLabelsShown()?GRID_LABEL_H:0);
+  const aw=W-left-pad, ah=H-pad-bottom;
   if(opts.orientation==="portrait"){
     const aspect=6.5/9;
-    let h=H-2*pad, w=h*aspect;
-    if(w>W-2*pad){ w=W-2*pad; h=w/aspect; }
-    const x=(W-w)/2, y=(H-h)/2;
+    let h=ah, w=h*aspect;
+    if(w>aw){ w=aw; h=w/aspect; }
+    const x=left+(aw-w)/2, y=pad+(ah-h)/2;
     return [[x,y],[x+w,y+h]];
   }
-  return [[pad,pad],[W-pad,H-pad]];
+  return [[left,pad],[W-pad,H-bottom]];
 }
 function buildProjection(W,H){
   const pd=currentProjDef();
@@ -1212,6 +1565,8 @@ function setAttrs(e, attrs){ for(const k in attrs) e.setAttribute(k, attrs[k]); 
 function el(tag, attrs){ const e=document.createElementNS(svgNS,tag); return attrs ? setAttrs(e, attrs) : e; }
 function clearNode(node){ while(node.firstChild) node.removeChild(node.firstChild); }
 let sceneSize={w:0,h:0};
+let stageNotes=[];
+let pointXY=[];   // screen positions of the drawn points, for the "Best" legend spot
 
 // Follow one pointer (mouse, pen or finger) from pointerdown until it lifts.
 // Capturing it keeps the moves coming to `node` when the pointer leaves it.
@@ -1274,8 +1629,8 @@ const rowsIds=new WeakMap(); let nextRowsId=1;
 function rowsId(rows){ let id=rowsIds.get(rows); if(!id) rowsIds.set(rows, id=nextRowsId++); return id; }
 
 function renderNow(){
-  const stage=$("#stage");
-  const W=stage.clientWidth, H=stage.clientHeight;
+  const wrap=$("#mapwrap");
+  const W=wrap.clientWidth, H=wrap.clientHeight;
   sceneSize={w:W,h:H};
   svg.setAttribute("viewBox",`0 0 ${W} ${H}`);
   svg.setAttribute("width",W); svg.setAttribute("height",H);
@@ -1288,10 +1643,12 @@ function renderNow(){
   const path = d3.geoPath(proj);
   const [[rx0,ry0],[rx1,ry1]] = rect;
   const rw=rx1-rx0, rh=ry1-ry0;
+  // Warnings gathered while drawing, for the status line.
+  stageNotes=[];
   const useRect = silhouetteIsRect();
   const pd = currentProjDef();
   const projKey = JSON.stringify([opts.projection, opts.extent, opts.centerLon, opts.centerLat,
-    opts.orientation, W, H, view]);
+    opts.orientation, W, H, view, rect]);
   const sphereD = useRect ? "" : cachedPath(projKey, "sphere", ()=>path({type:"Sphere"}));
 
   // background (mat), and the clip for everything inside the map rectangle
@@ -1310,9 +1667,10 @@ function renderNow(){
       ? el("rect",{x:rx0,y:ry0,width:rw,height:rh,fill:oceanFill,stroke:"none"})
       : el("path",{d:sphereD, fill:oceanFill, stroke:"none"}));
     if(opts.graticule>0){
-      const step=opts.graticule;
+      // Lines run to the projection's latitude limit, not d3's default 80.
+      const step=opts.graticule, ml=pd.maxLat;
       base.appendChild(el("path",{d:cachedPath(projKey, "grat"+step,
-          ()=>path(d3.geoGraticule().step([step,step])())),
+          ()=>path(d3.geoGraticule().extentMinor([[-180,-ml],[180,ml]]).step([step,step])())),
         fill:"none", stroke:"#9aa3ac", "stroke-width":0.5, "stroke-opacity":0.7}));
     }
     if(opts.showLand){
@@ -1333,14 +1691,18 @@ function renderNow(){
   // points: one <g> per style carries the colour, opacity and stroke, and the
   // marker outline is built once per group; each point is a translated path.
   const visible=datasets.filter(d=>d.visible);
-  const resolved=visible.map(ds=>({ds, res:resolveGroups(ds)}));
+  const offsets=paletteOffsets();
+  const resolved=visible.map(ds=>({ds, res:resolveGroups(ds, offsets.get(ds.id))}));
+  const warning=legendWarning(visible.filter(d=>d.rows.length));
+  if(warning) stageNotes.push(warning);
   const edge=opts.pointEdgeWidth>0 ? opts.pointEdgeColor : null;
-  const pKey=JSON.stringify([projKey, opts.labels, edge, opts.pointEdgeWidth, resolved.map(({ds,res})=>[
+  const pKey=JSON.stringify([projKey, opts.labels, edge, opts.pointEdgeWidth, filterSig(), resolved.map(({ds,res})=>[
     rowsId(ds.rows), ds.rows.length, ds.groupBy, ds.colorBy, ds.symbolBy, ds.opacity ?? 1,
     res.groups.map(g=>[g.rows.length, g.style.color, g.style.marker, g.style.size])])]);
   if(pKey!==pointsKey){
     pointsKey=pKey;
     const ptsG=layers.points; clearNode(ptsG);
+    pointXY=[];
     // Labels sit on a white halo (a stroked copy underneath, which every SVG
     // editor draws, unlike paint-order) so they read over borders and coasts.
     const haloG=el("g",{"font-family":"sans-serif","font-size":10,fill:"#ffffff",stroke:"#ffffff",
@@ -1364,6 +1726,7 @@ function renderNow(){
           // than draw them under the clip.
           if(xy[0]<rx0-r_ || xy[0]>rx1+r_ || xy[1]<ry0-r_ || xy[1]>ry1+r_) continue;
           g.appendChild(el("path",{d, transform:`translate(${xy[0].toFixed(2)},${xy[1].toFixed(2)})`}));
+          pointXY.push(xy);
           if(opts.labels && r.label){
             const t=el("text",{x:(xy[0]+r_+2).toFixed(2), y:(xy[1]+3).toFixed(2)});
             t.textContent=r.label; labelsG.appendChild(t);
@@ -1387,10 +1750,13 @@ function renderNow(){
     }
     // Counts belong on the row text here too - reading opts.legCounts only
     // in the attribute branch is what used to make "Show point counts" do
-    // nothing at all in plain Group-by mode.
+    // nothing at all in plain Group-by mode. They count what is drawn, so
+    // they follow the filter.
     const total=res.groups.reduce((a,g)=>a+g.rows.length,0);
     const sizes={}, place={}, first={};
     let rows=res.groups.map((grp,i)=>{
+      // A group the filter emptied has nothing on the map to describe.
+      if(!grp.rows.length) return null;
       const o=ds.overrides[rowKey("group",grp.label)];
       // Hidden rows keep their points on the map but leave the legend.
       if(isHidden(o)) return null;
@@ -1422,13 +1788,18 @@ function renderNow(){
   overlay.appendChild(useRect || isZoomed()
     ? el("rect",{x:rx0,y:ry0,width:rw,height:rh,fill:"none",stroke:"#5a6068","stroke-width":1})
     : el("path",{d:sphereD, fill:"none", stroke:"#5a6068","stroke-width":1}));
+  if(gridLabelsShown()) drawGridLabels(overlay, proj, rect);
   if(opts.title){
-    const t=el("text",{x:W/2, y:26, "text-anchor":"middle","font-family":"sans-serif",
+    const t=el("text",{x:(rx0+rx1)/2, y:26, "text-anchor":"middle","font-family":"sans-serif",
       "font-size":19,"font-weight":700,fill:"#1d2127"});
     t.textContent=opts.title; overlay.appendChild(t);
   }
   if(opts.compass) drawCompass(overlay, rect, legendBox);
+  scaleBarNote=null;
   if(opts.scaleBar) drawScaleBar(overlay, proj, rect, legendBox);
+  // A bar that silently fails to appear is worse than one that says why.
+  if(scaleBarNote) stageNotes.push(scaleBarNote);
+  syncControlStates();
 
   updateSwatches(resolved);
   $("#emptyHint").style.display = visible.some(d=>d.rows.length) ? "none":"block";
@@ -1436,63 +1807,51 @@ function renderNow(){
   scheduleSave();
 }
 
+// PyMappr's tick labels: 30°W, 10°S, 0°, 180°. Mirrors format_lon/format_lat.
+function formatLon(v){
+  v=((v+180)%360+360)%360-180;
+  const a=Number(Math.abs(v).toFixed(6));
+  return (v===0 || a===180) ? `${a}°` : `${a}°${v<0?"W":"E"}`;
+}
+function formatLat(v){
+  const a=Number(Math.abs(v).toFixed(6));
+  return v===0 ? "0°" : `${a}°${v<0?"S":"N"}`;
+}
+// Degree labels and ticks along the bottom and left of the frame: a tick on
+// every grid line, and a label on every line when they fit, otherwise on a
+// round multiple of the spacing (every 30° on a 1° grid, say).
+const LABEL_STEPS=[1,2,5,10,15,20,30,45,60,90,180];
+function drawGridLabels(parent, proj, rect){
+  const [[x0,y0],[x1,y1]]=rect, step=opts.graticule, fs=10;
+  const g=el("g",{"font-family":"sans-serif","font-size":fs, fill:"#3d444b"});
+  const ticks=[];
+  const pxPerDeg=Math.abs(proj([1,0])[0]-proj([0,0])[0]);
+  const labelStep=needPx=>LABEL_STEPS.find(s=>s%step===0 && s*pxPerDeg>=needPx) || 180;
+  const lonStep=labelStep(textWidth("180°W", fs, "sans-serif")+8);
+  for(let lon=-180; lon<=180+1e-9; lon+=step){
+    const x=proj([lon,0])[0];
+    if(x<x0-0.5 || x>x1+0.5) continue;
+    ticks.push(`M${x.toFixed(2)},${y1}v4`);
+    if(Math.round(lon)%lonStep!==0) continue;
+    const t=el("text",{x:x.toFixed(2), y:(y1+4+fs).toFixed(2), "text-anchor":"middle"});
+    t.textContent=formatLon(lon); g.appendChild(t);
+  }
+  const latStep=labelStep(fs+4);
+  for(let lat=-90; lat<=90+1e-9; lat+=step){
+    const y=proj([0,lat])[1];
+    if(y<y0-0.5 || y>y1+0.5) continue;
+    ticks.push(`M${x0},${y.toFixed(2)}h-4`);
+    if(Math.round(lat)%latStep!==0) continue;
+    const t=el("text",{x:x0-6, y:(y+fs*0.35).toFixed(2), "text-anchor":"end"});
+    t.textContent=formatLat(lat); g.appendChild(t);
+  }
+  g.appendChild(el("path",{d:ticks.join(""), stroke:"#5a6068", "stroke-width":1, fill:"none"}));
+  parent.appendChild(g);
+}
+
 // Whether two {x,y,w,h} boxes overlap.
 function boxesMeet(a, b){
   return !!(a && b) && a.x<b.x+b.w && b.x<a.x+a.w && a.y<b.y+b.h && b.y<a.y+a.h;
-}
-
-// The north arrow sits top right, or top left when the legend is there.
-function drawCompass(parent, rect, avoid){
-  const [[x0,y0],[x1]] = rect;
-  let cx=x1-26;
-  const cy=y0+34;
-  if(boxesMeet({x:cx-12, y:cy-38, w:24, h:56}, avoid)) cx=x0+26;
-  const g=el("g");
-  g.appendChild(el("line",{x1:cx,y1:cy+16,x2:cx,y2:cy-14,stroke:"#1a1a1a","stroke-width":1.6}));
-  g.appendChild(el("path",{d:poly([[cx,cy-20],[cx-4,cy-11],[cx+4,cy-11]]),fill:"#1a1a1a"}));
-  const t=el("text",{x:cx,y:cy-24,"text-anchor":"middle","font-family":"sans-serif",
-    "font-size":13,"font-weight":700,fill:"#1a1a1a"}); t.textContent="N";
-  g.appendChild(t); parent.appendChild(g);
-}
-
-// A scale bar of a round length (1, 2 or 5 x 10^n km) near a fifth of the
-// frame width. Projections stretch distances, so it is measured across the
-// centre of the frame and holds there; the globe gets none. Bottom left,
-// clear of the on-screen status bar, or bottom right when the legend is in
-// the way.
-const EARTH_KM=6371.0088;
-function drawScaleBar(parent, proj, rect, avoid){
-  if(currentProjDef().globe || !proj.invert) return;
-  const [[x0,y0],[x1,y1]]=rect;
-  const cx=(x0+x1)/2, cy=(y0+y1)/2, half=50;
-  const a=proj.invert([cx-half,cy]), b=proj.invert([cx+half,cy]);
-  if(!a || !b || ![...a,...b].every(Number.isFinite)) return;
-  const kmPerPx=d3.geoDistance(a,b)*EARTH_KM/(2*half);
-  if(!(kmPerPx>0) || !Number.isFinite(kmPerPx)) return;
-  const target=(x1-x0)*0.2*kmPerPx;
-  const pow=10**Math.floor(Math.log10(target));
-  const km=Number(([5,2,1].map(m=>m*pow).find(v=>v<=target)||pow).toPrecision(2));
-  const len=km/kmPerPx;
-  const label=km.toLocaleString("en-US")+" km";
-  const labelW=textWidth(label, 11, "sans-serif", false, false);
-  const w=Math.max(len, labelW), h=24, by=y1-30;
-  let bx=x0+14;
-  if(boxesMeet({x:bx, y:by-h+6, w, h}, avoid)) bx=x1-14-w;
-  const x=bx+(w-len)/2;
-  const bar=`M${x.toFixed(2)},${(by-5).toFixed(2)}V${by.toFixed(2)}H${(x+len).toFixed(2)}V${(by-5).toFixed(2)}`;
-  const g=el("g");
-  // a white halo under the bar and the label keeps both legible on any fill
-  g.appendChild(el("path",{d:bar, fill:"none", stroke:"#ffffff", "stroke-width":4,
-    "stroke-opacity":0.85, "stroke-linejoin":"round", "stroke-linecap":"round"}));
-  g.appendChild(el("path",{d:bar, fill:"none", stroke:"#1a1a1a", "stroke-width":1.4,
-    "stroke-linejoin":"miter"}));
-  for(const halo of [true,false]){
-    const t=el("text",{x:(x+len/2).toFixed(2), y:(by-9).toFixed(2), "text-anchor":"middle",
-      "font-family":"sans-serif", "font-size":11, fill:halo?"#ffffff":"#1a1a1a"});
-    if(halo) setAttrs(t, {stroke:"#ffffff", "stroke-width":3, "stroke-opacity":0.85, "stroke-linejoin":"round"});
-    t.textContent=label; g.appendChild(t);
-  }
-  parent.appendChild(g);
 }
 
 function legendItems(entries, attrLegends){
@@ -1509,8 +1868,14 @@ function legendItems(entries, attrLegends){
   for(const {ds,res} of attrLegends){
     const prefix=(manyDatasets && opts.legDatasetPrefix) ? ds.name+": " : "";
     // Ordering by count needs the numbers even when they are not shown.
+    // Like the rows, they follow the filter.
     const counts=(opts.legCounts||ordersByCount())
-      ? legendCounts(ds.rows,res.colorKey,res.symbolKey) : null;
+      ? legendCounts(res.shown,res.colorKey,res.symbolKey) : null;
+    // The values still on the map under a filter; null means no filtering,
+    // which the nested key treats differently from "all happen to show".
+    const shownOf=key=>(res.filtering && key) ? new Set(res.shown.map(r=>r._attr[key]??"")) : null;
+    const shownColors=shownOf(res.colorKey), shownSymbols=shownOf(res.symbolKey);
+    const isShown=(set,v)=>!set || set.has(v);
     const total=counts?counts["_total"]:0;
     const countOf=key=>(counts&&counts[key])||0;
     const lab=(v,key,o)=>legendLabel(overrideLabel(o)||v, counts?counts[key]:null, total);
@@ -1533,20 +1898,24 @@ function legendItems(entries, attrLegends){
       // to work out which colour each symbol goes with by hunting the map.
       const kidsOf=childrenByOwner(res);
       const rows=[];
-      // Every colour group is listed. MiniMappr has no filter, so the only
-      // way a group ends up childless is forced nesting, where each symbol
-      // is claimed by the first group it appears under - and dropping those
-      // would take colours off the legend that are still drawn on the map.
       const parents=ordered(Object.keys(res.colorMap),
         cv=>rowKey("color",cv), v=>countKey("c",v));
       for(const cv of parents){
         const color=res.colorMap[cv];
         const parentOverride=ov(rowKey("color",cv));
+        if(!isShown(shownColors,cv)) continue;
+        const shownKids=(kidsOf.get(cv)||[]).filter(sv=>isShown(shownSymbols,sv));
+        // A childless group means the filter hid everything inside it, so it
+        // goes too - but only while a filter is running. Forcing nesting onto
+        // crossed columns also leaves groups childless, because each symbol
+        // is claimed by the first group it appears under; dropping those
+        // would take colours off the legend that are still drawn on the map.
+        if(!shownKids.length && shownSymbols && !opts.legEmptyGroups) continue;
         // Hiding a group hides the block it heads: its children are drawn in
         // its colour, so leaving them behind would orphan them.
         if(isHidden(parentOverride)) continue;
         const kids=ordered(
-          kidsOf.get(cv)||[],
+          shownKids,
           sv=>rowKey("pair",cv,sv), k=>countKey("p",cv,k))
           .filter(sv=>!isHidden(ov(rowKey("pair",cv,sv))));
         rows.push({label:lab(cv,countKey("c",cv),parentOverride), depth:0,
@@ -1563,7 +1932,8 @@ function legendItems(entries, attrLegends){
     // Genuinely crossed: a shape really does appear in every colour here, so
     // the neutral symbol swatches are honest and the two keys stay separate.
     if(Object.keys(res.colorMap).length){
-      const values=ordered(Object.keys(res.colorMap), v=>rowKey("color",v), v=>countKey("c",v))
+      const values=ordered(Object.keys(res.colorMap).filter(v=>isShown(shownColors,v)),
+        v=>rowKey("color",v), v=>countKey("c",v))
         .filter(v=>!isHidden(ov(rowKey("color",v))));
       const rows=values.map(v=>({label:lab(v,countKey("c",v),ov(rowKey("color",v))), colorOnly:true,
         style:applyOverride({color:res.colorMap[v],marker:"Circle",size:ds.base.size},
@@ -1571,7 +1941,8 @@ function legendItems(entries, attrLegends){
       if(rows.length) sections.push({title:sectionTitle(prefix,res.colorKey||"Colour"), rows});
     }
     if(Object.keys(res.symbolMap).length){
-      const values=ordered(Object.keys(res.symbolMap), v=>rowKey("symbol",v), v=>countKey("s",v))
+      const values=ordered(Object.keys(res.symbolMap).filter(v=>isShown(shownSymbols,v)),
+        v=>rowKey("symbol",v), v=>countKey("s",v))
         .filter(v=>!isHidden(ov(rowKey("symbol",v))));
       const rows=values.map(v=>({label:lab(v,countKey("s",v),ov(rowKey("symbol",v))), symbolOnly:true,
         style:applyOverride({color:opts.legSymbolColor,marker:res.symbolMap[v],size:ds.base.size},
@@ -1680,7 +2051,7 @@ function drawLegend(parent, W, H, entries, attrLegends){
   const font=opts.legFontFamily||"sans-serif";
   const titleFs=opts.legTitleFont||fs;
   const pad=opts.legPad, gap=opts.legSwatchGap;
-  const rowH=fs*(1.05+opts.legRowSpacing), swW=fs*1.7*scale;
+  const rowH=fs*(1.05+opts.legRowSpacing), swW=fs*opts.legSwatchWidth*scale;
   const g=el("g"); g.style.cursor="move";
 
   // A nested key's group rows head a block of children, so they take the
@@ -1688,7 +2059,7 @@ function drawLegend(parent, W, H, entries, attrLegends){
   // when every swatch sits in the same column.
   const indent=fs*0.3*opts.legIndent;
   const titleH=Math.max(rowH, titleFs*(1.05+opts.legRowSpacing));
-  const gapH=rowH*0.4, colGap=16;
+  const gapH=rowH*0.4, colGap=opts.legColSpacing;
   const cols=Math.max(1,Math.round(opts.legCols));
   const titleW=text=>textWidth(text, titleFs, font, opts.legTitleBold, opts.legTitleItalic);
   // Across several columns, a title that names the whole legend (the typed
@@ -1724,16 +2095,21 @@ function drawLegend(parent, W, H, entries, attrLegends){
   const boxH=pad*2 + headerH + Math.max(0,...colH);
 
   // position
+  // Second character picks the horizontal edge, first the vertical one;
+  // "c" centres on that axis.
+  // Spots are inside the map frame, as PyMappr's legend is inside its axes;
+  // placed against the window, a portrait map's legend sat out on the side
+  // bar, which the export crop then had to keep.
+  const [[fx0,fy0],[fx1,fy1]]=frameRect;
+  const at=p=>{
+    const m=2, hx=p[1], vy=p[0];
+    return [hx==="r" ? fx1-boxW-m : hx==="l" ? fx0+m : (fx0+fx1-boxW)/2,
+            vy==="t" ? fy0+m+(opts.title?30:0) : vy==="b" ? fy1-boxH-m : (fy0+fy1-boxH)/2];
+  };
   let bx,by;
   if(legendDrag){ bx=legendDrag.x*W; by=legendDrag.y*H; }
-  else {
-    const m=14, p=opts.legPos;
-    // Second character picks the horizontal edge, first the vertical one;
-    // "c" centres on that axis.
-    const hx=p[1], vy=p[0];
-    bx = hx==="r" ? W-boxW-m : hx==="l" ? m : (W-boxW)/2;
-    by = vy==="t" ? m+(opts.title?30:0) : vy==="b" ? H-boxH-m : (H-boxH)/2;
-  }
+  else if(opts.legPos==="best") [bx,by]=at(bestLegendSpot(at, boxW, boxH));
+  else [bx,by]=at(opts.legPos);
   bx=Math.max(2,Math.min(bx,W-boxW-2)); by=Math.max(2,Math.min(by,H-boxH-2));
 
   if(opts.legShadow){
@@ -1810,12 +2186,301 @@ function drawLegend(parent, W, H, entries, attrLegends){
   return {x:bx, y:by, w:boxW, h:boxH};
 }
 
-function updateStagebar(){
-  const n=datasets.reduce((a,d)=>a+(d.visible?d.rows.length:0),0);
-  const shown=datasets.filter(d=>d.visible).length;
-  $("#stagebar").textContent = n ? `${n} point${n!==1?"s":""} · ${shown} dataset${shown!==1?"s":""} · ${opts.projection}` : opts.projection;
+// matplotlib's loc="best", which PyMappr offers: of the nine spots, the one
+// that covers the fewest points, trying them in matplotlib's order so a tie
+// goes the same way.
+const BEST_ORDER=["tr","tl","bl","br","cr","cl","bc","tc","cc"];
+function bestLegendSpot(at, w, h){
+  let best=BEST_ORDER[0], fewest=Infinity;
+  for(const spot of BEST_ORDER){
+    const [x,y]=at(spot);
+    let n=0;
+    for(const [px,py] of pointXY) if(px>=x && px<=x+w && py>=y && py<=y+h) n++;
+    if(n<fewest){ fewest=n; best=spot; }
+    if(!n) break;
+  }
+  return best;
 }
 
+function updateStagebar(){
+  if(flash && Date.now()<flash.until){ setStagebar(flash.text); return; }
+  // While the filter hides anything, say how much, as PyMappr's status does.
+  const fds=datasets.find(d=>d.id===filter.dsId);
+  if(fds && filterSig()){
+    const shown=shownRows(fds).length;
+    if(shown!==fds.rows.length){
+      setStagebar(`Filter: showing ${shown} of ${fds.rows.length} points of ${fds.name}.`);
+      return;
+    }
+  }
+  const n=datasets.reduce((a,d)=>a+(d.visible?d.rows.length:0),0);
+  const shown=datasets.filter(d=>d.visible).length;
+  setStagebar(n ? `${n} point${n!==1?"s":""} · ${shown} dataset${shown!==1?"s":""} · ${opts.projection}` : opts.projection);
+}
+// The status line: one line of state, then any warnings from the render.
+function setStagebar(text){
+  const bar=$("#stagebar"); bar.textContent=text;
+  for(const note of stageNotes){
+    const d=document.createElement("div"); d.className="note"; d.textContent=note; bar.appendChild(d);
+  }
+}
+
+/* compass and scale bar (ported from decorations.py and renderer/overlays.py) */
+// Where a decoration can sit. Matches decorations.CORNERS.
+const CORNERS=["lower left","lower right","upper left","upper right"];
+const DECOR_COLOR="#1a1a1a";
+
+// Text with a white halo underneath (a stroked copy, which every SVG editor
+// draws, unlike paint-order), so it reads over any fill.
+function haloText(parent, text, attrs){
+  for(const halo of [true,false]){
+    const t=el("text", attrs);
+    if(halo) setAttrs(t, {fill:"#ffffff", stroke:"#ffffff", "stroke-width":3,
+      "stroke-opacity":0.85, "stroke-linejoin":"round"});
+    t.textContent=text; parent.appendChild(t);
+  }
+}
+
+// The north arrow, in a corner of the frame; it moves to the other side when
+// the legend is in that corner. It always points up the page: PyMappr's
+// arrow runs from the "N" to its corner, which in a lower corner points
+// south, and that is not carried over.
+function drawCompass(parent, rect, avoid){
+  const [[x0,y0],[x1,y1]]=rect;
+  const k=clamp(Number(opts.compassSize)||1, 0.5, 3);
+  const triangle=opts.compassStyle==="triangle";
+  const w=24*k, h=(triangle?44:56)*k;
+  const padX=Math.max(0.025*(x1-x0),12), padY=Math.max(0.025*(y1-y0),12);
+  const [vertical, horizontal]=(CORNERS.includes(opts.compassPos) ? opts.compassPos : "upper right").split(" ");
+  const at=side=>({x:side==="left" ? x0+padX : x1-padX-w,
+                   y:vertical==="upper" ? y0+padY : y1-padY-h, w, h});
+  let box=at(horizontal);
+  if(boxesMeet(box, avoid)){
+    const other=at(horizontal==="left" ? "right" : "left");
+    if(!boxesMeet(other, avoid)) box=other;
+  }
+  const cx=box.x+w/2, top=box.y;
+  const g=el("g");
+  const N={x:cx, "text-anchor":"middle", "font-family":"sans-serif", "font-weight":700, fill:DECOR_COLOR};
+  if(triangle){
+    // a filled triangle pointing north, with the "N" under its base
+    g.appendChild(el("path",{d:poly([[cx,top+2*k],[cx-9*k,top+26*k],[cx+9*k,top+26*k]]),
+      fill:DECOR_COLOR, stroke:"#ffffff", "stroke-width":0.8*k, "stroke-linejoin":"round"}));
+    haloText(g, "N", {...N, y:top+41*k, "font-size":12*k});
+  } else {
+    haloText(g, "N", {...N, y:top+13*k, "font-size":13*k});
+    g.appendChild(el("line",{x1:cx, y1:top+54*k, x2:cx, y2:top+24*k,
+      stroke:DECOR_COLOR, "stroke-width":1.6*k}));
+    g.appendChild(el("path",{d:poly([[cx,top+17*k],[cx-4*k,top+27*k],[cx+4*k,top+27*k]]),
+      fill:DECOR_COLOR}));
+  }
+  parent.appendChild(g);
+}
+
+// Round lengths a scale bar may show: 1, 2, 3 or 5 x 10^n, snapped down so
+// the bar stays inside the width it was budgeted. Matches decorations.py.
+const NICE_LENGTHS=[1,2,3,5];
+const METRES_PER_MILE=1609.344;
+const SCALE_WIDTH=0.22, SCALE_SEGMENTS=4;
+function unitMetres(units){ return units==="mi" ? METRES_PER_MILE : 1000; }
+function niceLength(metres, units){
+  const per=unitMetres(units), value=metres/per;
+  if(!Number.isFinite(value) || value<=0) return 0;
+  const decade=10**Math.floor(Math.log10(value));
+  for(const c of [...NICE_LENGTHS].reverse()) if(c*decade<=value) return c*decade*per;
+  return NICE_LENGTHS[NICE_LENGTHS.length-1]*decade/10*per;
+}
+// "500 km"; a metric bar under a kilometre reads in metres, as a reader
+// zoomed in on one locality expects.
+function formatLength(metres, units){
+  const fmt=v=>Number(v.toPrecision(6)).toLocaleString("en-US",{maximumFractionDigits:6});
+  if(units!=="mi" && metres<1000) return `${fmt(metres)} m`;
+  const value=metres/unitMetres(units);
+  return `${value>=1 ? fmt(value) : Number(value.toPrecision(3))} ${units==="mi"?"mi":"km"}`;
+}
+
+// Metres between two lon/lat points on the WGS84 ellipsoid (Vincenty's
+// inverse formula), which is what PyMappr measures with. Nearly antipodal
+// points, where the iteration does not settle, fall back to the sphere.
+const EARTH_KM=6371.0088;
+function geodesicMetres(p, q){
+  const a=6378137, f=1/298.257223563, b=a*(1-f), rad=Math.PI/180;
+  const L=(q[0]-p[0])*rad;
+  const U1=Math.atan((1-f)*Math.tan(p[1]*rad)), U2=Math.atan((1-f)*Math.tan(q[1]*rad));
+  const sinU1=Math.sin(U1), cosU1=Math.cos(U1), sinU2=Math.sin(U2), cosU2=Math.cos(U2);
+  let lambda=L, sinSigma, cosSigma, sigma, cosSqAlpha, cos2SigmaM, settled=false;
+  for(let i=0;i<200;i++){
+    const sinL=Math.sin(lambda), cosL=Math.cos(lambda);
+    sinSigma=Math.hypot(cosU2*sinL, cosU1*sinU2-sinU1*cosU2*cosL);
+    if(sinSigma===0) return 0;   // the same point
+    cosSigma=sinU1*sinU2+cosU1*cosU2*cosL;
+    sigma=Math.atan2(sinSigma, cosSigma);
+    const sinAlpha=cosU1*cosU2*sinL/sinSigma;
+    cosSqAlpha=1-sinAlpha*sinAlpha;
+    cos2SigmaM=cosSqAlpha ? cosSigma-2*sinU1*sinU2/cosSqAlpha : 0;   // 0 on the equator
+    const C=f/16*cosSqAlpha*(4+f*(4-3*cosSqAlpha));
+    const prev=lambda;
+    lambda=L+(1-C)*f*sinAlpha*(sigma+C*sinSigma*(cos2SigmaM+C*cosSigma*(-1+2*cos2SigmaM*cos2SigmaM)));
+    if(Math.abs(lambda-prev)<1e-12){ settled=true; break; }
+  }
+  if(!settled) return d3.geoDistance(p,q)*EARTH_KM*1000;
+  const uSq=cosSqAlpha*(a*a-b*b)/(b*b);
+  const A=1+uSq/16384*(4096+uSq*(-768+uSq*(320-175*uSq)));
+  const B=uSq/1024*(256+uSq*(-128+uSq*(74-47*uSq)));
+  const dSigma=B*sinSigma*(cos2SigmaM+B/4*(cosSigma*(-1+2*cos2SigmaM*cos2SigmaM)
+    -B/6*cos2SigmaM*(-3+4*sinSigma*sinSigma)*(-3+4*cos2SigmaM*cos2SigmaM)));
+  return b*A*(sigma-dSigma);
+}
+
+// Heights are in pixels so the bar reads the same in a small window; its
+// placement and length are fractions of the frame, as in PyMappr. Frame
+// fractions here run up from the bottom, as matplotlib's axes do, so the
+// code below follows overlays.py line for line.
+const BAR_H=7, BAR_GAP=4, LABEL_GAP=4, LABEL_ROOM=20, SCALE_FONT=11;
+let scaleBarNote=null;   // why the bar is missing, for the status line
+
+// The scale bar: a round length measured on the row it stands on, refined
+// against its own endpoints, in one or two units. Mirrors
+// OverlaysMixin._apply_scale_bar and its helpers.
+function drawScaleBar(parent, proj, rect, avoid){
+  scaleBarNote=null;
+  if(!proj.invert) return;
+  const [[x0,y0],[x1,y1]]=rect, fw=x1-x0, fh=y1-y0;
+  const sx=fx=>x0+fx*fw, sy=fy=>y1-fy*fh;
+  // A screen point's lon/lat, or null off the map: outside a Robinson
+  // ellipse or off the globe's disk, where invert returns nonsense or NaN.
+  const lonLat=(px,py)=>{
+    const ll=proj.invert([px,py]);
+    if(!ll || !Number.isFinite(ll[0]) || !Number.isFinite(ll[1])) return null;
+    const back=proj(ll);
+    return back && Math.hypot(back[0]-px, back[1]-py)<0.5 ? ll : null;
+  };
+  const span=(fa,fb,fy)=>{
+    const a=lonLat(sx(fa),sy(fy)), b=lonLat(sx(fb),sy(fy));
+    return a && b ? geodesicMetres(a,b) : NaN;
+  };
+  // The bar's own row whenever the scale can be measured there; otherwise
+  // step towards the middle, since the corners of a Robinson map or the
+  // globe lie off the map altogether.
+  const referenceRow=fy=>{
+    for(const row of [fy, ...[0.25,0.5,0.75,1].map(step=>fy+(0.5-fy)*step)])
+      if(Number.isFinite(span(0.45,0.55,row))) return row;
+    return 0.5;
+  };
+  // Ground metres per unit of frame width near fx: a first guess only.
+  const estimate=(fx,fy)=>{
+    const left=clamp(fx-0.05, 0, 0.9);
+    let metres=span(left, left+0.1, fy);
+    if(!(metres>0)) metres=span(0.45,0.55,fy);
+    return metres>0 ? metres/0.1 : NaN;
+  };
+  // The width a bar of `metres` needs, refined until the drawing really is
+  // as long as its label says; null when no honest bar of it fits.
+  const fitWidth=(metres, x, row, rightAnchored)=>{
+    const per=estimate(x,row);
+    if(!(per>0)) return null;
+    let width=metres/per;
+    for(let i=0;i<6;i++){
+      if(!(width>0) || width>0.95) return null;
+      const left=rightAnchored ? x-width : x;
+      let actual=span(left, left+width, row);
+      if(!(actual>0)) actual=span(0.5-width/2, 0.5+width/2, row);
+      if(!(actual>0)) break;   // nothing measurable: keep the estimate
+      const adjust=metres/actual;
+      if(Math.abs(adjust-1)<0.001) break;
+      width*=adjust;
+    }
+    return width>0 && width<=0.95 ? width : null;
+  };
+
+  const units=opts.scaleUnits==="both" ? ["km","mi"] : [opts.scaleUnits==="mi" ? "mi" : "km"];
+  const anchor=opts.scaleAnchor;
+  const dragged=!!(anchor && Number.isFinite(anchor.x) && Number.isFinite(anchor.y));
+  const height=BAR_H/fh, gap=BAR_GAP/fh;
+  const [vertical, horizontal]=(CORNERS.includes(opts.scalePos) ? opts.scalePos : "lower left").split(" ");
+  // The lower pad also keeps the bar clear of the on-screen status line.
+  const y=dragged ? anchor.y : vertical==="upper" ? 1-0.03 : Math.max(0.03, 24/fh);
+
+  const layout=x=>{
+    const rightAnchored=x>0.5 && !dragged, topAnchored=y>0.5 && !dragged;
+    const stack=units.length*height+(units.length-1)*gap;
+    let baseY=topAnchored ? y-stack : y;
+    // a second unit is labelled underneath, so lift the stack clear of it
+    if(units.length>1 && !topAnchored && !dragged) baseY+=LABEL_ROOM/fh;
+    const bars=[], last=units.length-1;
+    for(const [i,unit] of units.entries()){
+      const yb=baseY+(last-i)*(height+gap);
+      const row=referenceRow(yb+height/2);
+      let metres;
+      if(i===0 && opts.scaleLengthMode==="fixed" && opts.scaleFixed>0){
+        metres=opts.scaleFixed*unitMetres(opts.scaleUnits);
+      } else {
+        const per=estimate(x,row);
+        if(!(per>0)) return {note:"Scale bar: the map scale cannot be measured at this view."};
+        metres=niceLength(per*SCALE_WIDTH, unit);
+      }
+      if(!(metres>0)) return {note:null};
+      const width=fitWidth(metres, x, row, rightAnchored);
+      if(width==null) return {note:"Scale bar: scale varies too much across this view to draw "
+        + "an accurate bar - zoom in, or move the bar away from the poles."};
+      const left=rightAnchored ? x-width : x;
+      bars.push({unit, metres, width, yb, left, label:formatLength(metres, unit)});
+    }
+    // screen box, labels included, for dodging the legend and for dragging
+    let bx0=Infinity, bx1=-Infinity;
+    for(const b of bars){
+      const lw=textWidth(b.label, SCALE_FONT, "sans-serif", false, false);
+      const mid=sx(b.left+b.width/2);
+      bx0=Math.min(bx0, sx(b.left), mid-lw/2); bx1=Math.max(bx1, sx(b.left+b.width), mid+lw/2);
+    }
+    const top=sy(bars[0].yb+height)-LABEL_GAP-SCALE_FONT;
+    const bottom=bars.length>1 ? sy(bars[last].yb)+LABEL_GAP+SCALE_FONT : sy(bars[0].yb);
+    return {bars, baseY, box:{x:bx0, y:top, w:bx1-bx0, h:bottom-top}};
+  };
+
+  let x=dragged ? anchor.x : horizontal==="right" ? 1-0.03 : 0.03;
+  let result=layout(x);
+  if(result.bars && !dragged && boxesMeet(result.box, avoid)){
+    const other=layout(1-x);
+    if(other.bars && !boxesMeet(other.box, avoid)){ result=other; x=1-x; }
+  }
+  if(!result.bars){ scaleBarNote=result.note; return; }
+
+  const g=el("g"); g.style.cursor="move";
+  const segments=opts.scaleStyle==="plain" ? 1 : SCALE_SEGMENTS;
+  result.bars.forEach((b,i)=>{
+    const top=sy(b.yb+height), bottom=sy(b.yb);
+    for(let s=0;s<segments;s++){
+      const left=sx(b.left+b.width*s/segments), right=sx(b.left+b.width*(s+1)/segments);
+      g.appendChild(el("rect",{x:left.toFixed(2), y:top.toFixed(2), width:(right-left).toFixed(2),
+        height:(bottom-top).toFixed(2), fill:s%2===0 ? DECOR_COLOR : "#ffffff",
+        stroke:DECOR_COLOR, "stroke-width":0.8}));
+    }
+    // the first unit is labelled above the stack, a second one below it
+    haloText(g, b.label, {x:sx(b.left+b.width/2).toFixed(2),
+      y:(i===0 ? top-LABEL_GAP : bottom+LABEL_GAP+SCALE_FONT*0.8).toFixed(2),
+      "text-anchor":"middle", "font-family":"sans-serif", "font-size":SCALE_FONT, fill:DECOR_COLOR});
+  });
+  // Drag to place it anywhere; the drop point is kept as the stack's lower
+  // left corner in frame fractions, as PyMappr stores it. Double-click
+  // snaps it back to its corner.
+  const left=Math.min(...result.bars.map(b=>b.left));
+  g.addEventListener("pointerdown",ev=>{
+    if(ev.button!==0 || !ev.isPrimary) return;
+    ev.preventDefault(); ev.stopPropagation();   // don't also start a map pan
+    const startX=ev.clientX, startY=ev.clientY; let dx=0, dy=0;
+    trackPointer(g, ev, e=>{
+      dx=e.clientX-startX; dy=e.clientY-startY;
+      g.setAttribute("transform",`translate(${dx},${dy})`);
+    }, ()=>{
+      if(!dx && !dy) return;
+      opts.scaleAnchor={x:clamp(left+dx/fw,0,1), y:clamp(result.baseY-dy/fh,0,1)};
+      render();
+    });
+  });
+  g.addEventListener("dblclick",ev=>{ ev.stopPropagation(); opts.scaleAnchor=null; render(); });
+  parent.appendChild(g);
+}
 /* dataset ingest */
 function makeDataset(name, columns, rows, base){
   // rows: array of {lon,lat,label,_attr}
@@ -1823,8 +2488,75 @@ function makeDataset(name, columns, rows, base){
     id:nextId++, name, visible:true, columns, rows,
     base: base || {color:"#d62728", marker:"Circle", size:30},
     groupBy: columns[0]||null, colorBy:null, symbolBy:null, varySymbols:false,
-    overrides:{}, opacity:1, source:"csv",
+    overrides:{}, opacity:1, source:"csv", combined:[],
   };
+}
+
+// Combine columns: join attribute columns (Genus + Species) into one more
+// column, so a legend row reads "Eleusis chapadensis" without editing the
+// file. Blank parts are skipped rather than leaving a stray separator.
+// Mirrors data_loader.combine_name_columns.
+function combinedValue(attr, parts, sep){
+  return parts.map(p=>String(attr[p]??"").trim()).filter(Boolean).join(sep);
+}
+function combinedName(existing, parts, sep){
+  const base=parts.join(sep).trim()||"Combined";
+  let name=base, k=2;
+  while(existing.includes(name)) name=`${base} (${k++})`;
+  return name;
+}
+// The columns a dataset has before any combining: its table's attribute
+// columns, or, with no table, whatever is not a combined column.
+function baseColumns(ds){
+  const imp=ds._import;
+  if(imp && Array.isArray(imp.columns) && imp.mapping)
+    return imp.columns.filter(c=>imp.mapping[c]==="attr");
+  const made=new Set((ds.combined||[]).map(c=>c && c.name));
+  return ds.columns.filter(c=>!made.has(c));
+}
+// Combined columns are kept as recipes and worked out again whenever the
+// rows are rebuilt - an imported dataset's rows come back from its table on
+// load and on edit, which would otherwise lose them. A recipe whose parts
+// are gone, or whose name a real column has since taken, is dropped.
+function applyCombined(ds){
+  ds.columns=baseColumns(ds);
+  const kept=[];
+  for(const c of Array.isArray(ds.combined) ? ds.combined : []){
+    if(!c || typeof c.name!=="string" || !Array.isArray(c.parts) || c.parts.length<2) continue;
+    if(ds.columns.includes(c.name) || !c.parts.every(p=>ds.columns.includes(p))) continue;
+    const sep=typeof c.sep==="string" ? c.sep : " ";
+    for(const r of ds.rows) r._attr[c.name]=combinedValue(r._attr, c.parts, sep);
+    ds.columns.push(c.name);
+    kept.push({name:c.name, parts:[...c.parts], sep});
+  }
+  ds.combined=kept;
+}
+
+// Rows that could not be read, listed the way PyMappr lists them: the first
+// dozen, then how many more.
+const MAX_SKIPPED_SHOWN=12;
+function showNotice(title, lead, lines){
+  $("#noticeTitle").textContent=title;
+  $("#noticeLead").textContent=lead;
+  const list=$("#noticeList"); list.innerHTML="";
+  for(const line of lines.slice(0,MAX_SKIPPED_SHOWN)){
+    const li=document.createElement("li"); li.textContent=line; list.appendChild(li);
+  }
+  const more=lines.length-MAX_SKIPPED_SHOWN;
+  if(more>0){ const li=document.createElement("li"); li.className="muted";
+    li.textContent=`… and ${more} more`; list.appendChild(li); }
+  openModal("noticeModal");
+}
+function reportSkipped(imported, skipped){
+  if(!imported){
+    showNotice("No usable rows", "No rows had valid coordinates."
+      + (skipped.length ? " First problems:" : ""), skipped);
+    return false;
+  }
+  if(skipped.length)
+    showNotice("Some rows skipped",
+      `Imported ${imported} row${imported!==1?"s":""}; skipped ${skipped.length}:`, skipped);
+  return true;
 }
 // The manual dataset that placed points are appended to: the selected one
 // if it is manual, otherwise a fresh "Placed points" set.
@@ -1872,16 +2604,18 @@ function pointsFromMapping(parsed, mapping){
   const labelCol = columns.find(c=>mapping[c]==="label");
   const lonCol = columns.find(c=>mapping[c]==="lon");
   const latCol = columns.find(c=>mapping[c]==="lat");
-  const out=[]; let bad=0;
-  for(const row of rows){
+  // Problems name the row as the file numbers it, header row included.
+  const first = parsed.headers===false ? 1 : 2;
+  const out=[], skipped=[];
+  rows.forEach((row,i)=>{
     try{
       const lon=parseCoordinate(row[lonCol], "longitude");
       const lat=parseCoordinate(row[latCol], "latitude");
       const attr={}; attrCols.forEach(c=>attr[c]=row[c]);
       out.push({lon,lat,label:labelCol?row[labelCol]:null,_attr:attr});
-    }catch(e){ bad++; }
-  }
-  return {points:out, attrCols, bad};
+    }catch(e){ skipped.push(`row ${i+first}: ${e.message}`); }
+  });
+  return {points:out, attrCols, skipped};
 }
 
 /* UI: datasets panel */
@@ -1928,6 +2662,7 @@ function renderDatasetList(){
   // imported ones reopen their table (as CSV text) and column mapping.
   $("#btnEdit").disabled = !selectedDataset();
   $("#btnRemove").disabled = !selectedDataset();
+  $("#btnCombine").disabled = !(selectedDataset() && selectedDataset().columns.length>=2);
 }
 // The list's colour chip: the first group's colour.
 function swatchColor(res){ return res.groups[0] ? res.groups[0].style.color : "#888"; }
@@ -1978,6 +2713,7 @@ function fillSelect(sel, values, current){
 }
 function syncStylePanel(){
   const ds=selectedDataset();
+  syncFilterBar(ds);
   if(!ds){ $("#styleControls").style.display="none"; $("#styleFor").textContent="Select a dataset to style it."; return; }
   $("#styleControls").style.display="block";
   $("#styleFor").innerHTML="Styling <b>"+escapeHtml(ds.name)+"</b>";
@@ -1992,34 +2728,79 @@ function syncStylePanel(){
   $("#opacityRange").value=ds.opacity; $("#opacityVal").textContent=Number(ds.opacity).toFixed(2);
   renderGroupOverrides(ds);
 }
+// The filter bar follows the selected dataset. Moving to another dataset, or
+// losing the filtered column to an edit, starts it over with nothing hidden.
+function syncFilterBar(ds){
+  const bar=$("#filterbar");
+  if(!ds || filter.dsId!==ds.id || (filter.column && !ds.columns.includes(filter.column)))
+    filter={dsId:ds?ds.id:null, column:null, hidden:new Set()};
+  const show=!!ds && ds.columns.length>0;
+  if(bar.hidden===show){ bar.hidden=!show; render(); }   // the map's height changes
+  if(!show) return;
+  fillSelect($("#filterCol"), [{value:"",label:"None"}].concat(ds.columns), filter.column||"");
+  renderFilterValues(ds);
+}
+// One checkbox per value of the filtered column, in order of appearance.
+function renderFilterValues(ds){
+  const box=$("#filterVals"); box.innerHTML="";
+  const on=!!(ds && filter.column);
+  $("#filterAll").disabled=!on; $("#filterNone").disabled=!on;
+  if(!on) return;
+  for(const v of uniqueInOrder(ds.rows.map(r=>r._attr[filter.column]??""))){
+    const lab=document.createElement("label");
+    const cb=document.createElement("input"); cb.type="checkbox"; cb.checked=!filter.hidden.has(v);
+    cb.addEventListener("change",()=>{
+      if(cb.checked) filter.hidden.delete(v); else filter.hidden.add(v);
+      render();
+    });
+    lab.appendChild(cb); lab.appendChild(document.createTextNode(v||"(blank)"));
+    box.appendChild(lab);
+  }
+}
+
 // Every legend row of a dataset, as {key, value, style, depth} - groups in
 // group-by mode, or colour values, symbol values and nested pairs in the
-// two-attribute modes. Mirrors PyMapprApp._legend_rows.
+// two-attribute modes - in the order the legend draws them under manual
+// order. Mirrors layout.editor_rows.
 function legendRowsFor(ds){
   const res=resolveGroups(ds);
   if(res.mode!=="attr"){
-    return res.groups.map(g=>({key:rowKey("group",g.label), value:g.label,
-                               style:g.style, depth:0}));
+    return inManualOrder(ds, res.groups.map(g=>({key:rowKey("group",g.label), value:g.label,
+                                                 style:g.style, depth:0})));
   }
-  const rows=[];
   if(res.nested){
-    const kidsOf=childrenByOwner(res);
+    const kidsOf=childrenByOwner(res), rows=[];
     for(const [cv,color] of Object.entries(res.colorMap)){
       rows.push({key:rowKey("color",cv), value:cv, depth:0,
                  style:{color,marker:"Circle",size:ds.base.size}});
-      for(const sv of kidsOf.get(cv)||[])
-        rows.push({key:rowKey("pair",cv,sv), value:sv, depth:1,
-                   style:{color,marker:res.symbolMap[sv],size:ds.base.size}});
+      rows.push(...inManualOrder(ds, (kidsOf.get(cv)||[]).map(sv=>
+        ({key:rowKey("pair",cv,sv), value:sv, depth:1,
+          style:{color,marker:res.symbolMap[sv],size:ds.base.size}}))));
     }
-    return rows;
+    return inManualOrder(ds, rows, true);
   }
-  for(const [cv,color] of Object.entries(res.colorMap))
-    rows.push({key:rowKey("color",cv), value:cv, depth:0,
-               style:{color,marker:"Circle",size:ds.base.size}});
-  for(const [sv,marker] of Object.entries(res.symbolMap))
-    rows.push({key:rowKey("symbol",sv), value:sv, depth:0,
-               style:{color:opts.legSymbolColor,marker,size:ds.base.size}});
-  return rows;
+  return inManualOrder(ds, Object.entries(res.colorMap).map(([cv,color])=>
+      ({key:rowKey("color",cv), value:cv, depth:0, style:{color,marker:"Circle",size:ds.base.size}})))
+    .concat(inManualOrder(ds, Object.entries(res.symbolMap).map(([sv,marker])=>
+      ({key:rowKey("symbol",sv), value:sv, depth:0,
+        style:{color:opts.legSymbolColor,marker,size:ds.base.size}}))));
+}
+// Rows sorted by their manual position, rows never placed keeping the order
+// the data gave them. With `blocks`, each depth-0 row carries the children
+// under it, so moving a genus moves its species too. Mirrors layout._ordered.
+function inManualOrder(ds, rows, blocks){
+  const items=blocks ? rowBlocks(rows) : rows;
+  const position=blocks ? b=>manualOrder(ds.overrides[b[0].key]) : r=>manualOrder(ds.overrides[r.key]);
+  const sorted=items.map((item,i)=>[item,i])
+    .sort((a,b)=>(position(a[0])-position(b[0])) || (a[1]-b[1]))
+    .map(([item])=>item);
+  return blocks ? sorted.flat() : sorted;
+}
+// A list of rows cut into blocks: each depth-0 row with the depth-1 rows under it.
+function rowBlocks(rows){
+  const blocks=[];
+  for(const r of rows){ if(r.depth===0 || !blocks.length) blocks.push([r]); else blocks[blocks.length-1].push(r); }
+  return blocks;
 }
 
 function renderGroupOverrides(ds){
@@ -2075,13 +2856,23 @@ function renderGroupOverrides(ds){
 
 // Moving writes a position for every row, not just the two that swapped: a
 // partial ordering would let untouched rows fall to the end. A nested child
-// may only move inside its own parent's block.
+// may only move inside its own parent's block, and a parent moves with its
+// children. Colour rows and symbol rows are separate keys and never swap.
 function moveRow(ds, rows, index, step){
-  const target=index+step;
-  if(target<0 || target>=rows.length) return;
-  if(rows[index].depth!==rows[target].depth) return;
-  const reordered=[...rows];
-  [reordered[index],reordered[target]]=[reordered[target],reordered[index]];
+  const kind=r=>r.key.split(ROW_SEP)[0], row=rows[index];
+  let reordered;
+  if(row.depth===0){
+    const blocks=rowBlocks(rows);
+    const at=blocks.findIndex(b=>b[0]===row), to=at+step;
+    if(to<0 || to>=blocks.length || kind(blocks[to][0])!==kind(row)) return;
+    [blocks[at],blocks[to]]=[blocks[to],blocks[at]];
+    reordered=blocks.flat();
+  } else {
+    const target=index+step;
+    if(target<0 || target>=rows.length || rows[target].depth!==row.depth) return;
+    reordered=[...rows];
+    [reordered[index],reordered[target]]=[reordered[target],reordered[index]];
+  }
   reordered.forEach((r,position)=>setOverride(ds,r.key,{order:position}));
   // Moving is meaningless while the legend sorts itself, so switch it over.
   opts.legOrder="manual";
@@ -2114,8 +2905,10 @@ document.addEventListener("keydown",e=>{
   if(e.key!=="Escape") return;
   const open=$$(".modal-bg.on");
   if(!open.length) return;
-  open[open.length-1].classList.remove("on");
-  pasteEditingId=null; mapEditingId=null;
+  const top=open[open.length-1];
+  top.classList.remove("on");
+  // The notice can sit over the mapping dialog; closing it keeps the edit.
+  if(top.id==="pasteModal" || top.id==="mapModal"){ pasteEditingId=null; mapEditingId=null; }
 });
 
 // tabs
@@ -2129,7 +2922,7 @@ $("#btnCsv").addEventListener("click",()=>$("#fileInput").click());
 $("#fileInput").addEventListener("change",e=>{
   const f=e.target.files[0]; if(!f) return;
   const rd=new FileReader();
-  rd.onload=()=>startMapping(parseDelimited(rd.result), f.name.replace(/\.[^.]+$/,""));
+  rd.onload=()=>startMapping(rd.result, f.name.replace(/\.[^.]+$/,""));
   rd.readAsText(f); e.target.value="";
 });
 $("#btnPaste").addEventListener("click",()=>{ pasteEditingId=null;
@@ -2144,43 +2937,95 @@ $("#pOk").addEventListener("click",()=>{
   closeModal("pasteModal");
   const editId=pasteEditingId; pasteEditingId=null;
   const ds = editId!=null ? datasets.find(d=>d.id===editId) : null;
-  startMapping(parsed, ds?ds.name:"Pasted data", ds?editId:undefined);
+  startMapping(txt, ds?ds.name:"Pasted data", ds?editId:undefined);
 });
 $$("[data-sample]").forEach(b=>b.addEventListener("click",()=>{
   const s=SAMPLES[b.dataset.sample];
   const parsed=parseDelimited(s.text);
-  const mapping=autoMapping(parsed.columns);
-  addFromMapping(parsed, mapping, s.name, s.marker, s.groupBy);
+  addFromMapping(parsed, guessMapping(parsed), s.name, s.marker, s.groupBy);
 }));
-$("#btnClear").addEventListener("click",()=>{ datasets=[]; selId=null; renderDatasetList(); syncStylePanel(); render(); });
+// Removing data cannot be undone, so both ask first, as PyMappr does.
+$("#btnClear").addEventListener("click",()=>{
+  if(datasets.length && !confirm(`Remove all ${datasets.length} dataset${datasets.length!==1?"s":""}?`)) return;
+  datasets=[]; selId=null; renderDatasetList(); syncStylePanel(); render(); });
 $("#btnRemove").addEventListener("click",()=>{ const ds=selectedDataset(); if(!ds) return;
+  if(!confirm(`Remove the dataset “${ds.name}”?`)) return;
   datasets=datasets.filter(d=>d.id!==ds.id); selId=datasets[0]?datasets[0].id:null;
   renderDatasetList(); syncStylePanel(); render(); });
+
+// combine columns
+function combineChoice(){
+  return {parts:$$("#cCols input:checked").map(i=>i.value), sep:$("#cSep").value};
+}
+function updateCombinePreview(){
+  const ds=selectedDataset(); if(!ds) return;
+  const {parts,sep}=combineChoice();
+  const first=ds.rows[0];
+  $("#cPreview").textContent = parts.length<2 ? "Tick at least two columns."
+    : first ? "First row: "+combinedValue(first._attr, parts, sep) : "";
+  $("#cOk").disabled = parts.length<2;
+}
+$("#btnCombine").addEventListener("click",()=>{
+  const ds=selectedDataset(); if(!ds || ds.columns.length<2) return;
+  const box=$("#cCols"); box.innerHTML="";
+  ds.columns.forEach((c,i)=>{
+    const lab=document.createElement("label"); lab.className="check";
+    const cb=document.createElement("input"); cb.type="checkbox"; cb.value=c;
+    cb.checked = i>=ds.columns.length-2;   // the last two, as in PyMappr
+    cb.addEventListener("change",updateCombinePreview);
+    lab.appendChild(cb); lab.appendChild(document.createTextNode(" "+c)); box.appendChild(lab);
+  });
+  $("#cSep").value=" ";
+  updateCombinePreview();
+  openModal("combineModal");
+});
+$("#cSep").addEventListener("input",updateCombinePreview);
+$("#cOk").addEventListener("click",()=>{
+  const ds=selectedDataset(); if(!ds) return;
+  const {parts,sep}=combineChoice();
+  if(parts.length<2) return;
+  const name=combinedName(ds.columns, parts, sep);
+  ds.combined=(ds.combined||[]).concat([{name, parts, sep}]);
+  applyCombined(ds);
+  // Group by the new column; Symbol by would switch the legend to the
+  // two-column key and hide the full names again.
+  ds.groupBy=name; ds.symbolBy=null;
+  closeModal("combineModal");
+  renderDatasetList(); syncStylePanel(); render();
+  flashStage(`Added the column “${name}” and grouped by it.`);
+});
 
 // column mapping
 // editingId: manual dataset being edited (manual modal).
 // mapEditingId: imported dataset being edited (mapping modal updates in place).
 // pasteEditingId: imported dataset whose table is being re-edited (paste modal).
-let pendingParsed=null, editingId=null, mapEditingId=null, pasteEditingId=null;
-function autoMapping(columns){
-  const map={};
-  for(const c of columns){
-    if(/^(lon|long|longitude|x|lng)$/i.test(c)) map[c]="lon";
-    else if(/^(lat|latitude|y)$/i.test(c)) map[c]="lat";
-    else map[c]="attr";
-  }
-  return map;
-}
-function startMapping(parsed, name, editId){
+// pendingText: the raw table, kept so the header checkbox can re-read it.
+let pendingParsed=null, pendingText="", editingId=null, mapEditingId=null, pasteEditingId=null;
+function startMapping(text, name, editId){
+  const parsed=parseDelimited(text);
   if(!parsed.columns.length){ alert("No rows found in that file."); return; }
-  pendingParsed=parsed;
+  pendingText=text;
   mapEditingId = editId!=null ? editId : null;
   const editing = mapEditingId!=null;
   $("#mapName").value=name||"Dataset";
-  const auto=autoMapping(parsed.columns);
+  $("#mapHeaders").checked=parsed.headers;
+  fillMappingRows(parsed);
+  $("#mapErr").textContent="";
+  $("#mapModalTitle").textContent = editing ? "Edit dataset" : "Map columns";
+  $("#mapOk").textContent = editing ? "Save changes" : "Add dataset";
+  openModal("mapModal");
+}
+// Whether the first row names the columns is guessed on import; ticking the
+// box either way re-reads the table, and the guesses start over.
+$("#mapHeaders").addEventListener("change",e=>{
+  fillMappingRows(parseDelimited(pendingText, e.target.checked));
+});
+function fillMappingRows(parsed){
+  pendingParsed=parsed;
+  const auto=guessMapping(parsed);
   // When re-editing, start from the mapping the dataset was built with so a
   // column the user already assigned keeps its role across the round-trip.
-  const prior = editing ? ((datasets.find(d=>d.id===mapEditingId)||{})._import||{}).mapping : null;
+  const prior = mapEditingId!=null ? ((datasets.find(d=>d.id===mapEditingId)||{})._import||{}).mapping : null;
   const roleFor = c => (prior && prior[c]!=null) ? prior[c] : auto[c];
   const tbody=$("#mapRows"); tbody.innerHTML="";
   const roles=[["attr","Attribute"],["lon","Longitude"],["lat","Latitude"],["label","Label"],["ignore","Ignore"]];
@@ -2194,10 +3039,6 @@ function startMapping(parsed, name, editId){
     tr.innerHTML=`<td>${escapeHtml(c)}</td><td class="samp">${escapeHtml(samp)}</td>`;
     tr.appendChild(td); tbody.appendChild(tr);
   });
-  $("#mapErr").textContent="";
-  $("#mapModalTitle").textContent = editing ? "Edit dataset" : "Map columns";
-  $("#mapOk").textContent = editing ? "Save changes" : "Add dataset";
-  openModal("mapModal");
 }
 $("#mapOk").addEventListener("click",()=>{
   const mapping={};
@@ -2215,37 +3056,45 @@ $("#mapOk").addEventListener("click",()=>{
   mapEditingId=null;
   closeModal("mapModal");
 });
+// A failed import leaves the mapping dialog open under the notice, so the
+// columns can be re-assigned straight away.
 function addFromMapping(parsed, mapping, name, baseMarker, groupBy){
-  const {points, attrCols, bad}=pointsFromMapping(parsed, mapping);
-  if(!points.length){ alert("No valid coordinates could be read from that data."); return false; }
+  const {points, attrCols, skipped}=pointsFromMapping(parsed, mapping);
+  if(!reportSkipped(points.length, skipped)) return false;
   const ds=makeDataset(name, attrCols, points);
   if(baseMarker) ds.base.marker=baseMarker;
   ds.groupBy = groupBy || attrCols[0] || null;
   ds._import={columns:parsed.columns, rows:parsed.rows, mapping:{...mapping}};
   datasets.push(ds); selId=ds.id;
-  renderDatasetList(); syncStylePanel(); render(); scheduleSave();
-  if(bad){ flashStage(`${bad} row${bad!==1?"s":""} skipped (unreadable coordinates).`); }
+  renderDatasetList(); syncStylePanel(); zoomToData(); scheduleSave();
   return true;
 }
 // Re-apply an edited table/mapping to an existing dataset, keeping its styling
-// (base marker, colours, overrides, opacity, visibility) intact; only drop
-// group/colour/symbol choices whose column no longer exists.
+// (base marker, colours, overrides, opacity, visibility) and its combined
+// columns intact; only drop group/colour/symbol choices whose column no
+// longer exists.
 function updateFromMapping(id, parsed, mapping, name){
   const ds=datasets.find(d=>d.id===id); if(!ds) return true;
-  const {points, attrCols, bad}=pointsFromMapping(parsed, mapping);
-  if(!points.length){ alert("No valid coordinates could be read from that data."); return false; }
-  ds.name=name; ds.columns=attrCols; ds.rows=points;
+  const {points, skipped}=pointsFromMapping(parsed, mapping);
+  if(!reportSkipped(points.length, skipped)) return false;
+  ds.name=name; ds.rows=points;
   ds._import={columns:parsed.columns, rows:parsed.rows, mapping:{...mapping}};
-  if(ds.groupBy && !attrCols.includes(ds.groupBy)) ds.groupBy=attrCols[0]||null;
-  if(ds.colorBy && !attrCols.includes(ds.colorBy)) ds.colorBy=null;
-  if(ds.symbolBy && !attrCols.includes(ds.symbolBy)) ds.symbolBy=null;
+  applyCombined(ds);
+  if(ds.groupBy && !ds.columns.includes(ds.groupBy)) ds.groupBy=ds.columns[0]||null;
+  if(ds.colorBy && !ds.columns.includes(ds.colorBy)) ds.colorBy=null;
+  if(ds.symbolBy && !ds.columns.includes(ds.symbolBy)) ds.symbolBy=null;
   selId=ds.id;
   renderDatasetList(); syncStylePanel(); render(); scheduleSave();
-  if(bad){ flashStage(`${bad} row${bad!==1?"s":""} skipped (unreadable coordinates).`); }
   return true;
 }
-function flashStage(msg){ $("#stagebar").textContent=msg;
-  setTimeout(()=>updateStagebar(),3000); }
+// A message in the status line for three seconds. It outlives the render
+// that usually follows it, which would otherwise wipe it at once.
+let flash=null, flashTimer=0;
+function flashStage(msg){
+  flash={text:msg, until:Date.now()+3000};
+  updateStagebar();
+  clearTimeout(flashTimer); flashTimer=setTimeout(updateStagebar, 3000);
+}
 
 // manual entry
 $("#btnManual").addEventListener("click",()=>{ editingId=null; fillSelect($("#mMarker"),MARKERS,"Circle");
@@ -2257,21 +3106,13 @@ $("#mOk").addEventListener("click",()=>{
   const legend=$("#mLegend").value.trim();
   if(!legend){ $("#mErr").textContent="Give the point set a legend name."; return; }
   const order=$("#mOrder").value;
-  const lines=$("#mText").value.split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
-  if(!lines.length){ $("#mErr").textContent="Enter at least one coordinate line."; return; }
-  const points=[]; let bad=0;
-  for(const line of lines){
-    const parts=line.split(/\s*,\s*/);
-    if(parts.length<2){ bad++; continue; }
-    try{
-      const a=parts[0], b=parts[1];
-      const lat = order==="latlon" ? parseCoordinate(a,"latitude") : parseCoordinate(b,"latitude");
-      const lon = order==="latlon" ? parseCoordinate(b,"longitude") : parseCoordinate(a,"longitude");
-      const label = parts.slice(2).join(", ")||null;
-      points.push({lon,lat,label,_attr:{Set:legend}});
-    }catch(e){ bad++; }
+  if(!$("#mText").value.trim()){ $("#mErr").textContent="Enter at least one coordinate line."; return; }
+  const {points, skipped}=parseManualLines($("#mText").value, order, legend);
+  if(!points.length){
+    $("#mErr").textContent="No readable coordinates. Use e.g. 38, -100."
+      + (skipped.length ? " ("+skipped[0]+")" : "");
+    return;
   }
-  if(!points.length){ $("#mErr").textContent="No readable coordinates. Use e.g. 38, -100."; return; }
   const size=Math.max(6,Math.min(200,parseFloat($("#mSize").value)||30));
   const base={color:$("#mColor").value, marker:$("#mMarker").value, size};
   if(editingId){
@@ -2283,10 +3124,31 @@ $("#mOk").addEventListener("click",()=>{
     ds.groupBy=null; ds.source="manual";
     ds._manual={legend, text:$("#mText").value, order, base};
     datasets.push(ds); selId=ds.id;
+    zoomToData();
   }
   closeModal("manualModal"); renderDatasetList(); syncStylePanel(); render();
-  if(bad) flashStage(`${bad} line${bad!==1?"s":""} skipped.`);
+  reportSkipped(points.length, skipped);
 });
+// One point per line: two coordinates separated by a comma, semicolon or
+// tab, in the chosen order, then an optional label. Lines are numbered as
+// typed, blank ones included. Mirrors data_loader.build_manual_dataset.
+function parseManualLines(text, order, legend){
+  const points=[], skipped=[];
+  text.split(/\r?\n/).forEach((raw,i)=>{
+    const line=raw.trim();
+    if(!line) return;
+    const parts=line.replace(/[;\t]/g,",").split(",").map(p=>p.trim()).filter(Boolean);
+    if(parts.length<2){ skipped.push(`line ${i+1}: expected two coordinates, got "${line}"`); return; }
+    try{
+      const [a,b]=parts;
+      let lat, lon;
+      if(order==="latlon"){ lat=parseCoordinate(a,"latitude"); lon=parseCoordinate(b,"longitude"); }
+      else { lon=parseCoordinate(a,"longitude"); lat=parseCoordinate(b,"latitude"); }
+      points.push({lon,lat,label:parts.slice(2).join(", ")||null,_attr:{Set:legend}});
+    }catch(e){ skipped.push(`line ${i+1}: ${e.message}`); }
+  });
+  return {points, skipped};
+}
 // click-to-place toggle
 $("#btnPlace").addEventListener("click",()=>{
   placeMode=!placeMode;
@@ -2324,7 +3186,29 @@ $("#varySymbols").addEventListener("change",e=>{ const ds=selectedDataset(); ds.
   ds.overrides={}; render(); });
 // The palette is map-wide: clearing every dataset's overrides would throw
 // away colours the user pinned, so only the auto-assigned styles change.
-$("#paletteSel").addEventListener("change",e=>{ opts.palette=e.target.value; render(); });
+// White points vanish inside a white outline, so a palette with white in it
+// brings a black outline along, as in PyMappr.
+$("#paletteSel").addEventListener("change",e=>{
+  opts.palette=e.target.value;
+  if(palette().includes("#ffffff") && /^(#ffffff|white)$/i.test(opts.pointEdgeColor)){
+    opts.pointEdgeColor="#000000"; $("#pointEdgeColor").value="#000000";
+    flashStage("Point outline set to black so white points stay visible.");
+  }
+  render();
+});
+// One click for a journal figure: black and white points with black
+// outlines and varied shapes, and a plain boxed legend with italic names.
+// Rows restyled by hand keep their styling. Mirrors on_publication_style.
+$("#btnPublication").addEventListener("click",()=>{
+  opts.palette="Black & white";
+  [opts.pointEdgeColor, opts.pointEdgeWidth]=PUBLICATION_POINT_EDGE;
+  Object.assign(opts, PUBLICATION_LEGEND);
+  // three shades alone cannot tell more than three groups apart
+  for(const ds of datasets){ ds.opacity=1; ds.varySymbols=true; }
+  opts.exportDpi=PUBLICATION_DPI;
+  syncMapControls(); syncStylePanel(); render();
+  flashStage(`Applied the publication style. Export below at ${PUBLICATION_DPI} DPI.`);
+});
 $("#baseMarker").addEventListener("change",e=>{ const ds=selectedDataset(); ds.base.marker=e.target.value; render(); });
 $("#baseColor").addEventListener("input",e=>{ const ds=selectedDataset(); ds.base.color=e.target.value; render(); });
 $("#sizeRange").addEventListener("input",e=>{ const ds=selectedDataset(); ds.base.size=+e.target.value;
@@ -2334,11 +3218,34 @@ $("#opacityRange").addEventListener("input",e=>{ const ds=selectedDataset(); ds.
 $("#resetStyles").addEventListener("click",()=>{ const ds=selectedDataset(); if(!ds) return;
   ds.overrides={}; renderGroupOverrides(ds); render(); });
 
+// filter bar
+$("#filterCol").addEventListener("change",e=>{
+  const ds=selectedDataset(); if(!ds) return;
+  filter={dsId:ds.id, column:e.target.value||null, hidden:new Set()};
+  renderFilterValues(ds); render();
+});
+function setAllFilterValues(show){
+  const ds=selectedDataset(); if(!ds || !filter.column) return;
+  filter.hidden = show ? new Set()
+    : new Set(ds.rows.map(r=>r._attr[filter.column]??""));
+  renderFilterValues(ds); render();
+}
+$("#filterAll").addEventListener("click",()=>setAllFilterValues(true));
+$("#filterNone").addEventListener("click",()=>setAllFilterValues(false));
+// A mouse wheel has no sideways motion, so it scrolls the value strip.
+$("#filterVals").addEventListener("wheel",e=>{
+  if(Math.abs(e.deltaY)<=Math.abs(e.deltaX)) return;
+  e.preventDefault(); e.currentTarget.scrollLeft+=e.deltaY;
+},{passive:false});
+
 // map controls
 fillSelect($("#extent"), Object.keys(CONTINENT_EXTENTS), "World");
 fillSelect($("#projection"), Object.keys(PROJ_DEFS), "Equirectangular");
-$("#extent").addEventListener("change",e=>{ opts.extent=e.target.value; render(); });
-$("#projection").addEventListener("change",e=>{ opts.projection=e.target.value; syncOrigin(); render(); });
+// A zoom is kept in screen terms, so it means nothing once the region, the
+// projection or the orientation changes; each of those shows the whole map.
+$("#extent").addEventListener("change",e=>{ opts.extent=e.target.value; view={k:1,x:0,y:0}; render(); });
+$("#projection").addEventListener("change",e=>{ opts.projection=e.target.value; syncOrigin();
+  view={k:1,x:0,y:0}; render(); });
 function syncOrigin(reset=true){
   const pd=currentProjDef();
   const show = pd.globe||pd.lambert;
@@ -2350,7 +3257,7 @@ function syncOrigin(reset=true){
 $("#centerLon").addEventListener("input",e=>{ opts.centerLon=parseFloat(e.target.value)||0; render(); });
 $("#centerLat").addEventListener("input",e=>{ opts.centerLat=parseFloat(e.target.value)||0; render(); });
 $("#orientSeg").addEventListener("click",e=>{ const b=e.target.closest("button"); if(!b) return;
-  opts.orientation=b.dataset.orient; setSeg("#orientSeg",b); render(); });
+  opts.orientation=b.dataset.orient; setSeg("#orientSeg",b); view={k:1,x:0,y:0}; render(); });
 $("#oceanSeg").addEventListener("click",e=>{ const b=e.target.closest("button"); if(!b) return;
   opts.ocean=b.dataset.ocean; setSeg("#oceanSeg",b); render(); });
 $("#gratSeg").addEventListener("click",e=>{ const b=e.target.closest("button"); if(!b) return;
@@ -2370,9 +3277,10 @@ $("#showLabels").addEventListener("change",e=>{ opts.labels=e.target.checked; re
 $("#matColor").addEventListener("input",e=>{ opts.matColor=e.target.value; render(); });
 $("#lineWidth").addEventListener("input",e=>{ opts.lineWidth=+e.target.value; $("#lwVal").textContent=(+e.target.value).toFixed(2); render(); });
 
-// Legend controls, wired from the LEGEND_CONTROLS table so a new setting is
-// one row there rather than another near-identical line here.
-for(const [id,kind,fallback] of LEGEND_CONTROLS){
+// Legend and map controls, wired from the LEGEND_CONTROLS and MAP_CONTROLS
+// tables so a new setting is one row there rather than another
+// near-identical line here.
+for(const [id,kind,fallback] of [...LEGEND_CONTROLS, ...MAP_CONTROLS]){
   const node=$("#"+id);
   if(!node) continue;                       // control not on the page (yet)
   const event = kind==="bool"||node.tagName==="SELECT" ? "change" : "input";
@@ -2384,50 +3292,340 @@ for(const [id,kind,fallback] of LEGEND_CONTROLS){
     } else opts[id]=e.target.value;
     // Choosing a preset position discards any manual (dragged) placement.
     if(id==="legPos") legendDrag=null;
+    if(id==="scalePos") opts.scaleAnchor=null;
+    // Switching units keeps the print size, not the number.
+    if(id==="exportUnit"){
+      opts.exportWidth=Number((opts.exportWidth*(opts.exportUnit==="cm" ? 2.54 : 1/2.54)).toFixed(2));
+      $("#exportWidth").value=opts.exportWidth;
+    }
     render();
   });
 }
+$("#scaleReset").addEventListener("click",()=>{ opts.scaleAnchor=null; render(); });
+// Controls that only apply in some states are greyed out in the others.
+function syncControlStates(){
+  $("#scaleFixed").disabled = opts.scaleLengthMode!=="fixed";
+  $("#scaleReset").disabled = !opts.scaleAnchor;
+  $("#exportDpi").disabled = opts.exportFormat==="svg";
+  updateExportReadout();
+}
 
-// export
-$("#btnSvg").addEventListener("click",()=>{
-  flushRender();
-  const s=new XMLSerializer().serializeToString(svg);
-  const blob=new Blob(['<?xml version="1.0" encoding="UTF-8"?>\n'+s],{type:"image/svg+xml"});
-  downloadBlob(blob, "minimappr.svg");
-});
-$("#btnPng").addEventListener("click",()=>{
-  flushRender();
-  const outW=Math.max(600,Math.min(8000,parseInt($("#pngWidth").value)||2000));
-  const W=sceneSize.w, H=sceneSize.h, outH=Math.round(outW*H/W);
-  const s=new XMLSerializer().serializeToString(svg);
+
+/* export (ported from ui/save_image.py) */
+// The image is the map frame and what is drawn around it - title, legend,
+// scale bar, grid labels - cropped out of the window, so a portrait map
+// loses its side bars as PyMappr's export does. Its print size is a width
+// in inches or centimetres at a DPI; the pixels follow from those.
+const PUBLICATION_DPI=600;
+const MAX_EXPORT_SIDE=16384, MAX_EXPORT_AREA=120e6;
+const EXPORT_TYPES={
+  png:{mime:"image/png", ext:"png"}, jpeg:{mime:"image/jpeg", ext:"jpg"},
+  webp:{mime:"image/webp", ext:"webp"}, tiff:{ext:"tif"}, pdf:{ext:"pdf"}, svg:{ext:"svg"},
+};
+
+// The part of the scene the export keeps, in scene pixels.
+function exportBox(){
+  const [[x0,y0],[x1,y1]]=frameRect;
+  let bx0=x0, by0=y0, bx1=x1, by1=y1;
+  for(const g of [layers.overlay, layers.legend]){
+    if(!g.firstChild) continue;
+    const b=g.getBBox();
+    if(!b.width && !b.height) continue;
+    bx0=Math.min(bx0,b.x); by0=Math.min(by0,b.y);
+    bx1=Math.max(bx1,b.x+b.width); by1=Math.max(by1,b.y+b.height);
+  }
+  const pad=8, {w:W, h:H}=sceneSize;
+  bx0=Math.max(0,bx0-pad); by0=Math.max(0,by0-pad);
+  bx1=Math.min(W,bx1+pad); by1=Math.min(H,by1+pad);
+  return {x:bx0, y:by0, w:bx1-bx0, h:by1-by0};
+}
+// Print size and pixel size of the export.
+function exportSize(box){
+  const unit=opts.exportUnit==="cm" ? 2.54 : 1;
+  const inches=Math.max(Number(opts.exportWidth)||0, 0)/unit;
+  const dpi=Math.max(Number(opts.exportDpi)||0, 1);
+  const px=Math.max(1, Math.round(inches*dpi));
+  const py=Math.max(1, Math.round(px*box.h/box.w));
+  return {inches, heightIn:inches*box.h/box.w, dpi, px, py,
+    tooBig: px>MAX_EXPORT_SIDE || py>MAX_EXPORT_SIDE || px*py>MAX_EXPORT_AREA};
+}
+// The live readout under the controls, as in PyMappr's save dialog.
+function updateExportReadout(){
+  if(!sceneSize.w || !frameRect) return;
+  const box=exportBox(), s=exportSize(box);
+  const unit=opts.exportUnit==="cm" ? "cm" : "in", k=unit==="cm" ? 2.54 : 1;
+  const print=`${fmtNum(s.inches*k)} × ${fmtNum(s.heightIn*k)} ${unit}`;
+  $("#exportSize").textContent = opts.exportFormat==="svg"
+    ? `${print}, vector (scales without pixels)`
+    : `${s.px.toLocaleString("en-US")} × ${s.py.toLocaleString("en-US")} px, ${print} at ${fmtNum(s.dpi)} DPI`;
+  $("#exportErr").textContent = s.tooBig && opts.exportFormat!=="svg"
+    ? "Too large for a browser to draw. Lower the width or the DPI." : "";
+}
+function fmtNum(v){ return String(Number(v.toFixed(2))); }
+
+// A copy of the map showing just `box`, at the given size.
+function exportSvg(box, width, height){
+  const copy=svg.cloneNode(true);
+  copy.removeAttribute("class");
+  setAttrs(copy, {viewBox:`${box.x} ${box.y} ${box.w} ${box.h}`, width, height,
+                  version:"1.1", "xmlns:xlink":"http://www.w3.org/1999/xlink"});
+  for(const n of copy.querySelectorAll("[style]")) n.removeAttribute("style");
+  return copy;
+}
+async function renderCanvas(box, px, py){
+  const text=new XMLSerializer().serializeToString(exportSvg(box, px, py));
   const img=new Image();
-  const url="data:image/svg+xml;charset=utf-8,"+encodeURIComponent(s);
-  img.onload=()=>{
-    const cv=document.createElement("canvas"); cv.width=outW; cv.height=outH;
-    const ctx=cv.getContext("2d"); ctx.fillStyle=opts.matColor; ctx.fillRect(0,0,outW,outH);
-    ctx.drawImage(img,0,0,outW,outH);
-    cv.toBlob(b=>downloadBlob(b,"minimappr.png"),"image/png");
-  };
-  img.onerror=()=>alert("PNG export failed in this browser. Try the SVG export instead.");
-  img.src=url;
-});
+  await new Promise((ok,fail)=>{ img.onload=ok; img.onerror=fail;
+    img.src="data:image/svg+xml;charset=utf-8,"+encodeURIComponent(text); });
+  const cv=document.createElement("canvas"); cv.width=px; cv.height=py;
+  const ctx=cv.getContext("2d");
+  ctx.fillStyle=opts.matColor; ctx.fillRect(0,0,px,py);
+  ctx.drawImage(img,0,0,px,py);
+  return cv;
+}
+const canvasBlob=(cv,type,quality)=>new Promise(ok=>cv.toBlob(ok,type,quality));
+
+async function exportMap(){
+  flushRender();
+  const fmt=EXPORT_TYPES[opts.exportFormat] ? opts.exportFormat : "png";
+  const box=exportBox(), s=exportSize(box);
+  if(fmt==="svg"){
+    const unit=opts.exportUnit==="cm" ? "cm" : "in", k=unit==="cm" ? 2.54 : 1;
+    const copy=exportSvg(box, `${fmtNum(s.inches*k)}${unit}`, `${fmtNum(s.heightIn*k)}${unit}`);
+    const text='<?xml version="1.0" encoding="UTF-8"?>\n'+new XMLSerializer().serializeToString(copy);
+    downloadBlob(new Blob([text],{type:"image/svg+xml"}), "minimappr.svg");
+    return;
+  }
+  if(s.tooBig){ updateExportReadout(); return; }
+  const button=$("#btnExport"); button.disabled=true;
+  try{
+    const cv=await renderCanvas(box, s.px, s.py);
+    let blob, ext=EXPORT_TYPES[fmt].ext;
+    if(fmt==="tiff") blob=tiffBlob(cv, s.dpi);
+    else if(fmt==="pdf") blob=await pdfBlob(cv, s);
+    else {
+      blob=await canvasBlob(cv, EXPORT_TYPES[fmt].mime, 0.95);
+      if(!blob) throw new Error("no image");
+      if(fmt==="webp" && blob.type!=="image/webp"){
+        // Browsers that cannot write WebP hand back a PNG instead.
+        ext="png"; flashStage("This browser cannot write WebP; saved a PNG instead.");
+      }
+      if(blob.type==="image/png") blob=await pngWithDpi(blob, s.dpi);
+      else if(blob.type==="image/jpeg") blob=await jpegWithDpi(blob, s.dpi);
+    }
+    downloadBlob(blob, "minimappr."+ext);
+  }catch(e){
+    $("#exportErr").textContent="The browser could not make this image. Try a smaller size, or SVG.";
+  }finally{ button.disabled=false; }
+}
 function downloadBlob(blob,name){ const a=document.createElement("a"); a.href=URL.createObjectURL(blob);
   a.download=name; document.body.appendChild(a); a.click(); a.remove();
   setTimeout(()=>URL.revokeObjectURL(a.href),1000); }
 
+/* resolution metadata, so the file opens at its print size */
+const CRC_TABLE=(()=>{ const t=new Uint32Array(256);
+  for(let n=0;n<256;n++){ let c=n; for(let k=0;k<8;k++) c=c&1 ? 0xedb88320^(c>>>1) : c>>>1; t[n]=c>>>0; }
+  return t; })();
+function crc32(bytes){ let c=0xffffffff; for(const b of bytes) c=CRC_TABLE[(c^b)&255]^(c>>>8); return (c^0xffffffff)>>>0; }
+// A pHYs chunk (pixels per metre) after the header chunk, replacing any.
+async function pngWithDpi(blob, dpi){
+  const src=new Uint8Array(await blob.arrayBuffer());
+  const chunk=new Uint8Array(21), view=new DataView(chunk.buffer), ppm=Math.round(dpi/0.0254);
+  view.setUint32(0,9); chunk.set([0x70,0x48,0x59,0x73],4);   // "pHYs"
+  view.setUint32(8,ppm); view.setUint32(12,ppm); chunk[16]=1;   // unit: metre
+  view.setUint32(17, crc32(chunk.subarray(4,17)));
+  const parts=[src.subarray(0,33), chunk];   // signature + IHDR, then pHYs
+  for(let at=33; at<src.length;){
+    const len=new DataView(src.buffer, at, 4).getUint32(0), end=at+12+len;
+    if(String.fromCharCode(...src.subarray(at+4,at+8))!=="pHYs") parts.push(src.subarray(at,end));
+    at=end;
+  }
+  return new Blob(parts,{type:"image/png"});
+}
+// The JFIF header's density, in dots per inch; one is added if missing.
+async function jpegWithDpi(blob, dpi){
+  const src=new Uint8Array(await blob.arrayBuffer());
+  const d=Math.min(65535, Math.round(dpi));
+  const jfif=src[2]===0xff && src[3]===0xe0 && String.fromCharCode(...src.subarray(6,10))==="JFIF";
+  if(jfif){
+    const out=src.slice(); out[13]=1; out[14]=d>>8; out[15]=d&255; out[16]=d>>8; out[17]=d&255;
+    return new Blob([out],{type:"image/jpeg"});
+  }
+  const app0=new Uint8Array([0xff,0xe0,0,16,0x4a,0x46,0x49,0x46,0,1,1,1,d>>8,d&255,d>>8,d&255,0,0]);
+  return new Blob([src.subarray(0,2), app0, src.subarray(2)],{type:"image/jpeg"});
+}
+
+/* TIFF: baseline RGB, PackBits-compressed, with its resolution in inches */
+function packBitsRow(src, start, end, out, at){
+  let i=start;
+  while(i<end){
+    let j=i+1;
+    while(j<end && j-i<128 && src[j]===src[i]) j++;
+    if(j-i>=2){ out[at++]=257-(j-i); out[at++]=src[i]; i=j; continue; }
+    let k=i;
+    while(k<end && k-i<128 && !(k+2<end && src[k]===src[k+1] && src[k]===src[k+2])) k++;
+    out[at++]=k-i-1;
+    while(i<k) out[at++]=src[i++];
+  }
+  return at;
+}
+function tiffBlob(cv, dpi){
+  const w=cv.width, h=cv.height;
+  const rgba=cv.getContext("2d").getImageData(0,0,w,h).data;
+  const rowLen=w*3, rowsPerStrip=Math.max(1, Math.floor(65536/rowLen));
+  const row=new Uint8Array(rowLen), packed=new Uint8Array(rowLen+Math.ceil(rowLen/128)+2);
+  const strips=[], counts=[];
+  for(let y=0;y<h;y+=rowsPerStrip){
+    const pieces=[]; let size=0;
+    for(let r=y;r<Math.min(h,y+rowsPerStrip);r++){
+      for(let x=0, s=r*w*4, d=0; x<w; x++, s+=4){ row[d++]=rgba[s]; row[d++]=rgba[s+1]; row[d++]=rgba[s+2]; }
+      const n=packBitsRow(row, 0, rowLen, packed, 0);
+      pieces.push(packed.slice(0,n)); size+=n;
+    }
+    strips.push(pieces); counts.push(size);
+  }
+  const n=strips.length, dataLen=counts.reduce((a,b)=>a+b,0);
+  // header, strip data, then the directory and the values too big for it
+  const tags=[[256,4,1,w],[257,4,1,h],[258,3,3,null],[259,3,1,32773],[262,3,1,2],
+    [273,4,n,null],[277,3,1,3],[278,4,1,rowsPerStrip],[279,4,n,null],
+    [282,5,1,null],[283,5,1,null],[284,3,1,1],[296,3,1,2]];
+  let ifd=8+dataLen; if(ifd%2) ifd++;
+  const extra=ifd+2+tags.length*12+4;
+  const bps=extra, offs=bps+6, cnts=offs+(n>1?4*n:0), xres=cnts+(n>1?4*n:0), yres=xres+8;
+  const buf=new ArrayBuffer(yres+8), v=new DataView(buf), bytes=new Uint8Array(buf);
+  v.setUint16(0,0x4949); v.setUint16(2,42,true); v.setUint32(4,ifd,true);
+  let at=8; const stripOffsets=[];
+  for(const pieces of strips){ stripOffsets.push(at); for(const p of pieces){ bytes.set(p,at); at+=p.length; } }
+  v.setUint16(ifd,tags.length,true);
+  const res=Math.round(dpi*100);
+  tags.forEach(([tag,type,count,value],i)=>{
+    const e=ifd+2+i*12;
+    v.setUint16(e,tag,true); v.setUint16(e+2,type,true); v.setUint32(e+4,count,true);
+    if(tag===258) v.setUint32(e+8,bps,true);
+    else if(tag===273) v.setUint32(e+8, n>1 ? offs : stripOffsets[0], true);
+    else if(tag===279) v.setUint32(e+8, n>1 ? cnts : counts[0], true);
+    else if(tag===282) v.setUint32(e+8,xres,true);
+    else if(tag===283) v.setUint32(e+8,yres,true);
+    else if(type===3) v.setUint16(e+8,value,true);
+    else v.setUint32(e+8,value,true);
+  });
+  v.setUint32(ifd+2+tags.length*12,0,true);   // no next directory
+  for(let i=0;i<3;i++) v.setUint16(bps+2*i,8,true);
+  if(n>1) for(let i=0;i<n;i++){ v.setUint32(offs+4*i,stripOffsets[i],true); v.setUint32(cnts+4*i,counts[i],true); }
+  for(const at_ of [xres,yres]){ v.setUint32(at_,res,true); v.setUint32(at_+4,100,true); }
+  return new Blob([buf],{type:"image/tiff"});
+}
+
+/* PDF: one page at the print size holding the map as an image */
+async function pdfBlob(cv, s){
+  const w=cv.width, h=cv.height;
+  let data, filter;
+  if(typeof CompressionStream==="function"){
+    const rgba=cv.getContext("2d").getImageData(0,0,w,h).data, rgb=new Uint8Array(w*h*3);
+    for(let i=0,j=0;i<rgba.length;i+=4){ rgb[j++]=rgba[i]; rgb[j++]=rgba[i+1]; rgb[j++]=rgba[i+2]; }
+    const zipped=new Blob([rgb]).stream().pipeThrough(new CompressionStream("deflate"));
+    data=new Uint8Array(await new Response(zipped).arrayBuffer()); filter="FlateDecode";
+  } else {
+    data=new Uint8Array(await (await canvasBlob(cv,"image/jpeg",0.95)).arrayBuffer()); filter="DCTDecode";
+  }
+  const pw=fmtNum(s.inches*72), ph=fmtNum(s.heightIn*72);
+  const content=`q ${pw} 0 0 ${ph} 0 0 cm /Im0 Do Q`;
+  const enc=new TextEncoder(), parts=[], offsets=[];
+  let size=0;
+  const put=p=>{ const b=typeof p==="string" ? enc.encode(p) : p; parts.push(b); size+=b.length; };
+  const obj=(n,body)=>{ offsets[n]=size; put(`${n} 0 obj\n${body}\nendobj\n`); };
+  put("%PDF-1.4\n%\xe2\xe3\xcf\xd3\n");
+  obj(1,"<< /Type /Catalog /Pages 2 0 R >>");
+  obj(2,"<< /Type /Pages /Kids [3 0 R] /Count 1 >>");
+  obj(3,`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pw} ${ph}] `
+    +"/Resources << /XObject << /Im0 4 0 R >> >> /Contents 5 0 R >>");
+  offsets[4]=size;
+  put(`4 0 obj\n<< /Type /XObject /Subtype /Image /Width ${w} /Height ${h} /ColorSpace /DeviceRGB `
+    +`/BitsPerComponent 8 /Filter /${filter} /Length ${data.length} >>\nstream\n`);
+  put(data); put("\nendstream\nendobj\n");
+  obj(5,`<< /Length ${content.length} >>\nstream\n${content}\nendstream`);
+  const xref=size;
+  put("xref\n0 6\n0000000000 65535 f \n"
+    +offsets.slice(1).map(o=>String(o).padStart(10,"0")+" 00000 n \n").join(""));
+  put(`trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`);
+  return new Blob(parts,{type:"application/pdf"});
+}
+
+$("#btnExport").addEventListener("click", exportMap);
 /* zoom + pan over the map */
-const stageEl=$("#stage");
-stageEl.addEventListener("wheel",e=>{
-  e.preventDefault();
-  const r=svg.getBoundingClientRect();
-  const sx=e.clientX-r.left, sy=e.clientY-r.top;
+const mapWrap=$("#mapwrap");
+// Zoom by `factor` keeping the screen point (sx, sy) where it is.
+function zoomAbout(factor, sx, sy){
   const oldK=view.k;
-  const newK=clamp(oldK*Math.exp(-e.deltaY*0.0015), 1, 12);
+  const newK=clamp(oldK*factor, 1, 12);
   if(newK===oldK) return;
-  const lx=(sx-view.x)/oldK, ly=(sy-view.y)/oldK; // point under cursor, in scene coords
+  const lx=(sx-view.x)/oldK, ly=(sy-view.y)/oldK; // that point, in scene coords
   view.k=newK; view.x=sx-newK*lx; view.y=sy-newK*ly;
   clampView(); render();
+}
+// The buttons and keys zoom about the middle of the frame, x1.5 a step as
+// PyMappr's buttons do.
+function zoomStep(factor){
+  const [[x0,y0],[x1,y1]]=frameRect;
+  zoomAbout(factor, (x0+x1)/2, (y0+y1)/2);
+}
+function resetZoom(){ view={k:1,x:0,y:0}; render(); }
+mapWrap.addEventListener("wheel",e=>{
+  e.preventDefault();
+  const r=svg.getBoundingClientRect();
+  zoomAbout(Math.exp(-e.deltaY*0.0015), e.clientX-r.left, e.clientY-r.top);
 },{passive:false});
+$("#zoomIn").addEventListener("click",()=>zoomStep(1.5));
+$("#zoomOut").addEventListener("click",()=>zoomStep(1/1.5));
+$("#zoomReset").addEventListener("click",resetZoom);
+// + / - / 0 zoom from the keyboard, except while typing or in a dialog;
+// with Ctrl or Cmd they stay the browser's own page zoom.
+document.addEventListener("keydown",e=>{
+  if(e.ctrlKey || e.metaKey || e.altKey || e.defaultPrevented) return;
+  if(e.target.closest && e.target.closest("input,select,textarea,[contenteditable]")) return;
+  if($$(".modal-bg.on").length) return;
+  if(e.key==="+" || e.key==="=") zoomStep(1.5);
+  else if(e.key==="-" || e.key==="_") zoomStep(1/1.5);
+  else if(e.key==="0") resetZoom();
+  else return;
+  e.preventDefault();
+});
+// Frame the data after an import, as PyMappr does: the box around every
+// visible point plus 15% (at least 2 degrees), clamped to the world. The
+// zoom is within the region's own frame, so data wider than the region
+// leaves the region as it is; the globe is left alone.
+function zoomToData(){
+  const rows=datasets.filter(d=>d.visible).flatMap(d=>d.rows);
+  if(!rows.length || currentProjDef().globe){ render(); return; }
+  let lo0=Infinity, lo1=-Infinity, la0=Infinity, la1=-Infinity;
+  for(const r of rows){ lo0=Math.min(lo0,r.lon); lo1=Math.max(lo1,r.lon);
+    la0=Math.min(la0,r.lat); la1=Math.max(la1,r.lat); }
+  const px=Math.max((lo1-lo0)*0.15, 2), py=Math.max((la1-la0)*0.15, 2);
+  lo0=Math.max(lo0-px,-180); lo1=Math.min(lo1+px,180);
+  la0=Math.max(la0-py,-90); la1=Math.min(la1+py,90);
+  view={k:1,x:0,y:0};
+  const W=mapWrap.clientWidth, H=mapWrap.clientHeight;
+  const rect=drawRect(W,H), proj=buildProjection(W,H);
+  let bx0=Infinity, bx1=-Infinity, by0=Infinity, by1=-Infinity;
+  for(const pt of boxSample(lo0,lo1,la0,la1).coordinates){
+    const xy=proj(pt);
+    if(!xy || !Number.isFinite(xy[0]) || !Number.isFinite(xy[1])) continue;
+    bx0=Math.min(bx0,xy[0]); bx1=Math.max(bx1,xy[0]); by0=Math.min(by0,xy[1]); by1=Math.max(by1,xy[1]);
+  }
+  const [[rx0,ry0],[rx1,ry1]]=rect;
+  if(!(bx1>bx0) || !(by1>by0)){ render(); return; }
+  const k=clamp(Math.min((rx1-rx0)/(bx1-bx0), (ry1-ry0)/(by1-by0)), 1, 12);
+  // A whole world is shorter than a landscape frame; zoomed in too little
+  // to fill the frame, it would show blank bands where its round outline
+  // used to be. Nearly global data keeps the whole map instead.
+  const sb=d3.geoPath(proj).bounds({type:"Sphere"});
+  const fill=Math.max((rx1-rx0)/(sb[1][0]-sb[0][0]), (ry1-ry0)/(sb[1][1]-sb[0][1]));
+  if(k>1.05 && k>=fill-1e-6){
+    view={k, x:(rx0+rx1)/2-k*(bx0+bx1)/2, y:(ry0+ry1)/2-k*(by0+by1)/2};
+    frameRect=rect; clampView();
+  }
+  render();
+}
 // Pointer events, so a finger or a pen drags, spins and places like a mouse.
 svg.addEventListener("pointerdown",e=>{
   if(e.button!==0 || !e.isPrimary) return;
@@ -2502,13 +3700,16 @@ function normalizeDataset(d){
   ds.opacity = typeof ds.opacity==="number" && isFinite(ds.opacity) ? ds.opacity : 1;
   ds.visible = ds.visible!==false;
   ds.varySymbols = !!ds.varySymbols;
-  for(const k of ["groupBy","colorBy","symbolBy"])
-    if(ds[k]!=null && !ds.columns.includes(ds[k])) ds[k]=null;
   if(!Array.isArray(ds.rows) && ds._import && Array.isArray(ds._import.rows) && ds._import.mapping)
     ds.rows = pointsFromMapping(ds._import, ds._import.mapping).points;
   if(!Array.isArray(ds.rows)) return null;
   ds.rows = ds.rows.filter(r=>r && isFinite(r.lon) && isFinite(r.lat))
                    .map(r=>r._attr ? r : {...r, _attr:{}});
+  // Rows rebuilt from the table lack the combined columns; work them out
+  // again before checking which columns the choices below may name.
+  applyCombined(ds);
+  for(const k of ["groupBy","colorBy","symbolBy"])
+    if(ds[k]!=null && !ds.columns.includes(ds[k])) ds[k]=null;
   if(ds.source==="manual" && !ds._manual){
     ds._manual={legend:ds.name, order:"latlon", base:ds.base,
       text:ds.rows.map(r=>`${r.lat.toFixed(5)}, ${r.lon.toFixed(5)}`+(r.label?", "+r.label:"")).join("\n")};
@@ -2552,7 +3753,7 @@ function syncMapControls(){
   // Legend controls come back from the same table that defines them, so a
   // new setting cannot end up rendering from a restored value while its
   // control still shows the default.
-  for(const [id,kind] of LEGEND_CONTROLS){
+  for(const [id,kind] of [...LEGEND_CONTROLS, ...MAP_CONTROLS]){
     const node=$("#"+id);
     if(!node) continue;
     if(kind==="bool") node.checked=opts[id]; else node.value=opts[id];
@@ -2574,7 +3775,7 @@ darkMQ.addEventListener("change",()=>{ if(themeSel.value==="system") applyTheme(
 const restored=loadState();
 applyTheme();
 if(restored) syncMapControls();
-let rt; new ResizeObserver(()=>{ clearTimeout(rt); rt=setTimeout(render,60); }).observe($("#stage"));
+let rt; new ResizeObserver(()=>{ clearTimeout(rt); rt=setTimeout(render,60); }).observe(mapWrap);
 syncOrigin(!restored);   // keep any restored centre/extent when reloading
 syncStylePanel();
 renderDatasetList();

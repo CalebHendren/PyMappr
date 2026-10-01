@@ -12,7 +12,7 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import messagebox, simpledialog, ttk
 
-from pymappr import projects
+from pymappr.files import projects
 
 
 class ProjectsDialog(tk.Toplevel):

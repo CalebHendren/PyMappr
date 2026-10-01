@@ -9,12 +9,13 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from pymappr import codegen
-from pymappr.data_loader import build_manual_dataset, combine_name_columns
-from pymappr.projections import get_projection
-from pymappr.legend import row_key
-from pymappr.projects import DatasetEntry, entry_from_dict
-from pymappr.styles import BLACK_AND_WHITE, BLACK_AND_WHITE_NAME
+from pymappr.export import codegen
+from pymappr.files.data_loader import (build_manual_dataset,
+                                       combine_name_columns)
+from pymappr.files.projects import DatasetEntry, entry_from_dict
+from pymappr.geo.projections import get_projection
+from pymappr.styling.legend import row_key
+from pymappr.styling.styles import BLACK_AND_WHITE, BLACK_AND_WHITE_NAME
 
 
 def make_state(**overrides):

@@ -1,8 +1,8 @@
 """Export-as-code dialog: show and save the Python/R map script.
 
 Selecting a language box pastes the pre-made functions from
-``pymappr/templates/`` (filled in with the current map settings) into the
-preview.
+``pymappr/export/templates/`` (filled in with the current map settings) into
+the preview.
 
 Two ways to take it away:
 
@@ -19,7 +19,8 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
-from pymappr import codegen, projects
+from pymappr.export import codegen
+from pymappr.files import projects
 
 WRAP = 560
 NOTE = ("The script downloads its base layers from Natural Earth, so you "

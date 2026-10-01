@@ -1,5 +1,5 @@
-"""Mouse handling: spinning the globe and dragging the legend, labels
-and scale bar."""
+"""Mouse handling: panning and spinning the globe, and dragging the
+legend, labels and scale bar."""
 
 from __future__ import annotations
 
@@ -7,12 +7,19 @@ import time
 
 import numpy as np
 
-from pymappr.decorations import corner_anchor
-from pymappr.projections import GLOBE
+from pymappr.geo.projections import GLOBE
+from pymappr.styling.decorations import corner_anchor
 
 # The globe re-projects at most this often (seconds) while being dragged;
 # the last position is always applied when the drag ends.
 _SPIN_INTERVAL = 0.05
+
+# A pan renders for real once the cursor has rested this long (milliseconds)
+# mid-drag. Until then every motion event only shifts the map snapshot, which
+# costs a few milliseconds against ~0.5 s for a render of a raster basemap
+# with several vector layers. The render fills in the strip the shift leaves
+# uncovered; the release always ends on one.
+_PAN_PAUSE_MS = 150
 
 
 class MouseMixin:
@@ -29,6 +36,10 @@ class MouseMixin:
         # its centre-lon/lat controls in sync with the drag.
         self._globe_drag: dict | None = None
         self._on_globe_rotate = None
+        # Map pan: a left-drag with the toolbar's pan tool active, shown by
+        # shifting the map snapshot rather than re-rendering (see the pan
+        # section below and blit.py).
+        self._pan_drag: dict | None = None
 
     # Dragging a label with the left mouse button moves it and remembers the
     # offset (per layer + label text) across pans, zooms, and layer toggles;
@@ -37,6 +48,12 @@ class MouseMixin:
     def _toolbar_busy(self) -> bool:
         toolbar = getattr(self.fig.canvas, "toolbar", None)
         return bool(toolbar is not None and toolbar.mode)
+
+    def _toolbar_panning(self) -> bool:
+        """Whether the toolbar's pan/zoom tool is the active one."""
+        toolbar = getattr(self.fig.canvas, "toolbar", None)
+        mode = getattr(toolbar, "mode", "")
+        return str(mode) == "pan/zoom"
 
     def _label_under(self, event):
         for texts in self._label_texts.values():
@@ -69,16 +86,18 @@ class MouseMixin:
         self._legend_dragging_enabled = enabled
 
     def _sync_navigation(self) -> None:
-        """Hand pan/zoom drags to our own spin handler when the globe is shown:
-        matplotlib's built-in axes pan and rubber-band zoom are switched off for
-        the map axes so a drag spins the globe instead of sliding or boxing the
-        view. The scroll wheel and the zoom buttons still zoom - they don't
-        route through this."""
+        """Hand pan drags to our own handlers rather than matplotlib's.
+
+        Matplotlib's axes pan re-renders the whole scene on every motion event.
+        Switching it off for the map axes leaves the gesture to us in every
+        projection: the globe spins (``_globe_press``) and every other
+        projection blits (``_pan_press``). The rubber-band zoom is switched off
+        only on the globe, whose disk stays centred. The scroll wheel and the
+        zoom buttons still zoom - they don't route through this."""
+        self.ax.can_pan = lambda *_a, **_k: False
         if self.proj.hemisphere:
-            self.ax.can_pan = lambda *_a, **_k: False
             self.ax.can_zoom = lambda *_a, **_k: False
         else:
-            self.ax.__dict__.pop("can_pan", None)
             self.ax.__dict__.pop("can_zoom", None)
 
     def set_globe_rotate_callback(self, callback) -> None:
@@ -102,6 +121,9 @@ class MouseMixin:
     def _on_canvas_press(self, event) -> None:
         if event.inaxes is not self.ax:
             return
+        # A scroll zoom still waiting on its timer is applied before any
+        # press acts on the view, whether it pans, spins or drags an overlay.
+        self._finish_zoom()
         # The globe spin takes the press even while a matplotlib toolbar tool
         # (pan/zoom) is active: matplotlib's own axes pan and rubber-band zoom
         # are switched off for the map axes on the globe (see _sync_navigation),
@@ -119,8 +141,12 @@ class MouseMixin:
             self._label_press(event)
             if self._label_drag is not None:
                 return
-        if self.proj.hemisphere and event.button == 1:
+        if event.button != 1:
+            return
+        if self.proj.hemisphere:
             self._globe_press(event)
+        elif self._toolbar_panning():
+            self._pan_press(event)
 
     def _globe_disk_px(self) -> float:
         """The globe disk's diameter on screen, in pixels."""
@@ -167,6 +193,130 @@ class MouseMixin:
         if self._on_globe_rotate is not None:
             self._on_globe_rotate(lon0, lat0)
         self.redraw()
+
+    # ------------------------------------------------------------------- pan
+    #
+    # Panning a flat projection only translates the map, so the drag shifts the
+    # map snapshot every screen render leaves behind (see blit.py) - a few
+    # milliseconds a frame - and renders for real only when the cursor rests
+    # for _PAN_PAUSE_MS, or on release. Matplotlib's own axes pan re-rendered
+    # the whole scene on every motion event instead: about a second a frame
+    # with a raster basemap and a few vector layers. Nothing renders inside a
+    # motion event, so a steady drag never stalls on one.
+    #
+    # The shift is geometrically exact: measured against a re-render of the
+    # shifted view it is bit-identical wherever the content is drawn at 1:1
+    # scale. Where the content is resampled - a downscaled basemap, an
+    # anti-aliased stroke - a re-render samples the source at a different
+    # sub-pixel phase, so a shifted frame is the same content in the same
+    # place but not the same bytes. That, and the strip newly exposed at the
+    # leading edge, is what the pause render settles; the release always
+    # ends on one, so what the user stops on is a full render either way.
+
+    def _pan_press(self, event) -> None:
+        # The snapshot of the last render is already the map alone, so the
+        # press itself draws nothing.
+        if self._map_background() is None:
+            # Nothing on screen to work from yet - no render since start-up,
+            # or the last one was an export at another dpi. One render makes
+            # the snapshot.
+            self.fig.canvas.draw()
+            if self._map_background() is None:
+                return  # a canvas that cannot cache pixels: no blitting to do
+        self._pan_drag = {
+            "x": event.x, "y": event.y, "last": (event.x, event.y),
+            "pending": None,
+            "timer": self._single_shot_timer(_PAN_PAUSE_MS, self._pan_pause)}
+
+    def _drag_map(self, event) -> None:
+        drag = self._pan_drag
+        if event.x is None or event.y is None:
+            return
+        background = self._map_background()
+        if background is None:
+            # Something rendered at another size mid-drag (a resize, an
+            # export). The view has not moved since the last render, so a
+            # fresh one is the same map to shift.
+            self.fig.canvas.draw()
+            background = self._map_background()
+            if background is None:
+                return
+        dx, dy = event.x - drag["x"], event.y - drag["y"]
+        self._blit_pan(background, dx, dy)
+        x0, x1 = self.ax.get_xlim()
+        y0, y1 = self.ax.get_ylim()
+        bbox = self.ax.bbox
+        # The map follows the cursor, so the view moves the opposite way.
+        drag["pending"] = (-(x1 - x0) / bbox.width * dx,
+                           -(y1 - y0) / bbox.height * dy)
+        drag["last"] = (event.x, event.y)
+        timer = drag["timer"]
+        if timer is not None:
+            # Re-armed on every motion, so it fires only once the cursor rests.
+            timer.stop()
+            timer.start()
+
+    def _blit_pan(self, background, dx: float, dy: float) -> None:
+        """Show the map snapshot shifted by *dx, dy* pixels, the pinned
+        overlays at their corners on top.
+
+        The region's coordinates are the canvas buffer's, whose rows count
+        down from the top, while *dy* arrives in event coordinates, which
+        count upwards; hence the negated y.
+        """
+        canvas = self.fig.canvas
+        dx, dy = round(dx), round(dy)
+        # The strip the shift uncovers shows the axes background rather than
+        # whatever was on the canvas before.
+        self.ax.draw_artist(self.ax.patch)
+        left, top, right, bottom = background.get_extents()
+        inset = self._frame_inset()
+        # The part of the snapshot that lands inside the axes once shifted,
+        # less the frame line at its edges, which _composite redraws in place.
+        x0 = left + inset + max(0, -dx)
+        x1 = right - inset - max(0, dx)
+        y0 = top + inset + max(0, dy)
+        y1 = bottom - inset - max(0, -dy)
+        if x0 < x1 and y0 < y1:
+            canvas.restore_region(background, bbox=(x0, y0, x1, y1),
+                                  xy=(left + dx, top - dy))
+        self._composite(self.ax.bbox)
+
+    def _pan_pause(self) -> None:
+        """The cursor has rested mid-drag: render the view it reached, which
+        fills in the strip the shift left uncovered."""
+        if self._pan_drag is not None:
+            self._apply_pan()
+
+    def _apply_pan(self) -> None:
+        """Move the view to the drag's latest position and render for real.
+
+        The render refreshes the map snapshot, so the shifts that follow move
+        the new pixels, and the drag is re-based on the position just
+        applied."""
+        drag = self._pan_drag
+        if drag["pending"] is None:
+            return
+        dx, dy = drag["pending"]
+        drag["pending"] = None
+        x0, x1 = self.ax.get_xlim()
+        y0, y1 = self.ax.get_ylim()
+        with self._one_view_change():
+            self.ax.set_xlim(x0 + dx, x1 + dx)
+            self.ax.set_ylim(y0 + dy, y1 + dy)
+        # Drawn now rather than deferred: the next motion event shifts the
+        # snapshot this render leaves.
+        self.fig.canvas.draw()
+        drag["x"], drag["y"] = drag["last"]
+
+    def _pan_release(self) -> None:
+        drag = self._pan_drag
+        if drag["timer"] is not None:
+            drag["timer"].stop()
+        # The one render of the release, overlays and all. Nothing to do when
+        # the cursor has not moved since a pause render.
+        self._apply_pan()
+        self._pan_drag = None
 
     def _legend_press(self, event) -> bool:
         """Begin (or reset) a legend drag; returns True if it took the click."""
@@ -253,6 +403,9 @@ class MouseMixin:
         if self._globe_drag is not None:
             self._spin_globe(event)
             return
+        if self._pan_drag is not None:
+            self._drag_map(event)
+            return
         if self._scale_bar_drag is not None:
             self._drag_scale_bar(event)
             return
@@ -294,6 +447,9 @@ class MouseMixin:
                     artist.remove()
                 self.set_basemap(self._basemap)
                 self.redraw()
+            return
+        if self._pan_drag is not None:
+            self._pan_release()
             return
         if self._scale_bar_drag is not None:
             self._scale_bar_drag = None

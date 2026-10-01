@@ -1,12 +1,12 @@
 """Shared plumbing for the settings dataclasses.
 
-:class:`~pymappr.legend.LegendOptions`, and the scale bar and compass
-options in :mod:`pymappr.decorations`, all travel the same road: the control
-panel fills them in, the renderer reads them, and :mod:`pymappr.projects`
-writes them to a project file as a plain dict. Loading one back has to survive
-two kinds of drift - a project written before a field existed, and a project
-written after a field was dropped - so the reader defaults what is missing and
-ignores what it no longer knows.
+:class:`~pymappr.styling.legend.LegendOptions`, and the scale bar and compass
+options in :mod:`pymappr.styling.decorations`, all travel the same road: the
+control panel fills them in, the renderer reads them, and
+:mod:`pymappr.files.projects` writes them to a project file as a plain dict.
+Loading one back has to survive two kinds of drift - a project written before
+a field existed, and a project written after a field was dropped - so the
+reader defaults what is missing and ignores what it no longer knows.
 
 Keeping that in one place means a new options dataclass is a list of fields
 rather than another copy of ``from_dict``.

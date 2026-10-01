@@ -62,6 +62,11 @@
                 <button class="btn sm" id="btnRemove" disabled>Remove</button>
                 <button class="btn sm" id="btnClear">Clear all</button>
               </div>
+              <div class="btnrow" style="margin-top:7px">
+                <button class="btn sm" id="btnCombine" disabled>Combine columns…</button>
+              </div>
+              <p class="hintline">Combine columns joins e.g. Genus and Species into one
+                column and groups by it, so a legend row reads <i>Eleusis chapadensis</i>.</p>
             </div>
           </details>
         </section>
@@ -90,7 +95,7 @@
                   </select></div>
                 <div class="row"><label class="lbl grow">Point outline</label>
                   <input type="color" id="pointEdgeColor" value="#ffffff" aria-label="Point outline colour">
-                  <input type="number" id="pointEdgeWidth" min="0" max="3" step="0.1" value="0.6"
+                  <input type="number" id="pointEdgeWidth" min="0" max="3" step="0.1" value="0.5"
                     style="width:64px" aria-label="Point outline width" title="Width in px (0 = none)"></div>
                 <p class="hintline">The outline keeps overlapping points apart. Use a black one with
                   <b>Black &amp; white</b>, whose white points need it.</p>
@@ -138,7 +143,8 @@
                   <input type="number" id="centerLon" step="5" style="width:96px"></div>
                 <div class="row"><label class="lbl grow">Centre latitude</label>
                   <input type="number" id="centerLat" step="5" style="width:96px"></div>
-                <p class="hintline">Centre for the Globe and Lambert projections.</p>
+                <p class="hintline">Centre for the Globe and Lambert projections. Scroll or
+                use + and − to zoom; drag to pan.</p>
               </div>
               <label class="block">Orientation</label>
               <div class="seg" id="orientSeg">
@@ -164,10 +170,15 @@
               <label class="block">Graticule (grid)</label>
               <div class="seg" id="gratSeg">
                 <button data-grat="0" class="on">Off</button>
+                <button data-grat="1">1°</button>
+                <button data-grat="5">5°</button>
                 <button data-grat="10">10°</button>
                 <button data-grat="20">20°</button>
                 <button data-grat="30">30°</button>
               </div>
+              <label class="check"><input type="checkbox" id="gridHideLabels"> Hide grid labels</label>
+              <p class="hintline">Degree labels are drawn on Equirectangular only; other
+                projections curve the grid.</p>
             </div>
           </details>
 
@@ -177,7 +188,53 @@
               <label class="block">Map title</label>
               <input type="text" id="mapTitle" placeholder="(optional)">
               <label class="check"><input type="checkbox" id="showCompass"> Compass (north arrow)</label>
-              <label class="check"><input type="checkbox" id="showScaleBar"> Scale bar (true at the map centre)</label>
+              <div class="subopts">
+                <div class="row"><label class="lbl grow">Position</label>
+                  <select id="compassPos" class="grow">
+                    <option value="upper right">Upper right</option>
+                    <option value="upper left">Upper left</option>
+                    <option value="lower left">Lower left</option>
+                    <option value="lower right">Lower right</option>
+                  </select></div>
+                <div class="row"><label class="lbl grow">Style</label>
+                  <select id="compassStyle" class="grow">
+                    <option value="arrow">Arrow with N</option>
+                    <option value="triangle">Filled triangle</option>
+                  </select></div>
+                <div class="row"><label class="lbl grow">Size</label>
+                  <input type="number" id="compassSize" min="0.5" max="3" step="0.1" value="1" style="width:74px"></div>
+              </div>
+              <label class="check"><input type="checkbox" id="showScaleBar"> Scale bar</label>
+              <div class="subopts">
+                <div class="row"><label class="lbl grow">Units</label>
+                  <select id="scaleUnits" class="grow">
+                    <option value="km">Kilometres</option>
+                    <option value="mi">Miles</option>
+                    <option value="both">Both</option>
+                  </select></div>
+                <div class="row"><label class="lbl grow">Position</label>
+                  <select id="scalePos" class="grow">
+                    <option value="lower left">Lower left</option>
+                    <option value="lower right">Lower right</option>
+                    <option value="upper left">Upper left</option>
+                    <option value="upper right">Upper right</option>
+                  </select></div>
+                <div class="row"><label class="lbl grow">Style</label>
+                  <select id="scaleStyle" class="grow">
+                    <option value="segmented">Segmented</option>
+                    <option value="plain">Plain bar</option>
+                  </select></div>
+                <div class="row"><label class="lbl grow">Length</label>
+                  <select id="scaleLengthMode" class="grow">
+                    <option value="auto">Automatic</option>
+                    <option value="fixed">Fixed</option>
+                  </select>
+                  <input type="number" id="scaleFixed" min="0.1" max="100000" step="10" value="100"
+                    style="width:90px" aria-label="Fixed length, in the chosen units" disabled></div>
+                <button class="btn sm" id="scaleReset" disabled>Reset position</button>
+                <p class="hintline">Drag the bar to place it; double-click it to snap back. On a
+                  world map the scale changes with latitude; the bar is accurate where it stands.</p>
+              </div>
               <label class="check"><input type="checkbox" id="showLabels"> Point labels (from a Label column)</label>
               <div class="row"><label class="lbl">Background</label><input type="color" id="matColor" value="#ffffff"></div>
               <div class="row"><label class="lbl grow">Border weight</label>
@@ -204,6 +261,7 @@
                   <option value="br">Bottom right</option>
                   <option value="bc">Bottom centre</option>
                   <option value="bl">Bottom left</option>
+                  <option value="best">Best (covers the fewest points)</option>
                 </select></div>
               <label class="block">Title <span class="muted">(blank = grouping column)</span></label>
               <input type="text" id="legTitle" placeholder="(auto)">
@@ -248,6 +306,9 @@
               <div class="row"><label class="lbl grow">Title separator</label>
                 <input type="text" id="legTitleSeparator" value=" / " style="width:74px"></div>
               <label class="check"><input type="checkbox" id="legDatasetPrefix" checked> Prefix sections with the dataset name</label>
+              <label class="check"><input type="checkbox" id="legEmptyGroups"> Keep groups with no visible rows</label>
+              <p class="hintline">Only matters while the filter bar below the map hides
+                every entry inside a group.</p>
             </div>
           </details>
 
@@ -275,9 +336,14 @@
             <summary>Layout</summary>
             <div class="body">
               <div class="row"><label class="lbl grow">Columns</label>
-                <input type="number" id="legCols" min="1" max="5" step="1" value="1" style="width:74px"></div>
+                <input type="number" id="legCols" min="1" max="6" step="1" value="1" style="width:74px"></div>
+              <div class="row"><label class="lbl grow">Column spacing</label>
+                <input type="number" id="legColSpacing" min="0" max="80" step="2" value="16" style="width:74px"></div>
               <div class="row"><label class="lbl grow">Marker scale</label>
-                <input type="number" id="legScale" min="0.5" max="3" step="0.25" value="1" style="width:74px"></div>
+                <input type="number" id="legScale" min="0.1" max="6" step="0.05" value="1" style="width:74px"></div>
+              <div class="row"><label class="lbl grow">Swatch width</label>
+                <input type="number" id="legSwatchWidth" min="0.5" max="8" step="0.1" value="1.7" style="width:74px"
+                  title="In font sizes"></div>
               <div class="row"><label class="lbl grow">Row spacing</label>
                 <input type="number" id="legRowSpacing" min="0" max="3" step="0.1" value="0.5" style="width:74px"></div>
               <div class="row"><label class="lbl grow">Swatch gap</label>
@@ -347,15 +413,41 @@
         <!-- export tab -->
         <section class="tabpage" data-page="export">
           <details class="sec" open>
+            <summary>Publication style</summary>
+            <div class="body">
+              <button class="btn full" id="btnPublication">Apply publication style</button>
+              <p class="hintline">Black &amp; white points with black outlines and varied shapes,
+                a plain boxed legend with italic names, and 600 DPI export. Entries restyled under
+                <b>Per-group overrides</b> keep their styling.</p>
+            </div>
+          </details>
+          <details class="sec" open>
             <summary>Export image</summary>
             <div class="body">
-              <div class="row"><label class="lbl grow">PNG width (px)</label>
-                <input type="number" id="pngWidth" min="600" max="8000" step="100" value="2000" style="width:96px"></div>
-              <div class="btnrow" style="margin-top:6px">
-                <button class="btn pri" id="btnPng">Download PNG</button>
-                <button class="btn" id="btnSvg">Download SVG</button>
-              </div>
-              <p class="hintline">The image is cropped to the map frame and its decorations.</p>
+              <div class="row"><label class="lbl grow">Format</label>
+                <select id="exportFormat" class="grow">
+                  <option value="png">PNG</option>
+                  <option value="jpeg">JPEG</option>
+                  <option value="webp">WebP</option>
+                  <option value="tiff">TIFF</option>
+                  <option value="pdf">PDF (the map as an image)</option>
+                  <option value="svg">SVG (vector)</option>
+                </select></div>
+              <div class="row"><label class="lbl grow">Width</label>
+                <input type="number" id="exportWidth" min="0.5" max="200" step="0.5" value="9" style="width:80px">
+                <select id="exportUnit" style="width:auto" aria-label="Width unit">
+                  <option value="in">in</option>
+                  <option value="cm">cm</option>
+                </select></div>
+              <div class="row"><label class="lbl grow">DPI</label>
+                <input type="number" id="exportDpi" list="dpiChoices" min="50" max="2400" step="1" value="200" style="width:80px">
+                <datalist id="dpiChoices"><option value="100"></option><option value="150"></option>
+                  <option value="200"></option><option value="300"></option><option value="600"></option></datalist></div>
+              <p class="muted" id="exportSize"></p>
+              <button class="btn pri full" id="btnExport">Download</button>
+              <p class="err" id="exportErr"></p>
+              <p class="hintline">The image is cropped to the map frame and its decorations. PNG, JPEG,
+                TIFF and PDF carry the DPI, so they open at their print size.</p>
             </div>
           </details>
           <details class="sec">
@@ -374,13 +466,32 @@
     </aside>
 
     <div id="stage">
-      <div id="mapwrap"><svg id="map" xmlns="http://www.w3.org/2000/svg"></svg></div>
-      <div class="hint" id="emptyHint">
-        <div class="lead">A blank world, ready for points</div>
-        <div style="margin-top:6px">Add a CSV, paste a table, type coordinates, or load a sample dataset
-          from the <b>Data</b> tab.</div>
+      <div id="mapwrap">
+        <svg id="map" xmlns="http://www.w3.org/2000/svg"></svg>
+        <div class="hint" id="emptyHint">
+          <div class="lead">A blank world, ready for points</div>
+          <div style="margin-top:6px">Add a CSV, paste a table, type coordinates, or load a sample dataset
+            from the <b>Data</b> tab.</div>
+        </div>
+        <div id="stagebar"></div>
       </div>
-      <div id="stagebar"></div>
+      <!-- the bar under the map: the filter (which values of the selected
+           dataset are drawn) and the zoom buttons, kept off the map so they
+           never cover a corner the legend, compass or scale bar may use -->
+      <div id="mapbar">
+        <div id="filterbar" hidden>
+          <label for="filterCol" class="lbl">Filter by</label>
+          <select id="filterCol"></select>
+          <button class="btn sm" id="filterAll" disabled>All</button>
+          <button class="btn sm" id="filterNone" disabled>None</button>
+          <div id="filterVals" aria-label="Values to show"></div>
+        </div>
+        <div id="zoomctl" role="group" aria-label="Zoom">
+          <button id="zoomIn" title="Zoom in (+)" aria-label="Zoom in">+</button>
+          <button id="zoomOut" title="Zoom out (−)" aria-label="Zoom out">−</button>
+          <button id="zoomReset" title="Whole map (0)" aria-label="Show the whole map">⤢</button>
+        </div>
+      </div>
     </div>
   </main>
 </div>
@@ -398,7 +509,8 @@
           <option value="lonlat">Longitude, Latitude</option>
         </select></div>
       <label class="block">One point per line: <code>38, -100</code>. Add a label with
-        <code>38, -100, Site A</code>. Decimal degrees or DMS.</label>
+        <code>38, -100, Site A</code>. Separate with commas, semicolons or tabs;
+        decimal degrees or DMS.</label>
       <textarea id="mText" placeholder="38.9, -77.0, Washington&#10;51.5, -0.12, London&#10;-33.9, 151.2, Sydney"></textarea>
       <div class="row wrap" style="margin-top:8px">
         <label class="lbl">Shape</label><select id="mMarker" style="flex:0 0 130px"></select>
@@ -437,6 +549,7 @@
     <div class="mbody">
       <div class="row"><label class="lbl" style="flex:0 0 96px">Dataset name</label>
         <input type="text" id="mapName" class="grow"></div>
+      <label class="check"><input type="checkbox" id="mapHeaders" checked> First row contains column headers</label>
       <p class="muted" style="margin:10px 0 6px">Tell MiniMappr which columns hold the coordinates.
         The rest become attributes you can group, colour, or symbolise by.</p>
       <table class="maptbl"><thead><tr><th>Column</th><th>Sample</th><th>Role</th></tr></thead>
@@ -450,6 +563,24 @@
   </div>
 </div>
 
+<!-- Combine columns modal -->
+<div class="modal-bg" id="combineModal">
+  <div class="modal">
+    <h3>Combine columns</h3>
+    <div class="mbody">
+      <label class="block">Join these columns, in this order:</label>
+      <div id="cCols"></div>
+      <div class="row"><label class="lbl" style="flex:0 0 96px">Separator</label>
+        <input type="text" id="cSep" value=" " style="width:74px"></div>
+      <p class="muted" id="cPreview"></p>
+    </div>
+    <div class="mfoot">
+      <button class="btn" data-close="combineModal">Cancel</button>
+      <button class="btn pri" id="cOk">Add column</button>
+    </div>
+  </div>
+</div>
+
 <!-- About modal -->
 <div class="modal-bg" id="aboutModal">
   <div class="modal">
@@ -458,8 +589,8 @@
       <p>MiniMappr is a browser build of
         <a href="https://github.com/CalebHendren/PyMappr" target="_blank" rel="noopener">PyMappr</a>,
         a remake of <a href="https://www.simplemappr.net/" target="_blank" rel="noopener">SimpleMappr</a>.
-        It plots points from a CSV or manual entry onto a projected world map and exports PNG or SVG.
-        Everything runs in the page; no data leaves the browser.</p>
+        It plots points from a CSV or manual entry onto a projected world map and exports PNG, JPEG,
+        WebP, TIFF, PDF or SVG. Everything runs in the page; no data leaves the browser.</p>
       <p><b>Not in this web version.</b> Use desktop
         <a href="https://github.com/CalebHendren/PyMappr/releases" target="_blank" rel="noopener">PyMappr</a> for:</p>
       <ul>
@@ -474,8 +605,21 @@
         <a href="https://github.com/topojson/world-atlas" target="_blank" rel="noopener">world-atlas</a>
         (derived from <a href="https://www.naturalearthdata.com/" target="_blank" rel="noopener">Natural Earth</a>,
         public domain). Everything is inlined into this one HTML file.</p>
+      <p>If MiniMappr is useful to you, you can support its development on
+        <a href="https://ko-fi.com/calebhendren" target="_blank" rel="noopener">Ko-fi</a>.</p>
     </div>
     <div class="mfoot"><button class="btn pri" data-close="aboutModal">Close</button></div>
   </div>
 </div>
 
+<!-- Notice modal (skipped rows); last, so it opens above any other modal -->
+<div class="modal-bg" id="noticeModal">
+  <div class="modal">
+    <h3 id="noticeTitle">Notice</h3>
+    <div class="mbody">
+      <p id="noticeLead"></p>
+      <ul id="noticeList" class="notice"></ul>
+    </div>
+    <div class="mfoot"><button class="btn pri" data-close="noticeModal">OK</button></div>
+  </div>
+</div>

@@ -6,9 +6,10 @@ import matplotlib.transforms as mtransforms
 import numpy as np
 from matplotlib.lines import Line2D
 
-from pymappr.legend import LegendOptions
 from pymappr.renderer.tables import Z_POINTS
-from pymappr.styles import POINT_EDGE_COLOR, POINT_EDGE_WIDTH, PointStyle
+from pymappr.styling.legend import LegendOptions
+from pymappr.styling.styles import (POINT_EDGE_COLOR, POINT_EDGE_WIDTH,
+                                    PointStyle)
 
 
 class PointsMixin:
@@ -20,8 +21,8 @@ class PointsMixin:
                                        np.ndarray]] = []
         self._point_artists: list = []
         # Every legend setting lives in one options object; see
-        # pymappr.legend.LegendOptions. Weight/style are derived from its
-        # bold/italic flags at draw time, and underline is stroked on each
+        # pymappr.styling.legend.LegendOptions. Weight/style are derived from
+        # its bold/italic flags at draw time, and underline is stroked on each
         # draw (matplotlib text has no underline property).
         self._legend = LegendOptions()
         # Legend Text artists that need an underline stroke on each draw.

@@ -16,44 +16,44 @@ matplotlib.use("TkAgg")
 
 import pandas as pd  # noqa: E402
 
-from matplotlib.backends.backend_tkagg import (FigureCanvasTkAgg,  # noqa: E402
-                                               NavigationToolbar2Tk)
+from matplotlib.backends.backend_tkagg import NavigationToolbar2Tk  # noqa: E402
 from matplotlib.figure import Figure  # noqa: E402
 
-from pymappr import __version__, projects, updates  # noqa: E402
-from pymappr.data_loader import (OPEN_FILETYPES, PointDataset,  # noqa: E402
-                                 build_dataset, build_manual_dataset,
-                                 combine_name_columns, guess_mapping,
-                                 headers_look_like_data, list_sheets,
-                                 read_table)
-from pymappr.decorations import (CompassOptions,  # noqa: E402
-                                 ScaleBarOptions)
-from pymappr.layers import LayerStore  # noqa: E402
-from pymappr.layout import (MapLayout, column_key,  # noqa: E402
-                            editor_rows, layout_points, with_default_title)
-from pymappr.legend import (ENTRY_ORDERS, PUBLICATION_LEGEND,  # noqa: E402
-                            LegendOptions)
-from pymappr.projects import PROJECT_EXTENSION, DatasetEntry  # noqa: E402
+from pymappr import __version__, updates  # noqa: E402
+from pymappr.files import projects  # noqa: E402
+from pymappr.files.data_loader import (  # noqa: E402
+    OPEN_FILETYPES, PointDataset, build_dataset, build_manual_dataset,
+    combine_name_columns, guess_mapping, headers_look_like_data, list_sheets,
+    read_table)
+from pymappr.files.projects import (  # noqa: E402
+    PROJECT_EXTENSION, DatasetEntry)
+from pymappr.geo.layers import LayerStore  # noqa: E402
 from pymappr.renderer import MapRenderer  # noqa: E402
-from pymappr.styles import (BLACK_AND_WHITE_NAME,  # noqa: E402
-                            DEFAULT_PALETTE_NAME, LEGIBLE_MARKER_LIMIT,
-                            POINT_EDGE_COLOR, POINT_EDGE_WIDTH,
-                            PUBLICATION_POINT_EDGE, PointStyle,
-                            apply_override, marker_load, resolve_nesting,
-                            row_key)
+from pymappr.styling.decorations import (  # noqa: E402
+    CompassOptions, ScaleBarOptions)
+from pymappr.styling.layout import (  # noqa: E402
+    MapLayout, column_key, editor_rows, layout_points,
+    organise_publication_legend, with_default_title)
+from pymappr.styling.legend import (  # noqa: E402
+    ENTRY_ORDERS, PUBLICATION_LEGEND, LegendOptions)
+from pymappr.styling.styles import (  # noqa: E402
+    BLACK_AND_WHITE_NAME, DEFAULT_PALETTE_NAME, LEGIBLE_MARKER_LIMIT,
+    POINT_EDGE_COLOR, POINT_EDGE_WIDTH, PUBLICATION_POINT_EDGE, PointStyle,
+    apply_override, marker_load, resolve_nesting, row_key)
 from pymappr.ui.column_mapper import ColumnMapperDialog  # noqa: E402
 from pymappr.ui.combine_columns import CombineColumnsDialog  # noqa: E402
 from pymappr.ui.control_panel import ControlPanel, name_for  # noqa: E402
 from pymappr.ui.filter_bar import FilterBar  # noqa: E402
 from pymappr.ui.legend_editor import LegendEditorDialog  # noqa: E402
 from pymappr.ui.manual_entry import ManualEntryDialog  # noqa: E402
+from pymappr.ui.map_canvas import DebouncedFigureCanvasTkAgg  # noqa: E402
 from pymappr.ui.projects_dialog import ProjectsDialog  # noqa: E402
 
 MAX_SKIPPED_SHOWN = 12
 UNTITLED = "Untitled"
 # The export DPI of the "Publication style" preset (the point and legend
-# halves are pymappr.styles.PUBLICATION_POINT_EDGE and
-# pymappr.legend.PUBLICATION_LEGEND).
+# halves are pymappr.styling.styles.PUBLICATION_POINT_EDGE and
+# pymappr.styling.legend.PUBLICATION_LEGEND).
 PUBLICATION_DPI = "600"
 PROJECT_FILETYPES = [("PyMappr project", "*" + PROJECT_EXTENSION),
                      ("All files", "*.*")]
@@ -97,7 +97,7 @@ class PyMapprApp:
         map_frame.pack(side="right", fill="both", expand=True)
 
         figure = Figure(figsize=(9, 6.5), dpi=100, facecolor="white")
-        self.canvas = FigureCanvasTkAgg(figure, master=map_frame)
+        self.canvas = DebouncedFigureCanvasTkAgg(figure, master=map_frame)
         self.renderer = MapRenderer(figure, store)
 
         toolbar_row = ttk.Frame(map_frame)
@@ -248,15 +248,13 @@ class PyMapprApp:
 
     def zoom_step(self, factor: float) -> None:
         """Zoom about the view center (buttons, Ctrl+= / Ctrl+-)."""
-        self.renderer.zoom(factor)
-        self.renderer.redraw()
+        self.renderer.zoom_interactive(factor)
 
     def _on_scroll_zoom(self, event) -> None:
-        if event.inaxes is None or event.xdata is None:
+        if event.inaxes is None or event.x is None:
             return
         factor = 1.25 if event.button == "up" else 1 / 1.25
-        self.renderer.zoom(factor, (event.xdata, event.ydata))
-        self.renderer.redraw()
+        self.renderer.zoom_interactive(factor, (event.x, event.y))
 
     def _apply_theme(self) -> None:
         theme = self._theme_var.get()
@@ -1135,19 +1133,24 @@ class PyMapprApp:
     def on_publication_style(self) -> None:
         """Apply several settings at once for a journal figure: black and
         white points with black outlines and varied shapes, a plain boxed
-        legend with italic names, and 600 DPI export. Rows the user styled
-        by hand in the legend editor keep their styling."""
+        legend with italic names sorted A-Z and shaded by genus, and 600 DPI
+        export. Rows the user styled by hand in the legend editor keep their
+        styling, and so do a manual legend order and a chosen Color by."""
         p = self.panel
         p.palette_var.set(BLACK_AND_WHITE_NAME)
         p.set_point_edge(*PUBLICATION_POINT_EDGE)
         p.set_point_alpha(1.0)
-        p.set_legend_options(dataclasses.replace(p.legend_options(),
-                                                 **PUBLICATION_LEGEND))
+        p.set_legend_options(organise_publication_legend(
+            self.entries, dataclasses.replace(p.legend_options(),
+                                              **PUBLICATION_LEGEND)))
         p.dpi_var.set(PUBLICATION_DPI)
         # Three shades alone cannot tell more than three groups apart.
         for entry in self.entries:
             entry.vary_symbols = True
         p.vary_symbols_var.set(True)
+        active = self._active_entry()
+        if active is not None:
+            p.color_by_var.set(active.color_by or "None")
         self.renderer.set_point_alpha(1.0)
         self.renderer.set_point_edge(*p.point_edge())
         self._push_points()

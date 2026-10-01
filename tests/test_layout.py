@@ -1,17 +1,19 @@
-"""Tests for pymappr.layout: what every dataset draws, shared by the app
-and the code export."""
+"""Tests for pymappr.styling.layout: what every dataset draws, shared by the
+app and the code export."""
 
 from __future__ import annotations
 
 import json
 
-from pymappr import projects
-from pymappr.data_loader import build_manual_dataset, load_csv
-from pymappr.layout import (column_key, editor_rows, layout_points,
-                            with_default_title)
-from pymappr.legend import LegendOptions
-from pymappr.projects import DatasetEntry
-from pymappr.styles import DEFAULT_PALETTE, OKABE_ITO, row_key
+from pymappr.files import projects
+from pymappr.files.data_loader import (PointDataset, build_manual_dataset,
+                                       combine_name_columns, load_csv)
+from pymappr.files.projects import DatasetEntry
+from pymappr.styling.layout import (column_key, editor_rows, layout_points,
+                                    organise_publication_legend,
+                                    parent_name_column, with_default_title)
+from pymappr.styling.legend import LegendOptions
+from pymappr.styling.styles import DEFAULT_PALETTE, OKABE_ITO, row_key
 
 SAMPLE = "sample_data/south_america_beetles.csv"
 
@@ -148,3 +150,95 @@ def test_column_key_maps_labels_to_frame_columns():
     assert column_key(entry, "Species") == "name2"
     assert column_key(entry, "None") is None
     assert column_key(entry, "") is None
+
+
+def combined_beetles(**kwargs) -> DatasetEntry:
+    """The beetles with a "Genus Species" column, grouped by it."""
+    entry = beetles()
+    entry.dataset, label = combine_name_columns(entry.dataset,
+                                                ["Genus", "Species"])
+    entry.group_by = label
+    for name, value in kwargs.items():
+        setattr(entry, name, value)
+    return entry
+
+
+def test_the_parent_column_of_a_combined_name_is_its_first_part():
+    entry = combined_beetles()
+    assert parent_name_column(entry.dataset, "Genus Species") == "Genus"
+
+
+def test_a_column_that_does_not_prefix_the_names_is_not_a_parent():
+    # Species has more values than Genus and never leads the full name.
+    entry = combined_beetles()
+    assert parent_name_column(entry.dataset, "Species") == ""
+
+
+def test_a_plain_column_has_no_parent():
+    entry = beetles()
+    assert parent_name_column(entry.dataset, "Genus") == ""
+    assert parent_name_column(entry.dataset, "") == ""
+    assert parent_name_column(entry.dataset, "None") == ""
+    assert parent_name_column(entry.dataset, "No such column") == ""
+
+
+def test_a_blank_part_disqualifies_the_column():
+    # A blank genus is a prefix of everything, which says nothing about a
+    # parent, so a column with a gap is not offered.
+    entry = combined_beetles()
+    frame = entry.dataset.frame.copy()
+    frame.loc[frame.index[0], "name1"] = ""
+    entry.dataset = PointDataset(frame=frame, source_path="")
+    entry.dataset.frame.attrs.update(name_labels=["Genus", "Species",
+                                                  "Genus Species"])
+    assert parent_name_column(entry.dataset, "Genus Species") == ""
+
+
+def test_a_parent_must_have_fewer_values_than_the_group_column():
+    # Genus prefixes "Genus Species", but a column identical to the group
+    # column does not: it has just as many values.
+    entry = combined_beetles()
+    frame = entry.dataset.frame.copy()
+    frame["name4"] = frame["name3"]
+    frame.attrs["name_labels"] = ["Genus", "Species", "Genus Species", "Copy"]
+    dataset = PointDataset(frame=frame, source_path="")
+    assert parent_name_column(dataset, "Genus Species") == "Genus"
+
+
+def test_publication_legend_sorts_and_shades_by_genus():
+    entry = combined_beetles()
+    options = organise_publication_legend([entry], LegendOptions())
+    assert entry.color_by == "Genus"
+    assert options.order == "az"
+
+
+def test_publication_legend_keeps_a_manual_order_and_a_chosen_colour():
+    entry = combined_beetles(color_by="Species")
+    options = organise_publication_legend(
+        [entry], LegendOptions(order="manual"))
+    assert entry.color_by == "Species"
+    assert options.order == "manual"
+
+
+def test_publication_legend_leaves_datasets_with_no_parent_alone():
+    entry = beetles()
+    options = organise_publication_legend([entry], LegendOptions())
+    assert entry.color_by == ""
+    assert options.order == "az"
+
+
+def test_publication_legend_blocks_the_rows_by_genus():
+    # The two settings together: A-Z rows form one block per genus, each
+    # with its own shade and the shapes restarting.
+    entry = combined_beetles()
+    options = organise_publication_legend([entry], LegendOptions())
+    layout = layout_points([entry], options, ["#000000", "#808080", "#ffffff"])
+    assert layout.row_order == sorted(layout.row_order)
+    by_genus: dict[str, list] = {}
+    for label, style, _rows in layout.groups:
+        by_genus.setdefault(label.split()[0], []).append(style)
+    assert len(by_genus) == 3
+    for styles in by_genus.values():
+        assert len({style.color for style in styles}) == 1
+        assert styles[0].marker == "Circle"
+    assert len({styles[0].color for styles in by_genus.values()}) == 3

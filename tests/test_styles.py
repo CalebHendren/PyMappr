@@ -3,13 +3,13 @@
 import matplotlib.markers
 import pandas as pd
 
-from pymappr.styles import (BLACK_AND_WHITE, BLACK_AND_WHITE_NAME,
-                            DEFAULT_PALETTE, MARKER_CYCLE, MARKERS,
-                            OPEN_SUFFIX, PALETTES, PointStyle,
-                            attribute_style_maps, default_styles,
-                            group_points, marker_load, nests_within,
-                            palette_for, resolve_nesting,
-                            style_by_attributes)
+from pymappr.styling.styles import (BLACK_AND_WHITE, BLACK_AND_WHITE_NAME,
+                                    DEFAULT_PALETTE, MARKER_CYCLE, MARKERS,
+                                    OPEN_SUFFIX, PALETTES, PointStyle,
+                                    attribute_style_maps, default_styles,
+                                    group_points, marker_load, nests_within,
+                                    palette_for, resolve_nesting,
+                                    style_by_attributes)
 
 
 def test_markers_are_valid_matplotlib_markers():

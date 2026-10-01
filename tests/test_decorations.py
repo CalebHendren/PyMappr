@@ -14,12 +14,12 @@ from matplotlib.backends.backend_agg import FigureCanvasAgg
 from matplotlib.figure import Figure
 from matplotlib.patches import Rectangle
 
-from pymappr.decorations import (CompassOptions, ScaleBarOptions,
-                                 corner_anchor, format_length, nice_length,
-                                 unit_metres)
-from pymappr.layers import CONTINENT_EXTENTS, LayerStore
-from pymappr.projections import GLOBE, get_projection
+from pymappr.geo.layers import CONTINENT_EXTENTS, LayerStore
+from pymappr.geo.projections import GLOBE, get_projection
 from pymappr.renderer import MapRenderer
+from pymappr.styling.decorations import (CompassOptions, ScaleBarOptions,
+                                         corner_anchor, format_length,
+                                         nice_length, unit_metres)
 
 # Projections whose whole extent is drawable, so a corner of the axes is
 # still on the map. Robinson, Mollweide and the globe are handled apart.

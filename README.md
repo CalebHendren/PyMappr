@@ -33,7 +33,8 @@ Python as an offline desktop application.
 - Combine name columns (e.g. Genus + Species) into one, so a legend row
   reads "Eleusis chapadensis" without editing the file.
 - One-click publication style: black & white outlined markers in varied
-  shapes, a plain boxed legend with italic names, and 600 DPI export.
+  shapes, a plain boxed legend with italic names sorted A-Z and shaded by
+  genus, and 600 DPI export.
 - Projects (`.pymappr` files) with autosave/restore, and export/import for
   sharing.
 - Save the map as PNG, JPEG, TIFF, PDF, SVG or WebP at the DPI you choose,
@@ -50,8 +51,10 @@ Python as an offline desktop application.
    The source file is left as it is.
 2. **Map tab > Apply publication style** switches to black & white points
    with black outlines and varied shapes, a plain boxed legend with italic
-   names, and 600 DPI export. Rows you restyled with Customize legend keep
-   their styling.
+   names sorted A-Z and shaded by genus, and 600 DPI export. Datasets with
+   no Color by are colored by the parent name column, and a legend order you
+   set by hand is kept. Rows you restyled with Customize legend keep their
+   styling.
 3. **File > Save map as...** and pick TIFF or PDF.
 
 ## Screenshots
@@ -127,19 +130,19 @@ python scripts/make_app_screenshot.py  # the app screenshots (needs a display)
 
 Project layout:
 
-- `pymappr/coords.py` - decimal/DMS coordinate parsing
-- `pymappr/data_loader.py` - CSV/TSV/Excel reading and column mapping
-- `pymappr/projects.py` - project files, settings, session autosave
-- `pymappr/layers.py` - Natural Earth layer store and on-disk frame cache
-- `pymappr/projections.py` - map projections (pyproj)
+- `pymappr/files/coords.py` - decimal/DMS coordinate parsing
+- `pymappr/files/data_loader.py` - CSV/TSV/Excel reading and column mapping
+- `pymappr/files/projects.py` - project files, settings, session autosave
+- `pymappr/geo/layers.py` - Natural Earth layer store and on-disk frame cache
+- `pymappr/geo/projections.py` - map projections (pyproj)
 - `pymappr/renderer/` - matplotlib map rendering, one module per concern
-  (view, layers, overlays, labels, points and legend, mouse), plus the
+  (view, layers, overlays, labels, points and legend, mouse, blit), plus the
   layer style tables shared with code export
-- `pymappr/styles.py` - point styles and group/color-by styling
-- `pymappr/legend.py` - legend options and legend rows
-- `pymappr/layout.py` - what every dataset draws (shared by the app and code
+- `pymappr/styling/styles.py` - point styles and group/color-by styling
+- `pymappr/styling/legend.py` - legend options and legend rows
+- `pymappr/styling/layout.py` - what every dataset draws (shared by the app and code
   export)
-- `pymappr/codegen.py`, `pymappr/templates/` - Python/R code export
+- `pymappr/export/codegen.py`, `pymappr/export/templates/` - Python/R code export
 - `pymappr/updates.py` - daily update check against the GitHub releases API
 - `pymappr/app.py`, `pymappr/ui/` - Tkinter application
 - `scripts/fetch_data.py` - downloads and prepares the bundled map data
@@ -154,11 +157,17 @@ Building the release packages is automated by
 [`index.html`](index.html) is **MiniMappr**, a browser-only edition
 of PyMappr hosted with GitHub Pages at
 [calebhendren.github.io/PyMappr](https://calebhendren.github.io/PyMappr/). It
-covers the core workflow with no install: points from a CSV/TSV (with a
-column-mapping step), a pasted table, or manual entry, decimal degrees or DMS,
-styled by group/color/symbol on the same projections (Equirectangular, Mercator,
-Robinson, Mollweide, Natural Earth, Winkel Tripel, orthographic Globe, and
-regional Lambert), exported as PNG or SVG.
+covers the core workflow with no install:
+
+- Points from a CSV/TSV (with a column-mapping step), a pasted table, manual
+  entry, or click-to-place, in decimal degrees or DMS.
+- Styled by group/color/symbol, with Combine columns and the filter bar.
+- The same projections: Equirectangular, Mercator, Robinson, Mollweide,
+  Natural Earth, Winkel Tripel, orthographic Globe, and regional and custom
+  Lambert.
+- The same legend options, scale bar, compass and grid.
+- The one-click publication style.
+- Export as PNG, JPEG, WebP, TIFF, PDF or SVG at the DPI you choose.
 
 It intentionally leaves out the heavier desktop features: the ~30 Natural Earth
 layers, relief/Blue Marble basemaps, bathymetry, labels, Excel import, project

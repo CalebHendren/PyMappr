@@ -12,7 +12,7 @@ from __future__ import annotations
 import math
 from dataclasses import asdict, dataclass
 
-from pymappr.options import values_from_dict
+from pymappr.styling.options import values_from_dict
 
 __all__ = ["CORNERS", "SCALE_UNITS", "SCALE_STYLES", "LENGTH_MODES",
            "COMPASS_STYLES", "ScaleBarOptions", "CompassOptions",

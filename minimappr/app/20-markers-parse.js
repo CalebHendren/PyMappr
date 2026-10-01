@@ -12,6 +12,11 @@ const BLACK_AND_WHITE = ["#000000","#ffffff","#808080"];
 const PALETTES = {"Default": DEFAULT_PALETTE,
   "Colourblind safe (Okabe-Ito)": OKABE_ITO,
   "Black & white": BLACK_AND_WHITE};
+// The outline filled markers get by default, and the one the publication
+// style sets. Match POINT_EDGE_COLOR / POINT_EDGE_WIDTH and
+// PUBLICATION_POINT_EDGE in styles.py.
+const POINT_EDGE_COLOR="#ffffff", POINT_EDGE_WIDTH=0.5;
+const PUBLICATION_POINT_EDGE=["#000000", 0.6];
 // The palette in use is a map-wide setting (opts.palette), not a per-dataset one.
 function palette(){ return PALETTES[opts.palette] || DEFAULT_PALETTE; }
 const BASE_MARKERS = ["Circle","Square","Triangle","Triangle down","Triangle left",
@@ -106,7 +111,10 @@ function detectDelim(text){
   let best=",", n=-1; for(const d in counts){ if(counts[d]>n){n=counts[d];best=d;} }
   return best;
 }
-function parseDelimited(text){
+// headers: whether the first row names the columns; undefined guesses it
+// (headersLookLikeData). Without headers every row is data and the columns
+// are "Column 1", "Column 2", ... Mirrors data_loader.read_table.
+function parseDelimited(text, headers){
   text = text.replace(/^﻿/,"");
   const delim = detectDelim(text);
   const rows=[]; let field="", row=[], q=false;
@@ -125,9 +133,63 @@ function parseDelimited(text){
   }
   if(field.length||row.length){ row.push(field); rows.push(row); }
   const clean = rows.filter(r=>r.some(v=>v!==""));
-  if(!clean.length) return {columns:[],rows:[]};
-  const header = clean[0].map((h,i)=>h.trim()||("Column "+(i+1)));
-  const data = clean.slice(1).map(r=>{ const o={}; header.forEach((h,i)=>o[h]=(r[i]??"").trim()); return o; });
-  return {columns:header, rows:data};
+  if(!clean.length) return {columns:[],rows:[],headers:headers!==false};
+  if(headers===undefined) headers=!headersLookLikeData(clean[0]);
+  const width=Math.max(...clean.map(r=>r.length));
+  const header = headers
+    ? uniqueNames(clean[0].map((h,i)=>h.trim()||("Column "+(i+1))))
+    : Array.from({length:width},(_,i)=>"Column "+(i+1));
+  const data = clean.slice(headers?1:0).map(r=>{ const o={}; header.forEach((h,i)=>o[h]=(r[i]??"").trim()); return o; });
+  return {columns:header, rows:data, headers};
+}
+// Two headers that read the same would share one attribute key, and the
+// second would silently overwrite the first; number the repeats instead.
+function uniqueNames(names){
+  const seen=new Set();
+  return names.map(n=>{ let name=n, k=2; while(seen.has(name)) name=`${n} (${k++})`;
+    seen.add(name); return name; });
+}
+// Whether the header row is really data: a file whose first row is
+// coordinates ("38,-100") reads into numeric-looking column names, where
+// real headers are words. Two or more numeric headers means data. Mirrors
+// data_loader.headers_look_like_data.
+function headersLookLikeData(cells){
+  return cells.filter(c=>/^[+-]?(\d+\.?\d*|\.\d+)(e[+-]?\d+)?$/i.test(String(c).trim())).length>=2;
+}
+
+// Which columns hold the coordinates, from the headers first and then by
+// position: the last two columns are Longitude, Latitude unless the values
+// say otherwise. Every other column becomes an attribute. Mirrors
+// data_loader.guess_mapping.
+const LON_HINTS=["lon","lng","long","longitude","x"];
+const LAT_HINTS=["lat","latitude","y"];
+// An exact hint ("lng"), then a header starting with one ("Long."), then one
+// containing the whole word ("decimalLongitude"). Short hints never match
+// inside other words: "x" and "y" sit in Taxon, Family and Locality.
+function matchColumn(columns, hints){
+  const lowered=new Map(columns.map(c=>[c.toLowerCase().trim(), c]));
+  const rules=[(low,h)=>low===h, (low,h)=>h.length>1 && low.startsWith(h),
+               (low,h)=>h.length>4 && low.includes(h)];
+  for(const rule of rules)
+    for(const hint of hints)
+      for(const [low,original] of lowered)
+        if(rule(low,hint)) return original;
+  return null;
+}
+function beyondLatitude(rows, column){
+  return rows.some(r=>{ const n=Number(String(r[column]??"").trim()); return Math.abs(n)>90; });
+}
+function guessMapping(parsed){
+  const {columns, rows}=parsed;
+  let lon=matchColumn(columns, LON_HINTS), lat=matchColumn(columns, LAT_HINTS);
+  if(lon==null || lat==null || lon===lat){
+    if(columns.length<2) return Object.fromEntries(columns.map(c=>[c,"attr"]));
+    lon=columns[columns.length-2]; lat=columns[columns.length-1];
+    // typed-in "lat, lon" files import the right way round this way
+    if(beyondLatitude(rows, lat) && !beyondLatitude(rows, lon)) [lon,lat]=[lat,lon];
+  }
+  const map={};
+  for(const c of columns) map[c] = c===lon ? "lon" : c===lat ? "lat" : "attr";
+  return map;
 }
 
