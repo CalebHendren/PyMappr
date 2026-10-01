@@ -402,9 +402,19 @@ def _region_clip(lon_0: float, lon_halfspan: float, min_lat: float,
     return copies.intersection(box(-180.0, min_lat, 180.0, max_lat))
 
 
+def normalize_origin(lon_0: float, lat_0: float) -> tuple[float, float]:
+    """*lon_0* wrapped into [-180, 180] and *lat_0* clamped to [-90, 90]:
+    the range PROJ accepts, so a typed or previously saved out-of-range
+    centre still builds."""
+    lon = float(lon_0)
+    if not -180.0 <= lon <= 180.0:
+        lon = (lon + 180.0) % 360.0 - 180.0
+    return lon, max(-90.0, min(90.0, float(lat_0)))
+
+
 def _build_globe(lon_0: float | None, lat_0: float | None) -> Projection:
-    lon0 = 0.0 if lon_0 is None else float(lon_0)
-    lat0 = 0.0 if lat_0 is None else float(lat_0)
+    lon0, lat0 = normalize_origin(0.0 if lon_0 is None else lon_0,
+                                  0.0 if lat_0 is None else lat_0)
     crs = proj4_string(GLOBE, lon0, lat0)
     lons, lats = _cap_ring(lon0, lat0, _HORIZON_RADIUS)
     xs, ys = _transformer(crs).transform(lons, lats)
@@ -420,8 +430,8 @@ def _build_globe(lon_0: float | None, lat_0: float | None) -> Projection:
 def _build_lambert(name: str, lon_0: float | None,
                    lat_0: float | None) -> Projection:
     d = LAMBERT_DEFS[name]
-    lon0 = d.lon_0 if lon_0 is None else float(lon_0)
-    lat0 = d.lat_0 if lat_0 is None else float(lat_0)
+    lon0, lat0 = normalize_origin(d.lon_0 if lon_0 is None else lon_0,
+                                  d.lat_0 if lat_0 is None else lat_0)
     crs = proj4_string(name, lon0, lat0)
     bounds = _bounds_from_grid(crs, lon0 - d.lon_halfspan,
                                lon0 + d.lon_halfspan, d.lat_min, d.lat_max)

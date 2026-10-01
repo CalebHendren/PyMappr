@@ -176,3 +176,23 @@ def test_label_region_is_the_lambert_map_area():
     assert america.covers(Point(176.0, 60.0))
     assert america.covers(Point(-100.0, 40.0))
     assert not america.covers(Point(100.0, 60.0))
+
+
+def test_every_origin_builds_at_both_poles():
+    for name in (GLOBE, *LAMBERT_PROJECTIONS):
+        for lat in (90.0, -90.0):
+            assert get_projection(name, 0.0, lat).bounds
+
+
+def test_out_of_range_origin_is_normalised_not_rejected():
+    globe = get_projection(GLOBE, 0, 95)
+    assert globe.lat_0 == 90
+    assert get_projection(GLOBE, 0, -123).lat_0 == -90
+    assert get_projection(GLOBE, 400, 0).lon_0 == 40
+    assert get_projection(GLOBE, -190, 0).lon_0 == 170
+    assert get_projection(GLOBE, 180, 0).lon_0 == 180
+    assert get_projection(GLOBE, -180, 0).lon_0 == -180
+
+    lam = get_projection("Lambert Azimuthal (custom)", 0, 95)
+    assert "+lat_0=90" in lam.crs
+    assert get_projection("Lambert: Europe", 400, 50).lon_0 == 40

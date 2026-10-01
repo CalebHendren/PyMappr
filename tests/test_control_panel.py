@@ -237,3 +237,23 @@ def test_reset_clears_every_override(tk_root):
     dialog._reset_all()
     tk_root.update_idletasks()
     assert overrides == {}
+
+
+def test_origin_spinboxes_are_clamped_and_written_back(panel):
+    panel.projection_var.set("Globe (Orthographic)")
+    panel.proj_lon0_var.set("400")
+    panel.proj_lat0_var.set("95")
+    assert panel.projection_origin() == (40, 90)
+    assert panel.proj_lon0_var.get() == "40"
+    assert panel.proj_lat0_var.get() == "90"
+
+    panel.proj_lon0_var.set("-190")
+    panel.proj_lat0_var.set("-100")
+    assert panel.projection_origin() == (170, -90)
+    assert (panel.proj_lon0_var.get(), panel.proj_lat0_var.get()) == (
+        "170", "-90")
+
+    panel.proj_lon0_var.set("180")
+    panel.proj_lat0_var.set("-90")
+    assert panel.projection_origin() == (180, -90)
+    assert panel.proj_lon0_var.get() == "180"
