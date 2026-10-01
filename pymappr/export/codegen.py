@@ -446,8 +446,9 @@ def _dataset_configs(entries, data_mode: str = "inline",
             # label_map turns it into the legend text.
             "default_label": "All points",
             "label_map": dataset.label_map,
-            "styles": {label: style for label, style, _rows
-                       in dataset.groups},
+            # Keyed by group value, like label_map: two groups renamed to
+            # the same label are still two groups, each in its own style.
+            "styles": _group_styles(dataset),
             # Original source path, for a provenance comment only (not read
             # by the generated loader).
             "source": entry.dataset.source_path or None,
@@ -470,6 +471,17 @@ def _dataset_configs(entries, data_mode: str = "inline",
             config["group_col"] = entry.group_by
         configs.append(config)
     return configs, data_files, layout.sections, layout.row_order
+
+
+def _group_styles(dataset) -> dict:
+    """A drawn dataset's group value -> style, in render order.
+
+    In group-by mode the groups are label_map's keys, in the same order;
+    otherwise each group's label is its value."""
+    values = list(dataset.label_map) or [label for label, _style, _rows
+                                         in dataset.groups]
+    return {value: style for value, (_label, style, _rows)
+            in zip(values, dataset.groups)}
 
 
 def _inline_csv(entry) -> str:
@@ -793,9 +805,10 @@ def _py_config(config: dict) -> str:
     lines.append("# One entry per dataset. lon_col/lat_col name the "
                  "coordinate columns")
     lines.append("# (None = auto-detect by column name).")
-    lines.append("# 'styles' maps each legend label to its point style, in "
-                 "render order")
-    lines.append("# (open = outline-only marker).")
+    lines.append("# label_map renames groups for the legend; 'styles' maps "
+                 "each group to its")
+    lines.append("# point style, in render order (open = outline-only "
+                 "marker).")
     lines.append("DATASETS = [")
     for spec in config["datasets"]:
         if spec.get("source"):
@@ -807,8 +820,8 @@ def _py_config(config: dict) -> str:
                     "default_label", "label_map"):
             lines.append(f"        {_py(key)}: {_py(spec[key])},")
         lines.append("        'styles': {")
-        for label, style in spec["styles"].items():
-            lines.append(f"            {_py(label)}: "
+        for value, style in spec["styles"].items():
+            lines.append(f"            {_py(value)}: "
                          f"{_py(_style_dict(style))},")
         lines.append("        },")
         lines.append("    },")
@@ -817,7 +830,7 @@ def _py_config(config: dict) -> str:
     sections = config["legend_sections"]
     if sections is None:
         lines.append("LEGEND_SECTIONS = None"
-                     "  # plain legend: one row per STYLES entry")
+                     "  # plain legend: one row per style, in DATASETS")
     else:
         lines.append("# Sectioned legend, like the app's: (label, style, "
                      "depth) rows, where")
@@ -1026,12 +1039,13 @@ def _r_style_keys(config: dict) -> tuple[list[dict], list[tuple],
     """The R script's style keys.
 
     ggplot2 styles points through one set of manual scales, keyed by name,
-    so two datasets that share a label (two ungrouped datasets both named
-    "Sites") need different keys to keep their own styles and legend rows.
-    A key is the label itself, or "label [n]" for dataset n when an earlier
-    dataset already used the label.
+    so groups that share a label (two ungrouped datasets both named
+    "Sites", or two groups renamed alike) need different keys to keep their
+    own styles and legend rows. A key is the label itself, or "label [n]"
+    for dataset n when the label is already taken.
 
-    Returns each dataset's label -> key map (only the labels that differ),
+    Returns each dataset's group value -> key map (only where the two
+    differ),
     every (key, label, style) in render order, and the legend's keys in
     legend order (None when every key is a row, as in the sectioned
     legend), ordered the way the app orders its plain legend.
@@ -1041,7 +1055,8 @@ def _r_style_keys(config: dict) -> tuple[list[dict], list[tuple],
     groups: list[tuple] = []
     for number, spec in enumerate(config["datasets"], start=1):
         renamed = {}
-        for label, style in spec["styles"].items():
+        for value, style in spec["styles"].items():
+            label = spec["label_map"].get(value, value)
             key = label
             suffix = 0
             while key in taken:
@@ -1049,8 +1064,8 @@ def _r_style_keys(config: dict) -> tuple[list[dict], list[tuple],
                 key = (f"{label} [{number}]" if suffix == 1
                        else f"{label} [{number}.{suffix}]")
             taken.add(key)
-            if key != label:
-                renamed[label] = key
+            if key != value:
+                renamed[value] = key
             groups.append((key, label, style))
         per_dataset.append(renamed)
     rows = config.get("legend_rows")
@@ -1121,8 +1136,8 @@ def _r_config(config: dict) -> str:
     lines.append("# One entry per dataset. lon_col/lat_col name the "
                  "coordinate columns")
     lines.append("# (NULL = auto-detect by column name).")
-    lines.append("# style_keys maps a label to its STYLE_* key where the "
-                 "two differ.")
+    lines.append("# style_keys maps a group value to its STYLE_* key where "
+                 "the two differ.")
     lines.append("DATASETS <- list(")
     dataset_blocks = []
     style_keys, groups, legend_keys = _r_style_keys(config)

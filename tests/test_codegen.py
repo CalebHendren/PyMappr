@@ -1002,7 +1002,10 @@ def test_renamed_group_rows_carry_their_new_name_through_styles():
     entry.legend_overrides = {row_key("group", "spiders"): {"label": "Araneae"}}
     code = codegen.generate_code(make_state(), [entry], "Python")
     ns = exec_python(code)
-    assert "Araneae" in all_styles(ns)
+    spec = ns["DATASETS"][0]
+    # Styles are keyed by the group value; label_map gives the row's text.
+    assert spec["label_map"] == {"spiders": "Araneae"}
+    assert "spiders" in spec["styles"]
     assert ns["LEGEND_ROWS"] == ["Araneae"]
 
 
@@ -1090,7 +1093,11 @@ def test_two_datasets_sharing_a_label_keep_their_own_styles(tmp_path):
                ungrouped_entry("Sites", "#222222")]
     assert app_labels(entries) == [["Sites"], ["Sites"]]
     ns = exec_python(codegen.generate_code(make_state(), entries, "Python"))
-    colors = [spec["styles"]["Sites"]["color"] for spec in ns["DATASETS"]]
+    # Styles are keyed by group value; label_map shows each as "Sites".
+    colors = [spec["styles"]["All points"]["color"]
+              for spec in ns["DATASETS"]]
+    assert [spec["label_map"] for spec in ns["DATASETS"]] == [
+        {"All points": "Sites"}] * 2
     assert colors == ["#111111", "#222222"]
     fig = matplotlib.figure.Figure()
     ax = fig.add_subplot(111)
@@ -1589,6 +1596,49 @@ def test_r_legend_font_family_uses_r_names(tmp_path, family, r_family):
     run_r_harness(tmp_path, code, f"""
 stopifnot(identical(legend_text(9, FALSE, FALSE, "#000000")$family,
                     "{r_family}"))
+""")
+
+
+def west_entry():
+    """Wyoming and Colorado both renamed "West", in different colours."""
+    entry = file_entry()
+    entry.legend_overrides = {
+        row_key("group", "Wyoming"): {"label": "West", "color": "#111111"},
+        row_key("group", "Colorado"): {"label": "West", "color": "#222222"}}
+    return entry
+
+
+def test_python_keeps_groups_renamed_to_the_same_label_apart():
+    matplotlib = pytest.importorskip("matplotlib")
+    matplotlib.use("Agg")
+    entry = west_entry()
+    assert app_labels([entry]) == [["West", "West"]]
+    state = make_state(map={"projection": "Equirectangular"})
+    ns = exec_python(codegen.generate_code(state, [entry], "Python"))
+    calls = []
+    ax = types.SimpleNamespace(
+        scatter=lambda xs, ys, **kw: calls.append((list(ys), kw["c"])))
+    ns["plot_dataset"](ax, ns["DATASETS"][0])
+    # Wyoming's points (lat 43.0 and 41.1) keep Wyoming's colour.
+    assert sorted(calls) == [([39.0], "#222222"), ([43.0, 41.1], "#111111")]
+    fig = matplotlib.figure.Figure()
+    axes = fig.add_subplot(111)
+    ns["add_legend"](axes)
+    legend = axes.get_legend()
+    assert [t.get_text() for t in legend.get_texts()] == ["West", "West"]
+    assert [h.get_markerfacecolor() for h in legend.legend_handles] == [
+        "#111111", "#222222"]
+
+
+def test_r_keeps_groups_renamed_to_the_same_label_apart(tmp_path):
+    code = codegen.generate_code(make_state(), [west_entry()], "R")
+    run_r_harness(tmp_path, code, """
+points <- load_all_points()
+fills <- unname(STYLE_FILLS[points$key])
+stopifnot(identical(fills, c("#111111", "#222222", "#111111")))
+guide <- get_guide_data(ggplot() + point_layers(), "fill")
+stopifnot(identical(guide$.label, c("West", "West")))
+stopifnot(identical(guide$fill, c("#111111", "#222222")))
 """)
 
 

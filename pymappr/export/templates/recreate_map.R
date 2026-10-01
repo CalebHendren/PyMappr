@@ -183,7 +183,16 @@ load_points <- function(spec) {
 }
 
 point_labels <- function(df, spec) {
-  # The legend label for every row, like PyMappr's grouping rules.
+  # The legend label for every row: its group, renamed by label_map.
+  raw <- point_groups(df, spec)
+  if (length(spec$label_map) == 0) return(raw)
+  mapped <- unname(spec$label_map[raw])
+  ifelse(is.na(mapped), raw, mapped)
+}
+
+point_groups <- function(df, spec) {
+  # The group every row belongs to, like PyMappr's grouping rules: the
+  # value its styles are keyed by, before label_map renames it.
   column_values <- function(name) {
     if (is.null(name)) return(rep("", nrow(df)))
     column <- find_column(df, name, c(), name)
@@ -203,21 +212,19 @@ point_labels <- function(df, spec) {
   } else {
     raw <- rep(spec$default_label, nrow(df))
   }
-  if (length(spec$label_map) == 0) return(raw)
-  mapped <- unname(spec$label_map[raw])
-  ifelse(is.na(mapped), raw, mapped)
+  raw
 }
 
 load_all_points <- function() {
   # Every dataset's points as lon/lat plus the STYLE_* key each is drawn
-  # with: its legend label, made unique where two datasets share a label.
+  # with: its legend label, made unique where labels repeat.
   frames <- lapply(DATASETS, function(spec) {
     df <- load_points(spec)
-    labels <- point_labels(df, spec)
-    keys <- labels
+    groups <- point_groups(df, spec)
+    keys <- groups
     if (length(spec$style_keys) > 0) {
-      renamed <- labels %in% names(spec$style_keys)
-      keys[renamed] <- spec$style_keys[labels[renamed]]
+      renamed <- groups %in% names(spec$style_keys)
+      keys[renamed] <- spec$style_keys[groups[renamed]]
     }
     data.frame(lon = df$`_lon`, lat = df$`_lat`, key = unname(keys))
   })

@@ -867,7 +867,14 @@ def load_points(spec):
 
 
 def point_labels(df, spec):
-    """The legend label for every row, like PyMappr's grouping rules."""
+    """The legend label for every row: its group, renamed by label_map."""
+    return point_groups(df, spec).map(
+        lambda value: spec["label_map"].get(value, value))
+
+
+def point_groups(df, spec):
+    """The group every row belongs to, like PyMappr's grouping rules: the
+    value its styles are keyed by, before label_map renames it."""
     blank = pd.Series([""] * len(df), index=df.index)
 
     def column_values(name):
@@ -887,7 +894,7 @@ def point_labels(df, spec):
         raw = raw.where(raw != "", "(blank)")
     else:
         raw = pd.Series([spec["default_label"]] * len(df), index=df.index)
-    return raw.map(lambda value: spec["label_map"].get(value, value))
+    return raw
 
 
 def marker_paint(style):
@@ -903,16 +910,16 @@ def plot_dataset(ax, spec):
     filled markers get the POINT_EDGE outline, open markers draw
     outline-only."""
     df = load_points(spec)
-    labels = point_labels(df, spec)
+    groups = point_groups(df, spec)
     xs, ys = proj_forward(df["_lon"].to_numpy(), df["_lat"].to_numpy())
     offsets = wrap_offsets()
     styles = spec["styles"]
-    order = list(dict.fromkeys(list(styles) + sorted(set(labels))))
-    for label in order:
-        mask = (labels == label).to_numpy()
+    order = list(dict.fromkeys(list(styles) + sorted(set(groups))))
+    for group in order:
+        mask = (groups == group).to_numpy()
         if not mask.any():
             continue
-        style = styles.get(label, FALLBACK_STYLE)
+        style = styles.get(group, FALLBACK_STYLE)
         px = np.concatenate([xs[mask] + off for off in offsets])
         py = np.tile(ys[mask], len(offsets))
         face, edge, lw = marker_paint(style)
@@ -1009,10 +1016,11 @@ def style_legend(fig, leg, header_rows):
 def add_legend(ax):
     """The app's legend: one row per group, or titled sections when the
     map is styled by two attribute columns."""
-    # One row per style of every dataset: two datasets sharing a label keep
-    # a row each, in their own style, as in the app.
-    rows = [(label, style) for spec in DATASETS
-            for label, style in spec["styles"].items()]
+    # One row per group of every dataset, as in the app: groups that share
+    # a label (two datasets' "Sites", or two groups renamed alike) keep a
+    # row each, in their own style.
+    rows = [(spec["label_map"].get(group, group), style) for spec in DATASETS
+            for group, style in spec["styles"].items()]
     if not LEGEND["show"] or not rows:
         return
     if LEGEND_SECTIONS is None:
