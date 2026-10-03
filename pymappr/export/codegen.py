@@ -7,7 +7,7 @@ from functools import lru_cache
 from pathlib import Path
 
 from pymappr import __version__
-from pymappr.files.projects import safe_filename, RESERVED_FILENAMES
+from pymappr.files.projects import safe_filename
 from pymappr.geo.layers import BATHYMETRY_STEPS, CONTINENT_EXTENTS, LAYER_SPECS
 from pymappr.geo.projections import CAP_CLIP_RADIUS, get_projection, is_globe
 from pymappr.renderer.tables import (BATHYMETRY_COLORS, FILL_COLORS,
@@ -170,14 +170,16 @@ def _num(value, fallback: float) -> float:
 
 
 def _origin(state_map: dict) -> tuple[float | None, float | None]:
-    """The Lambert/Globe origin from the stored map state ("" = default)."""
+    """The Lambert/Globe origin from the stored map state ("" or a
+    non-finite value = default, as the control panel reads it)."""
 
     def parse(key):
         raw = str(state_map.get(key, "")).strip()
         try:
-            return float(raw)
+            value = float(raw)
         except ValueError:
             return None
+        return value if math.isfinite(value) else None
 
     return parse("proj_lon0"), parse("proj_lat0")
 
@@ -378,12 +380,12 @@ def _export_filename(name: str, extension: str, used: set[str],
     Windows refuses to create that file under any extension - and only the
     part before the first dot counts, so "NUL.tar" becomes "NUL_.tar".
     """
-    stem = safe_filename(str(name)) if str(name).strip() else fallback
-    if extension and stem.lower().endswith(extension.lower()):
-        stem = stem[:-len(extension)].rstrip(". ") or fallback
-    first, dot, rest = stem.partition(".")
-    if first.strip().lower() in RESERVED_FILENAMES:
-        stem = f"{first.rstrip()}_{dot}{rest}"
+    # Drop the extension before cleaning, so the device-name rule sees the
+    # bare stem ("CON.csv" -> "CON_.csv", not "CON.csv").
+    raw = str(name).strip().rstrip(". ")
+    if extension and raw.lower().endswith(extension.lower()):
+        raw = raw[:-len(extension)].rstrip(". ")
+    stem = safe_filename(raw) if raw else fallback
     taken = {item.casefold() for item in used}
     candidate = f"{stem}{extension}"
     counter = 2

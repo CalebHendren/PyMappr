@@ -901,7 +901,12 @@ class ControlPanel(ttk.Frame):
                 return None
             fixed = fix(value)
             if fixed != value:
-                var.set(f"{fixed:g}")      # show what will actually be used
+                # Show what will actually be used, and use what is shown, so
+                # the next read builds the same projection. ":g" kept only 6
+                # digits, which moved the centre on the next Enter.
+                shown = f"{fixed:.15g}"
+                var.set(shown)
+                fixed = float(shown)
             return fixed
 
         return (_num(self.proj_lon0_var,

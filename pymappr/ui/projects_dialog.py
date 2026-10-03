@@ -130,7 +130,9 @@ class ProjectsDialog(tk.Toplevel):
         self._refresh()
 
     def _record_rename(self, old: Path, new: Path) -> None:
-        if old == new:
+        # Compare the text: Windows paths compare without case, which
+        # would drop a case-only rename ("survey" -> "Survey").
+        if str(old) == str(new):
             return
         for origin, current in self.renamed.items():
             if current == old:  # A -> B then B -> C is recorded as A -> C

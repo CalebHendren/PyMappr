@@ -266,3 +266,14 @@ def test_origin_ignores_non_finite_input(panel, text):
     panel.proj_lat0_var.set(text)
     assert panel.projection_origin() == (None, None)
     assert panel.proj_lon0_var.get() == text
+
+
+def test_a_wrapped_origin_is_used_exactly_as_shown(panel):
+    panel.projection_var.set("Globe (Orthographic)")
+    panel.proj_lon0_var.set("190.1234567")
+    panel.proj_lat0_var.set("10")
+    lon0, _lat0 = panel.projection_origin()
+    assert float(panel.proj_lon0_var.get()) == lon0
+    assert lon0 == pytest.approx(-169.8765433)
+    # Reading the field again builds the same centre.
+    assert panel.projection_origin()[0] == lon0

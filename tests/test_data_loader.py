@@ -145,7 +145,8 @@ def test_row_numbers_with_headers(tmp_path):
 
 def test_row_numbers_header_row_with_generic_labels(tmp_path):
     # A header row is still file line 1 when its text is not used as labels.
-    path = write(tmp_path, """\n        Longitude,Latitude
+    path = write(tmp_path, """\
+        Longitude,Latitude
         -97.7,30.3
         bad,bad
     """)
@@ -337,3 +338,34 @@ def test_combine_name_columns_separator_and_unique_labels(tmp_path):
     assert second == "Genus Species (2)"
     with pytest.raises(ValueError):
         combine_name_columns(dataset, ["Genus", "Subspecies"])
+
+
+def test_row_numbers_follow_the_file_past_blank_and_multiline_rows(tmp_path):
+    # read_csv drops the blank lines and folds the quoted two-line name
+    # into one row; the report still names the line in the file.
+    path = tmp_path / "points.csv"
+    path.write_bytes(b'name,lon,lat\r\na,1,2\r\n\r\n   \r\n'
+                     b'"two\r\nlines",3,4\r\nb,xx,3\r\n')
+    frame = read_table(str(path))
+    mapping = ColumnMapping(longitude="lon", latitude="lat", names=["name"])
+    ds = build_dataset(frame, mapping)
+    assert len(ds) == 2
+    assert ds.skipped == ["row 7: cannot parse longitude 'xx'"]
+
+    frame = read_table(str(path), headers=False)
+    mapping = ColumnMapping(longitude="Column 2", latitude="Column 3",
+                            names=[], header_row=False)
+    assert build_dataset(frame, mapping).skipped[-1].startswith("row 7:")
+
+
+def test_row_numbers_fall_back_to_position_without_file_lines(tmp_path):
+    path = write(tmp_path, """\
+        lon,lat
+        1,2
+
+        xx,3
+    """)
+    frame = read_table(path)
+    frame.attrs.pop("source_lines")
+    mapping = ColumnMapping(longitude="lon", latitude="lat")
+    assert build_dataset(frame, mapping).skipped[0].startswith("row 3:")

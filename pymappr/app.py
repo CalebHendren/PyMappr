@@ -402,8 +402,9 @@ class PyMapprApp:
                 self._set_title()
                 return
         if any(path.resolve() == current for path in dialog.deleted):
-            # The file is gone: Ctrl+S must ask for a name, and closing
-            # must offer to save.
+            # The file is gone: Ctrl+S must ask for a name, and New or
+            # Open must offer to save, even after a restart (the session
+            # remembers that it is unsaved).
             self.project_path = None
             self._clean_snapshot = None
             self._set_title()
@@ -417,7 +418,8 @@ class PyMapprApp:
             messagebox.showerror("Open project", str(exc), parent=self.root)
             return
         before = self._collect_state()
-        was_clean = self._snapshot() == self._clean_snapshot
+        was_clean = (json.dumps(before, sort_keys=True, default=str)
+                     == self._clean_snapshot)
         try:
             self._apply_state(state)
         except Exception as exc:  # noqa: BLE001 - corrupt/edited file
@@ -555,10 +557,15 @@ class PyMapprApp:
         """Autosave everything so the next launch resumes where we left off."""
         try:
             state = self._collect_state()
+            # Unsaved changes stay unsaved across a restart, so New or Open
+            # after relaunching still offers to save them.
+            unsaved = (json.dumps(state, sort_keys=True, default=str)
+                       != self._clean_snapshot)
             state["project_path"] = (str(self.project_path)
                                      if self.project_path else "")
             state["project_name"] = self.project_name
             state["geometry"] = self.root.geometry()
+            state["unsaved"] = unsaved
             projects.save_project(projects.session_path(),
                                   self.project_name, state)
         except Exception:  # noqa: BLE001 - never block closing the app
@@ -580,7 +587,10 @@ class PyMapprApp:
                                  else None)
             self.project_name = (str(state.get("project_name") or "")
                                  or UNTITLED)
-            self._mark_clean()
+            if state.get("unsaved"):
+                self._clean_snapshot = None
+            else:
+                self._mark_clean()
             self._set_title()
             if self.entries:
                 self.set_status("Restored your previous session.")

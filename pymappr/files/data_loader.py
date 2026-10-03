@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import csv
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -109,7 +110,42 @@ def read_table(path: str, headers: bool = True,
         frame.columns = [str(c) for c in frame.columns]
     # Spreadsheet cells may come back as NaN even with keep_default_na
     # (truly empty cells); normalize everything to text.
-    return frame.fillna("").astype(str)
+    frame = frame.fillna("").astype(str)
+    if ext not in SPREADSHEET_EXTENSIONS:
+        lines = _text_row_lines(path, sep, headers, len(frame))
+        if lines is not None:
+            frame.attrs["source_lines"] = lines
+    return frame
+
+
+def _text_row_lines(path: str, sep: str | None, headers: bool,
+                    rows: int) -> list[int] | None:
+    """The 1-based file line each data row of a delimited file starts on.
+
+    read_csv drops blank lines and folds a quoted field that spans lines
+    into one row, so a row's position alone misnumbers every row after
+    either. None when this scan and pandas disagree on the row count (an
+    unusual dialect); build_dataset then numbers rows by position.
+    """
+    try:
+        with open(path, encoding="utf-8-sig", errors="replace",
+                  newline="") as handle:
+            if sep is None:
+                sep = csv.Sniffer().sniff(handle.read(65536)).delimiter
+                handle.seek(0)
+            reader = csv.reader(handle, delimiter=sep)
+            starts, line = [], 0
+            for record in reader:
+                # Like read_csv, skip empty and whitespace-only lines but
+                # keep lines of bare delimiters (",,").
+                if len(record) > 1 or (record and record[0].strip()):
+                    starts.append(line + 1)
+                line = reader.line_num
+    except (OSError, csv.Error):
+        return None
+    if headers:
+        starts = starts[1:]
+    return starts if len(starts) == rows else None
 
 
 def list_sheets(path: str) -> list[str]:
@@ -215,12 +251,18 @@ def build_dataset(frame: pd.DataFrame, mapping: ColumnMapping,
     lats, lat_errors = _parse_column(frame[mapping.latitude],
                                      parse_latitude, 90.0)
     bad = frame.index.isin(set(lon_errors) | set(lat_errors))
-    # 1-based row numbering: add 2 if the file has a header row (row 1 is
-    # headers, data starts at row 2), add 1 if not (data starts at row 1).
-    # The longitude error wins, as it is the one a person reading the row
-    # left to right meets first.
-    offset = 2 if mapping.header_row else 1
-    skipped = [f"row {idx + offset}: {lon_errors.get(idx) or lat_errors[idx]}"
+    # Rows are numbered by the file line they start on when read_table
+    # recorded it. Otherwise by position, 1-based: data starts at row 2
+    # under a header row and at row 1 without one. The longitude error
+    # wins, as it is the one a person reading the row left to right meets
+    # first.
+    lines = frame.attrs.get("source_lines")
+    if lines is None or len(lines) != len(frame):
+        offset = 2 if mapping.header_row else 1
+        lines = range(offset, len(frame) + offset)
+    row_number = dict(zip(frame.index, lines))
+    skipped = [f"row {row_number[idx]}: "
+               f"{lon_errors.get(idx) or lat_errors[idx]}"
                for idx in frame.index[bad]]
 
     keys = [f"name{i + 1}" for i in range(len(name_cols))]
