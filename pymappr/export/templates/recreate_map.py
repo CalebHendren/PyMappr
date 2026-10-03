@@ -1128,7 +1128,7 @@ def marker_paint(style):
     """(face, edge, edge width): open markers draw only an outline in their
     own colour, filled ones take the POINT_EDGE outline."""
     if style["open"]:
-        return "none", style["color"], 1.2
+        return style.get("fill") or "none", style["color"], 1.2
     return style["color"], POINT_EDGE["color"], POINT_EDGE["width"]
 
 
@@ -1160,7 +1160,9 @@ def plot_dataset(ax, spec, opened=False):
             continue
         style = styles.get(group, FALLBACK_STYLE)
         if opened:
-            style = dict(style, open=True)
+            # The open form, filled white so it shows over the filled
+            # symbols at the same place.
+            style = dict(style, open=True, fill="#ffffff")
         px = np.concatenate([xs[mask] + off for off in offsets])
         py = np.tile(ys[mask], len(offsets))
         face, edge, lw = marker_paint(style)

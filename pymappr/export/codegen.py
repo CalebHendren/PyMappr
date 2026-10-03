@@ -19,9 +19,9 @@ from pymappr.styling.decorations import CompassOptions, ScaleBarOptions
 from pymappr.styling.layout import (column_key, layout_points,
                                     with_default_title)
 from pymappr.styling.legend import LegendOptions
-from pymappr.styling.styles import (DEFAULT_PALETTE, POINT_EDGE_COLOR,
-                                    POINT_EDGE_WIDTH, PointStyle, open_form,
-                                    palette_for)
+from pymappr.styling.styles import (DEFAULT_PALETTE, OPEN_SUFFIX,
+                                    POINT_EDGE_COLOR, POINT_EDGE_WIDTH,
+                                    PointStyle, open_form, palette_for)
 from pymappr.updates import GITHUB_REPO
 
 LANGUAGES = ("Python", "R")
@@ -407,7 +407,7 @@ def _style_dict(style: PointStyle | None) -> dict | None:
     if style is None:
         return None
     return {"color": style.color, "marker": style.mpl_marker,
-            "size": style.size, "open": style.is_open}
+            "size": style.size, "open": style.is_open, "fill": style.fill}
 
 
 def _dataset_configs(entries, data_mode: str = "inline",
@@ -1228,12 +1228,20 @@ def _r_config(config: dict) -> str:
     shapes, colors, fills, sizes, strokes, renamed = [], [], [], [], [], []
     for key, label, style in groups:
         pch = _R_PCH.get(style.marker, 21)
+        if style.is_open and style.fill:
+            # A filled open symbol: the fillable shape, outlined in the
+            # style's colour around its fill.
+            pch = _R_PCH.get(style.marker[:-len(OPEN_SUFFIX)], pch)
         shapes.append((key, _r(pch)))
-        if pch in _R_FILLABLE_PCH:
+        if style.is_open and style.fill:
+            colors.append((key, _r(style.color)))
+            fills.append((key, _r(style.fill)))
+        elif pch in _R_FILLABLE_PCH:
             colors.append((key, _r(edge["color"])))
+            fills.append((key, _r(style.color)))
         else:
             colors.append((key, _r(style.color)))
-        fills.append((key, _r(style.color)))
+            fills.append((key, _r(style.color)))
         sizes.append((key, _r(_size_mm(style.size))))
         strokes.append((key, _r(OPEN_MARKER_EDGE if style.is_open
                                 else edge["width"])))

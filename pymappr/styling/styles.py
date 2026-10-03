@@ -102,6 +102,10 @@ class PointStyle:
     color: str = "#d62728"
     marker: str = "Circle"  # key into MARKERS
     size: float = 30.0      # matplotlib scatter area (points^2)
+    # The inside of an open marker; None leaves it see-through. Type
+    # localities are open and white, so they show over the filled symbols
+    # of paratypes at the same spot instead of vanishing into them.
+    fill: str | None = None
 
     @property
     def mpl_marker(self) -> str:
@@ -113,13 +117,17 @@ class PointStyle:
         return self.marker.endswith(OPEN_SUFFIX)
 
 
+# The inside of the open symbols that mark rows (see open_form).
+OPEN_FILL = "#ffffff"
+
+
 def open_form(style: PointStyle) -> PointStyle:
-    """*style* drawn as an outline only: the open form of its symbol, in
-    its colour, at its size."""
-    if style.is_open:
-        return style
-    return PointStyle(color=style.color, marker=style.marker + OPEN_SUFFIX,
-                      size=style.size)
+    """*style* as an open symbol marking a row: the outline of its symbol,
+    in its colour and size, filled white so it shows on top of the filled
+    symbols at the same place."""
+    marker = style.marker if style.is_open else style.marker + OPEN_SUFFIX
+    return PointStyle(color=style.color, marker=marker, size=style.size,
+                      fill=OPEN_FILL)
 
 
 # Legend rows are identified by a tagged key, so a value that appears in both

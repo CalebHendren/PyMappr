@@ -15,7 +15,7 @@ from pymappr.files.projects import DatasetEntry
 from pymappr.styling.legend import (LegendOptions, format_count, is_hidden,
                                     legend_counts, legend_sections,
                                     manual_order, order_labels, override_label)
-from pymappr.styling.styles import (OPEN_SUFFIX, PointStyle, apply_override,
+from pymappr.styling.styles import (PointStyle, apply_override,
                                     attribute_style_maps, default_styles,
                                     group_points, open_form, owner_map,
                                     resolve_nesting, row_key,
@@ -138,8 +138,8 @@ def _open_note(datasets: list, options: LegendOptions) -> tuple | None:
     if not values:
         return None
     return (", ".join(values),
-            PointStyle(color=options.symbol_swatch_color,
-                       marker="Circle" + OPEN_SUFFIX, size=30.0))
+            open_form(PointStyle(color=options.symbol_swatch_color,
+                                 marker="Circle", size=30.0)))
 
 
 def column_key(entry: DatasetEntry, label: str) -> str | None:

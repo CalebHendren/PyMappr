@@ -52,6 +52,9 @@ python -m pymappr
 
 - Group, color or shape points by any name column. Two attributes at once
   (e.g. color by Family, symbol by Genus) give a compact legend.
+- Open symbols for chosen rows: with Type status = Holotype, type
+  localities draw as the outline of their species' symbol, and a legend row
+  says what the open symbols mark.
 - Palettes: the default, a colourblind-safe one (Okabe-Ito), and black &
   white with a settable point outline for outlined markers.
 - Legend position, columns, marker scale and spacing, with bold, italic or
@@ -90,7 +93,11 @@ renders, are in [`docs/images/`](docs/images).
 
 ### Output
 
-- Save the map as PNG, JPEG, TIFF, PDF, SVG or WebP at the DPI you choose.
+- Save the map as PNG, JPEG, TIFF, PDF, SVG or WebP at the DPI you choose,
+  as on screen or at a print width (17 cm for a Zootaxa / Phytotaxa page,
+  8 cm for one column, or any width in cm), so text prints at its point
+  size. TIFFs are LZW-compressed and greyscale when the map has no colour;
+  PDF and SVG text stays editable.
 - Export it as a self-contained Python (matplotlib) or R (ggplot2) script
   that redraws it outside PyMappr. Run the script with `--install-deps` to
   have it install what it needs.
@@ -102,13 +109,17 @@ renders, are in [`docs/images/`](docs/images).
 1. **Data tab > Combine columns...** joins Genus and Species into one name
    column and groups by it, so each legend line reads *Eleusis chapadensis*.
    The source file is left as it is.
-2. **Map tab > Apply publication style** switches to black & white points
-   with black outlines and varied shapes, a plain boxed legend with italic
-   names sorted A-Z and shaded by genus, and 600 DPI export. Datasets with
-   no Color by are colored by the parent name column, and a legend order you
-   set by hand is kept. Rows you restyled with Customize legend keep their
-   styling.
-3. **File > Save map as...** and pick TIFF or PDF.
+2. **Map tab > Apply publication style** sets the map up for Zootaxa,
+   Phytotaxa and similar journals: black & white points with black outlines
+   and varied shapes, a plain boxed legend with italic names sorted A-Z,
+   shaded by genus and without a heading (unless you typed one), holotypes
+   as open symbols when a Type status column names them, and export at
+   600 DPI and 17 cm wide. Datasets with no Color by are colored by the
+   parent name column, and a legend order you set by hand is kept. Rows you
+   restyled with Customize legend keep their styling.
+3. **File > Save map as...** and pick TIFF or PDF. A 600-DPI black & white
+   TIFF comes out greyscale and LZW-compressed, well under the 2 MB at which
+   Zootaxa asks for JPEG instead.
 
 ![The app after Combine columns and Apply publication style](docs/images/app_publication.png)
 

@@ -134,7 +134,7 @@ class PointsMixin:
         """(face, edge, edge width) for a marker: open markers draw only an
         outline in their own colour, filled ones take the point outline."""
         if style.is_open:
-            return "none", style.color, 1.2
+            return style.fill or "none", style.color, 1.2
         return (style.color, *self._point_edge)
 
     def _rebuild_points(self) -> None:

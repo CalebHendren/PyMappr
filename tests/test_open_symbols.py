@@ -55,6 +55,7 @@ def test_marked_rows_draw_in_the_open_form_of_their_groups_symbol():
                                                          opened):
         assert open_style.marker == style.marker + OPEN_SUFFIX
         assert open_style.color == style.color
+        assert open_style.fill == "#ffffff"  # shows over filled symbols
         assert list(rows["name2"]) == ["Holotype"]
     # Drawn last, on top; the legend keeps one row per species plus a note.
     assert layout.groups[-2:] == opened
@@ -133,7 +134,8 @@ def test_exported_python_draws_open_symbols_and_the_note():
     calls.clear()
     ns["plot_dataset"](ax, spec, opened=True)
     assert sorted(ys for ys, _f in calls) == [[12.0], [15.0]]
-    assert {face for _ys, face in calls} == {"none"}
+    # White-filled, so they show over filled symbols at the same place.
+    assert {face for _ys, face in calls} == {"#ffffff"}
     fig = matplotlib.figure.Figure()
     axes = fig.add_subplot(111)
     ns["add_legend"](axes)
@@ -150,7 +152,8 @@ def test_exported_r_keys_open_rows_and_ends_the_legend_with_the_note(
 pts <- load_all_points()
 stopifnot(sum(endsWith(as.character(pts$key), OPEN_KEY_SUFFIX)) == 2)
 stopifnot(identical(tail(LEGEND_ROWS, 1), "[open symbols]"))
-stopifnot(STYLE_SHAPES[["Nebulobunus alpha [open]"]] == 1)
+stopifnot(STYLE_SHAPES[["Nebulobunus alpha [open]"]] == 21)
+stopifnot(STYLE_FILLS[["Nebulobunus alpha [open]"]] == "#ffffff")
 stopifnot(STYLE_LABELS[["[open symbols]"]] == "Holotype")
 """)
     assert "HARNESS OK" in out
