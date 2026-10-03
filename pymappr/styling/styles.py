@@ -6,7 +6,7 @@ from dataclasses import dataclass
 
 import pandas as pd
 
-__all__ = ["PointStyle", "MARKERS", "OPEN_SUFFIX", "DEFAULT_PALETTE",
+__all__ = ["PointStyle", "MARKERS", "OPEN_SUFFIX", "open_form", "DEFAULT_PALETTE",
            "OKABE_ITO", "BLACK_AND_WHITE", "BLACK_AND_WHITE_NAME", "PALETTES",
            "DEFAULT_PALETTE_NAME", "palette_for", "POINT_EDGE_COLOR",
            "POINT_EDGE_WIDTH", "group_points", "default_styles",
@@ -102,6 +102,10 @@ class PointStyle:
     color: str = "#d62728"
     marker: str = "Circle"  # key into MARKERS
     size: float = 30.0      # matplotlib scatter area (points^2)
+    # The inside of an open marker; None leaves it see-through. Type
+    # localities are open and white, so they show over the filled symbols
+    # of paratypes at the same spot instead of vanishing into them.
+    fill: str | None = None
 
     @property
     def mpl_marker(self) -> str:
@@ -111,6 +115,19 @@ class PointStyle:
     def is_open(self) -> bool:
         """Open markers draw only the outline in the style's color."""
         return self.marker.endswith(OPEN_SUFFIX)
+
+
+# The inside of the open symbols that mark rows (see open_form).
+OPEN_FILL = "#ffffff"
+
+
+def open_form(style: PointStyle) -> PointStyle:
+    """*style* as an open symbol marking a row: the outline of its symbol,
+    in its colour and size, filled white so it shows on top of the filled
+    symbols at the same place."""
+    marker = style.marker if style.is_open else style.marker + OPEN_SUFFIX
+    return PointStyle(color=style.color, marker=marker, size=style.size,
+                      fill=OPEN_FILL)
 
 
 # Legend rows are identified by a tagged key, so a value that appears in both

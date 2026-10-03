@@ -19,8 +19,9 @@ from pymappr.styling.decorations import CompassOptions, ScaleBarOptions
 from pymappr.styling.layout import (column_key, layout_points,
                                     with_default_title)
 from pymappr.styling.legend import LegendOptions
-from pymappr.styling.styles import (DEFAULT_PALETTE, POINT_EDGE_COLOR,
-                                    POINT_EDGE_WIDTH, PointStyle, palette_for)
+from pymappr.styling.styles import (DEFAULT_PALETTE, OPEN_SUFFIX,
+                                    POINT_EDGE_COLOR, POINT_EDGE_WIDTH,
+                                    PointStyle, open_form, palette_for)
 from pymappr.updates import GITHUB_REPO
 
 LANGUAGES = ("Python", "R")
@@ -92,6 +93,11 @@ BASEMAP_SIZE = (5400, 2700)
 # PyMappr marker name -> R pch code. Shapes with a filled+outlined R
 # variant (21-25) get it, so filled markers carry the app's outline;
 # open variants use the hollow codes. Shapes base R lacks fall back.
+# The R script keys an open-symbol row "<key> [open]", and the legend's
+# note on what open symbols mark by this key.
+_R_OPEN_SUFFIX = " [open]"
+_R_OPEN_NOTE_KEY = "[open symbols]"
+
 _R_PCH = {
     "Circle": 21, "Circle (open)": 1,
     "Square": 22, "Square (open)": 0,
@@ -401,17 +407,18 @@ def _style_dict(style: PointStyle | None) -> dict | None:
     if style is None:
         return None
     return {"color": style.color, "marker": style.mpl_marker,
-            "size": style.size, "open": style.is_open}
+            "size": style.size, "open": style.is_open, "fill": style.fill}
 
 
 def _dataset_configs(entries, data_mode: str = "inline",
                      options: LegendOptions | None = None,
                      palette: list[str] | None = None
                      ) -> tuple[list[dict], dict[str, str], list | None,
-                                list | None]:
+                                list | None, tuple | None]:
     """Per-dataset script configs, the point data to write as
     ``data/<name>.csv`` in ``"files"`` mode, the sectioned legend (None in
-    plain mode) and the plain legend's row order (None when sectioned).
+    plain mode), the plain legend's row order (None when sectioned) and
+    the legend row explaining open symbols (None when none are drawn).
 
     Each config carries its own ``styles`` (legend label -> style, in
     render order): labels are not unique across datasets - two ungrouped
@@ -450,7 +457,14 @@ def _dataset_configs(entries, data_mode: str = "inline",
             # Original source path, for a provenance comment only (not read
             # by the generated loader).
             "source": entry.dataset.source_path or None,
+            # Rows whose open_col value is one of open_values draw with the
+            # open form of their group's symbol (type localities, say).
+            "open_col": None,
+            "open_values": [],
         }
+        if dataset.open_groups:
+            config["open_col"] = entry.open_by
+            config["open_values"] = [str(v) for v in entry.open_values]
         if data_mode == "files":
             rel = "data/" + _export_filename(entry.name, ".csv",
                                              used_files, "dataset")
@@ -468,7 +482,8 @@ def _dataset_configs(entries, data_mode: str = "inline",
         elif column_key(entry, entry.group_by) is not None:
             config["group_col"] = entry.group_by
         configs.append(config)
-    return configs, data_files, layout.sections, layout.row_order
+    return (configs, data_files, layout.sections, layout.row_order,
+            layout.open_note)
 
 
 def _group_styles(dataset) -> dict:
@@ -511,9 +526,11 @@ def build_config(state: dict, entries, project_name: str = "map",
     projection = get_projection(projection_name, lon0, lat0)
 
     graticule = _GRATICULE_DEGREES.get(str(m.get("graticule", "Off")))
+    # As in the app: every projection but the globe (whose grid never
+    # reaches the frame) labels its grid.
     labels_on = (graticule is not None
                  and not bool(m.get("hide_grid_labels", False))
-                 and projection.is_geographic)
+                 and not projection.hemisphere)
     margins = MARGINS_WITH_TICKS if labels_on else MARGINS_PLAIN
 
     base_size = figure_size or DEFAULT_FIGSIZE
@@ -534,7 +551,7 @@ def build_config(state: dict, entries, project_name: str = "map",
     if not (options.title or "").strip():
         options.title = None
     options = with_default_title(entries, options)
-    datasets, data_files, sections, row_order = _dataset_configs(
+    datasets, data_files, sections, row_order, open_note = _dataset_configs(
         entries, data_mode, options, palette_for(m.get("palette")))
     edge = dict(state.get("point_edge") or {})
     title = (options.title or "").strip()
@@ -576,6 +593,8 @@ def build_config(state: dict, entries, project_name: str = "map",
         # None = no explicit ordering (the sectioned legend owns its rows).
         # An empty list is different: it means every row was hidden.
         "legend_rows": row_order,
+        # (label, PointStyle) closing the legend: what open symbols mark.
+        "open_note": open_note,
         # Straight from LegendOptions, so a new setting reaches the exported
         # script without another entry here. "title" is the resolved one.
         "legend": {**options.to_dict(), "title": title,
@@ -825,7 +844,8 @@ def _py_config(config: dict) -> str:
         lines.append("    {")
         for key in ("name", "path", "inline_data", "lon_col", "lat_col",
                     "group_col", "color_col", "symbol_col",
-                    "default_label", "label_map"):
+                    "default_label", "label_map", "open_col",
+                    "open_values"):
             lines.append(f"        {_py(key)}: {_py(spec[key])},")
         lines.append("        'styles': {")
         for value, style in spec["styles"].items():
@@ -864,6 +884,15 @@ def _py_config(config: dict) -> str:
     lines.append("# Legend rows for the plain legend, in order (None = "
                  "every style, in DATASETS order).")
     lines.append(f"LEGEND_ROWS = {_py(rows)}")
+    lines.append("")
+    note = config.get("open_note")
+    lines.append("# The legend's last row: what the open symbols mark "
+                 "(None = no open symbols).")
+    if note is None:
+        lines.append("OPEN_NOTE = None")
+    else:
+        lines.append(f"OPEN_NOTE = ({_py(note[0])}, "
+                     f"{_py(_style_dict(note[1]))})")
     lines.append("")
     legend = config["legend"]
     body = ", ".join(f"{_py(k)}: {_py(v)}" for k, v in legend.items())
@@ -1146,14 +1175,30 @@ def _r_config(config: dict) -> str:
     lines.append("# (NULL = auto-detect by column name).")
     lines.append("# style_keys maps a group value to its STYLE_* key where "
                  "the two differ.")
+    lines.append(f"OPEN_KEY_SUFFIX <- {_r(_R_OPEN_SUFFIX)}")
     lines.append("DATASETS <- list(")
     dataset_blocks = []
     style_keys, groups, legend_keys = _r_style_keys(config)
+    note = config.get("open_note")
+    if note is not None:
+        # Open-symbol rows are keyed "<key> [open]" by load_all_points, in
+        # the open form of their group's style, and never get a legend row
+        # of their own; one note row says what they mark.
+        base = [key for key, _label, _style in groups]
+        groups = (groups
+                  + [(key + _R_OPEN_SUFFIX, label, open_form(style))
+                     for key, label, style in groups]
+                  + [(_R_OPEN_NOTE_KEY, note[0], note[1])])
+        legend_keys = ((base if legend_keys is None else legend_keys)
+                       + [_R_OPEN_NOTE_KEY])
     for spec, keys in zip(config["datasets"], style_keys):
         pairs = [(key, _r(spec[key]))
                  for key in ("name", "path", "inline_data", "lon_col",
                              "lat_col", "group_col", "color_col",
-                             "symbol_col", "default_label")]
+                             "symbol_col", "default_label", "open_col")]
+        pairs.append(("open_values",
+                      "c(" + ", ".join(_r(v) for v in spec["open_values"])
+                      + ")" if spec["open_values"] else "character(0)"))
         for name, mapping in (("label_map", spec["label_map"]),
                               ("style_keys", keys)):
             if mapping:
@@ -1183,12 +1228,20 @@ def _r_config(config: dict) -> str:
     shapes, colors, fills, sizes, strokes, renamed = [], [], [], [], [], []
     for key, label, style in groups:
         pch = _R_PCH.get(style.marker, 21)
+        if style.is_open and style.fill:
+            # A filled open symbol: the fillable shape, outlined in the
+            # style's colour around its fill.
+            pch = _R_PCH.get(style.marker[:-len(OPEN_SUFFIX)], pch)
         shapes.append((key, _r(pch)))
-        if pch in _R_FILLABLE_PCH:
+        if style.is_open and style.fill:
+            colors.append((key, _r(style.color)))
+            fills.append((key, _r(style.fill)))
+        elif pch in _R_FILLABLE_PCH:
             colors.append((key, _r(edge["color"])))
+            fills.append((key, _r(style.color)))
         else:
             colors.append((key, _r(style.color)))
-        fills.append((key, _r(style.color)))
+            fills.append((key, _r(style.color)))
         sizes.append((key, _r(_size_mm(style.size))))
         strokes.append((key, _r(OPEN_MARKER_EDGE if style.is_open
                                 else edge["width"])))

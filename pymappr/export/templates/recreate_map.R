@@ -226,6 +226,13 @@ load_all_points <- function() {
       renamed <- groups %in% names(spec$style_keys)
       keys[renamed] <- spec$style_keys[groups[renamed]]
     }
+    # Rows marked for open symbols (type localities, say) take the open
+    # form of their group's style, under their own key.
+    if (!is.null(spec$open_col) && length(spec$open_values) > 0
+        && spec$open_col %in% names(df)) {
+      marked <- df[[spec$open_col]] %in% spec$open_values
+      keys[marked] <- paste0(keys[marked], OPEN_KEY_SUFFIX)
+    }
     data.frame(lon = df$`_lon`, lat = df$`_lat`, key = unname(keys))
   })
   merged <- do.call(rbind, frames)
@@ -597,6 +604,12 @@ build_map <- function() {
   anchor <- legend_anchor(LEGEND$location)
   # matplotlib's borderaxespad: half the legend font size off the frame.
   inset <- 0.5 * LEGEND$fontsize / 72 / FIGSIZE
+  position <- anchor + sign(0.5 - anchor) * inset
+  # A legend in the scale bar's corner sits beyond the bar, not over it.
+  clear <- scale_bar_clearance()
+  if (!is.null(clear) && identical(clear$corner, LEGEND$location)) {
+    position[2] <- clear$y + sign(0.5 - anchor[2]) * inset[2]
+  }
   p + theme_void() + theme(
     panel.background = element_rect(fill = "white", color = NA),
     plot.background = element_rect(fill = "white", color = NA),
@@ -611,7 +624,7 @@ build_map <- function() {
     legend.key.height = grid::unit(1 + LEGEND$label_spacing, "lines"),
     legend.key = element_blank(),
     legend.position = if (LEGEND$show) "inside" else "none",
-    legend.position.inside = anchor + sign(0.5 - anchor) * inset,
+    legend.position.inside = position,
     legend.justification.inside = anchor,
     legend.background = legend_frame())
 }
@@ -731,6 +744,32 @@ fit_bar_width <- function(metres, x, row, right_anchored) {
   }
   if (!is.finite(width) || width <= 0 || width > 0.95) return(NA_real_)
   width
+}
+
+scale_bar_clearance <- function() {
+  # Where a legend in the scale bar's corner has to stop to leave the bar
+  # in view, in npc: above the bar and its label in a lower corner, below
+  # the bar (and any second label) in an upper one. NULL when there is no
+  # bar in a corner. Mirrors draw_scale_bar's layout.
+  if (!isTRUE(SCALE_BAR$show)) return(NULL)
+  if (!is.null(SCALE_BAR$anchor_x) && !is.null(SCALE_BAR$anchor_y)) {
+    return(NULL)
+  }
+  n <- if (identical(SCALE_BAR$units, "both")) 2 else 1
+  stack <- n * BAR_HEIGHT + (n - 1) * BAR_GAP
+  y <- corner_anchor(SCALE_BAR$position)[2]
+  text <- SCALE_BAR$fontsize * 1.4 / 72 / FIGSIZE[2]
+  lower <- startsWith(SCALE_BAR$position, "lower")
+  base_y <- if (lower) y else y - stack
+  if (n > 1 && lower) base_y <- base_y + LABEL_ROOM
+  clear_y <- if (lower) {
+    base_y + stack + LABEL_GAP + text
+  } else if (n > 1) {
+    base_y - LABEL_GAP - text
+  } else {
+    base_y
+  }
+  list(corner = SCALE_BAR$position, y = clear_y)
 }
 
 scale_bar_layers <- function() {

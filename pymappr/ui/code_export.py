@@ -21,6 +21,7 @@ from tkinter import filedialog, messagebox, ttk
 
 from pymappr.export import codegen
 from pymappr.files import projects
+from pymappr.ui.save_image import parse_print_width
 
 WRAP = 560
 NOTE = ("The script downloads its base layers from Natural Earth, so you "
@@ -100,9 +101,15 @@ class CodeExportDialog(tk.Toplevel):
     def _figure_size(self) -> tuple[float, float] | None:
         """The exported map size in inches, so the generated code keeps the
         same geometry (fonts and markers at the same relative scale). For a
-        portrait map this is the cropped map, not the letterboxed canvas."""
+        portrait map this is the cropped map, not the letterboxed canvas,
+        at the print width chosen for saving the map."""
         try:
-            width, height = self.app.renderer.export_size_inches()
+            try:
+                width_cm = parse_print_width(
+                    self.app.panel.export_width_var.get())
+            except ValueError:
+                width_cm = None
+            width, height = self.app.renderer.export_size_inches(width_cm)
             return float(width), float(height)
         except Exception:  # noqa: BLE001 - fall back to the default size
             return None

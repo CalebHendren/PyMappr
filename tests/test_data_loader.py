@@ -1,4 +1,5 @@
 import textwrap
+from pathlib import Path
 
 import pytest
 
@@ -369,3 +370,30 @@ def test_row_numbers_fall_back_to_position_without_file_lines(tmp_path):
     frame.attrs.pop("source_lines")
     mapping = ColumnMapping(longitude="lon", latitude="lat")
     assert build_dataset(frame, mapping).skipped[0].startswith("row 3:")
+
+
+def _cluster(extra=""):
+    rows = "".join(f"Sp,{-88 - i * 0.3:.2f},{14 + i * 0.2:.2f}\n"
+                   for i in range(12))
+    return "Name,Longitude,Latitude\n" + rows + extra
+
+
+def test_a_point_missing_its_minus_sign_is_pointed_out(tmp_path):
+    from pymappr.files.data_loader import far_points
+    path = tmp_path / "pts.csv"
+    path.write_text(_cluster("Sp,88.21,15.53\n"), encoding="utf-8")
+    ds = load_csv(str(path))
+    notes = far_points(ds)
+    assert len(notes) == 1
+    assert notes[0].startswith("row 14 (15.53, 88.21)")
+    assert "opposite sign on its longitude" in notes[0]
+
+
+def test_a_spread_out_dataset_raises_no_alarm(tmp_path):
+    from pymappr.files.data_loader import far_points
+    path = tmp_path / "pts.csv"
+    path.write_text(_cluster(), encoding="utf-8")
+    assert far_points(load_csv(str(path))) == []
+    seabirds = load_csv(str(Path(__file__).parent.parent / "sample_data"
+                             / "world_seabirds.csv"))
+    assert far_points(seabirds) == []

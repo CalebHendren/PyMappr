@@ -56,7 +56,8 @@ import geopandas as gpd
 from matplotlib.collections import LineCollection
 from matplotlib.lines import Line2D
 from matplotlib.patches import Polygon, Rectangle
-from matplotlib.ticker import FuncFormatter, MultipleLocator
+from matplotlib.ticker import (Formatter, FuncFormatter, Locator,
+                               MultipleLocator)
 
 # Resolve the cache and any data/ files next to this script, so it runs
 # the same no matter which directory it is launched from.
@@ -432,18 +433,183 @@ def format_lat(value, _pos=None):
         return "0\N{DEGREE SIGN}"
     return f"{abs(value):g}\N{DEGREE SIGN}{'S' if value < 0 else 'N'}"
 
+# Grid labels, as in the app: every n-th line keeps its label so neighbours
+# never run together, and on a projected map the ticks go where each
+# meridian meets the bottom of the frame and each parallel the left.
+LABEL_STRIDES = (1, 2, 3, 4, 6, 9, 12, 18, 36)
+LABEL_WIDTH_EMS = 5 * 0.62 + 1.0
+LABEL_HEIGHT_EMS = 1.2 + 0.6
+
+
+def edge_crossings(xs, ys, edge, along):
+    """Where a polyline crosses y = edge (along "x", returning x) or
+    x = edge (along "y", returning y)."""
+    cut, other = (ys, xs) if along == "x" else (xs, ys)
+    found = []
+    d = cut - edge
+    for i in range(len(d) - 1):
+        a, b = d[i], d[i + 1]
+        if not (np.isfinite(a) and np.isfinite(b)) or a * b > 0 or a == b:
+            continue
+        if not (np.isfinite(other[i]) and np.isfinite(other[i + 1])):
+            continue
+        t = a / (a - b)
+        found.append(float(other[i] + t * (other[i + 1] - other[i])))
+    return found
+
+
+def edge_ticks(xs, ys, view, along):
+    """Tick positions where a grid line meets the bottom or left edge; a
+    line stopping short is continued straight on from its end."""
+    (x0, x1), (y0, y1) = view
+    if along == "x":
+        ticks = [x for x in edge_crossings(xs, ys, y0, "x") if x0 <= x <= x1]
+    else:
+        ticks = [y for y in edge_crossings(xs, ys, x0, "y") if y0 <= y <= y1]
+    if ticks:
+        return ticks
+    good = np.isfinite(xs) & np.isfinite(ys)
+    if good.sum() < 4:
+        return []
+    xs, ys = xs[good], ys[good]
+    end = int(np.argmin(ys if along == "x" else xs))
+    if 0 < end < len(xs) - 1:
+        return []
+    inner = 3 if end == 0 else len(xs) - 4
+    x, y = float(xs[end]), float(ys[end])
+    if not (x0 <= x <= x1 and y0 <= y <= y1):
+        return []
+    dx, dy = x - float(xs[inner]), y - float(ys[inner])
+    if along == "x":
+        if dy >= 0:
+            return []
+        t = (y0 - y) / dy
+        tick, reach = x + t * dx, (x1 - x0)
+        ok = x0 <= tick <= x1
+    else:
+        if dx >= 0:
+            return []
+        t = (x0 - x) / dx
+        tick, reach = y + t * dy, (y1 - y0)
+        ok = y0 <= tick <= y1
+    drift = abs(t * (dx if along == "x" else dy))
+    return [tick] if ok and drift <= 0.03 * reach else []
+
+
+def label_stride(spacing_pts, label_pts):
+    if spacing_pts <= 0:
+        return LABEL_STRIDES[-1]
+    need = label_pts / spacing_pts
+    return next((s for s in LABEL_STRIDES if s >= need), LABEL_STRIDES[-1])
+
+
+class GridLocator(Locator):
+    """Ticks where the projected graticule meets the frame."""
+
+    def __init__(self, ax, which):
+        self.ax = ax
+        self.which = which
+        self.degrees = {}
+
+    def __call__(self):
+        step = GRATICULE["interval"]
+        if not step:
+            return []
+        view = (tuple(sorted(self.ax.get_xlim())),
+                tuple(sorted(self.ax.get_ylim())))
+        found = {}
+        world_w = PROJ["bounds"][1] - PROJ["bounds"][0]
+        offsets = (0.0,) if PROJ["hemisphere"] else (-world_w, 0.0, world_w)
+        if self.which == "x":
+            lats = np.linspace(PROJ["min_lat"], PROJ["max_lat"], 361)
+            for lon in np.arange(-180.0, 180.0, step):
+                xs, ys = proj_forward(np.full_like(lats, lon), lats,
+                                      clamp=False)
+                for off in offsets:
+                    for x in edge_ticks(xs + off, ys, view, "x"):
+                        found[x] = float(lon)
+        else:
+            span = PROJ["lon_halfspan"]
+            lons = PROJ["lon_0"] + np.linspace(-span, span, 721)
+            first = math.ceil(PROJ["min_lat"] / step) * step
+            for lat in np.arange(first, PROJ["max_lat"] + step / 2, step):
+                if abs(lat) > 90:
+                    continue
+                xs, ys = proj_forward(lons, np.full_like(lons, lat),
+                                      clamp=False)
+                for off in offsets:
+                    for y in edge_ticks(xs + off, ys, view, "y"):
+                        found[y] = float(lat)
+        self.degrees = found
+        return sorted(found)
+
+
+class GridLabelFormatter(Formatter):
+    """Degree labels, thinned so neighbours never run together."""
+
+    def __init__(self, ax, which, locator=None):
+        self.ax = ax
+        self.which = which
+        self.locator = locator
+
+    def _degree(self, value):
+        if self.locator is None:
+            return float(value)
+        return self.locator.degrees.get(value, float("nan"))
+
+    def _text(self, degree):
+        if not np.isfinite(degree):
+            return ""
+        return format_lon(degree) if self.which == "x" else format_lat(degree)
+
+    def __call__(self, value, pos=None):
+        return self._text(self._degree(value))
+
+    def format_ticks(self, values):
+        values = list(values)
+        step = GRATICULE["interval"]
+        stride = self._stride(values)
+        labels = []
+        for degree in (self._degree(v) for v in values):
+            keep = (step and np.isfinite(degree)
+                    and round(degree / step) % stride == 0)
+            labels.append(self._text(degree) if keep else "")
+        return labels
+
+    def _stride(self, values):
+        if len(values) < 2:
+            return 1
+        ax = self.ax
+        if self.which == "x":
+            px = ax.transData.transform(
+                np.column_stack([values, np.zeros(len(values))]))[:, 0]
+        else:
+            px = ax.transData.transform(
+                np.column_stack([np.zeros(len(values)), values]))[:, 1]
+        gaps = np.diff(np.sort(px))
+        gaps = gaps[gaps > 0]
+        if not len(gaps):
+            return 1
+        ticks = (ax.xaxis if self.which == "x" else ax.yaxis).get_major_ticks()
+        size = ticks[0].label1.get_fontsize() if ticks else 7.0
+        ems = LABEL_WIDTH_EMS if self.which == "x" else LABEL_HEIGHT_EMS
+        return label_stride(float(gaps.min()) * 72.0 / ax.figure.dpi,
+                            ems * size)
+
 
 def draw_graticule(ax):
     """The lon/lat grid exactly like the app: labelled axis ticks on the
     plain projection, projected polylines on curved ones."""
     interval = GRATICULE["interval"]
-    labels_on = bool(interval) and GRATICULE["labels"] and MAP_CRS is None
+    labels_on = bool(interval) and GRATICULE["labels"]
     if interval and MAP_CRS is None:
         ax.xaxis.set_major_locator(MultipleLocator(interval))
         ax.yaxis.set_major_locator(MultipleLocator(interval))
         ax.grid(True, color="#787878", linewidth=0.4, alpha=0.7)
         for line in (*ax.get_xgridlines(), *ax.get_ygridlines()):
             line.set_zorder(Z_GRID)
+        ax.xaxis.set_major_formatter(GridLabelFormatter(ax, "x"))
+        ax.yaxis.set_major_formatter(GridLabelFormatter(ax, "y"))
     elif interval:
         max_lat = PROJ["max_lat"]
         segments = []
@@ -467,6 +633,12 @@ def draw_graticule(ax):
                 col.set_transform(mtransforms.Affine2D().translate(off, 0)
                                   + ax.transData)
             ax.add_collection(col)
+        if labels_on:
+            for which, axis in (("x", ax.xaxis), ("y", ax.yaxis)):
+                locator = GridLocator(ax, which)
+                axis.set_major_locator(locator)
+                axis.set_major_formatter(
+                    GridLabelFormatter(ax, which, locator))
     ax.tick_params(labelbottom=labels_on, labelleft=labels_on,
                    bottom=labels_on, left=labels_on)
     if PROJ["hemisphere"]:  # the globe's horizon circle
@@ -750,6 +922,9 @@ BAR_HEIGHT = 0.011
 BAR_GAP = 0.005
 LABEL_GAP = 0.012
 LABEL_ROOM = 0.030
+# Where a legend in the scale bar's corner has to stop to leave the bar in
+# view: (corner, axes-fraction y, points). Set by draw_scale_bar.
+SCALE_BAR_CLEAR = None
 
 
 def fit_bar_width(ax, metres, x, row, right_anchored):
@@ -788,6 +963,7 @@ def fit_bar_width(ax, metres, x, row, right_anchored):
 def draw_scale_bar(ax):
     """A geodesically measured scale bar, drawn in axes-fraction coordinates
     so it keeps its place at any figure size."""
+    global SCALE_BAR_CLEAR
     opts = SCALE_BAR
     if not opts["show"]:
         return
@@ -852,6 +1028,17 @@ def draw_scale_bar(ax):
                 ha="center", va="bottom" if above else "top",
                 fontsize=opts["fontsize"], color=opts["color"],
                 path_effects=LABEL_HALO, zorder=Z_SCALE_BAR, clip_on=False)
+    if not dragged:
+        # Above the bar and its label in a lower corner, below the bar (and
+        # any second label) in an upper one; the label is sized in points.
+        text = opts["fontsize"] * 1.4
+        if opts["position"].startswith("lower"):
+            SCALE_BAR_CLEAR = (opts["position"], base_y + stack + LABEL_GAP,
+                               text)
+        elif n > 1:
+            SCALE_BAR_CLEAR = (opts["position"], base_y - LABEL_GAP, -text)
+        else:
+            SCALE_BAR_CLEAR = (opts["position"], base_y, 0.0)
 
 
 # ------------------------------------------------------------- point data
@@ -941,25 +1128,41 @@ def marker_paint(style):
     """(face, edge, edge width): open markers draw only an outline in their
     own colour, filled ones take the POINT_EDGE outline."""
     if style["open"]:
-        return "none", style["color"], 1.2
+        return style.get("fill") or "none", style["color"], 1.2
     return style["color"], POINT_EDGE["color"], POINT_EDGE["width"]
 
 
-def plot_dataset(ax, spec):
+def open_rows(df, spec):
+    """Which rows draw with the open form of their symbol (open_col holds
+    one of open_values - type localities, say)."""
+    column = spec.get("open_col")
+    if not column or column not in df.columns or not spec.get("open_values"):
+        return np.zeros(len(df), dtype=bool)
+    values = {str(v) for v in spec["open_values"]}
+    return df[column].fillna("").astype(str).isin(values).to_numpy()
+
+
+def plot_dataset(ax, spec, opened=False):
     """Scatter one dataset group by group with the app's marker styling:
     filled markers get the POINT_EDGE outline, open markers draw
-    outline-only."""
+    outline-only. With *opened*, only the open-symbol rows, each in the
+    open form of its group's style (drawn after every dataset, on top)."""
     df = load_points(spec)
     groups = point_groups(df, spec)
+    marked = open_rows(df, spec)
     xs, ys = proj_forward(df["_lon"].to_numpy(), df["_lat"].to_numpy())
     offsets = wrap_offsets()
     styles = spec["styles"]
     order = list(dict.fromkeys(list(styles) + sorted(set(groups))))
     for group in order:
-        mask = (groups == group).to_numpy()
+        mask = (groups == group).to_numpy() & (marked if opened else ~marked)
         if not mask.any():
             continue
         style = styles.get(group, FALLBACK_STYLE)
+        if opened:
+            # The open form, filled white so it shows over the filled
+            # symbols at the same place.
+            style = dict(style, open=True, fill="#ffffff")
         px = np.concatenate([xs[mask] + off for off in offsets])
         py = np.tile(ys[mask], len(offsets))
         face, edge, lw = marker_paint(style)
@@ -982,10 +1185,24 @@ def legend_handle(style, size=None):
                   markeredgecolor=edge, markeredgewidth=edge_w)
 
 
-def legend_kwargs():
+def legend_placement(ax):
+    """The legend's loc, lifted clear of the scale bar when they share a
+    corner: the legend frame is opaque and would hide the bar."""
+    clear = SCALE_BAR_CLEAR
+    if clear is None or clear[0] != LEGEND["location"]:
+        return dict(loc=LEGEND["location"])
+    corner, frac, points = clear
+    lift = mtransforms.ScaledTranslation(0.0, points / 72.0,
+                                         ax.figure.dpi_scale_trans)
+    return dict(loc=corner,
+                bbox_to_anchor=(0.0 if corner.endswith("left") else 1.0, frac),
+                bbox_transform=ax.transAxes + lift)
+
+
+def legend_kwargs(ax):
     """The legend keywords shared by both draw paths, from LEGEND."""
     return dict(
-        loc=LEGEND["location"], title=LEGEND["title"] or None,
+        **legend_placement(ax), title=LEGEND["title"] or None,
         fontsize=LEGEND["fontsize"], title_fontsize=LEGEND["title_fontsize"],
         ncols=LEGEND["columns"], markerscale=LEGEND["marker_scale"],
         labelspacing=LEGEND["label_spacing"],
@@ -1071,12 +1288,14 @@ def add_legend(ax):
             rank = {label: i for i, label in enumerate(LEGEND_ROWS)}
             rows = sorted((row for row in rows if row[0] in rank),
                           key=lambda row: rank[row[0]])
+        if OPEN_NOTE is not None:
+            rows.append(OPEN_NOTE)
         if not rows:
             return
         handles = [legend_handle(style) for _label, style in rows]
         for handle, (label, _style) in zip(handles, rows):
             handle.set_label(label)
-        leg = ax.legend(handles=handles, **legend_kwargs())
+        leg = ax.legend(handles=handles, **legend_kwargs(ax))
         style_legend(ax.figure, leg, set())
         return
     handles, labels, header_rows = [], [], []
@@ -1090,7 +1309,10 @@ def add_legend(ax):
         handles.append(blank())
         labels.append(" ")
 
-    for section_title, entries in LEGEND_SECTIONS:
+    sections = list(LEGEND_SECTIONS)
+    if OPEN_NOTE is not None:
+        sections.append(("", [(OPEN_NOTE[0], OPEN_NOTE[1], 0)]))
+    for section_title, entries in sections:
         if handles:  # spacer between sections
             spacer()
         if section_title:  # section titles can be turned off entirely
@@ -1112,7 +1334,7 @@ def add_legend(ax):
                     header_rows.append(len(labels))
             handles.append(legend_handle(style, size=45))
             labels.append(indent * (depth + 1) + label)
-    leg = ax.legend(handles, labels, **legend_kwargs())
+    leg = ax.legend(handles, labels, **legend_kwargs(ax))
     style_legend(ax.figure, leg, set(header_rows))
 
 
@@ -1133,6 +1355,8 @@ def main():
     draw_graticule(ax)
     for spec in DATASETS:
         plot_dataset(ax, spec)
+    for spec in DATASETS:
+        plot_dataset(ax, spec, opened=True)
     draw_labels(ax, fig)
     draw_compass(ax)
     draw_scale_bar(ax)

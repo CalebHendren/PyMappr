@@ -131,3 +131,31 @@ def test_publication_style_leaves_the_colour_by_alone_with_no_dataset(panel):
     panel.color_by_var.set("None")
     PyMapprApp.on_publication_style(_publication_app(panel, [], None))
     assert panel.color_by_var.get() == "None"
+
+
+def test_publication_style_drops_a_default_title_but_keeps_a_typed_one(panel):
+    entry = _species()
+    panel.legend_vars["title"].set("")
+    PyMapprApp.on_publication_style(_publication_app(panel, [entry], entry))
+    assert panel.legend_options().show_title is False
+    assert panel.export_width_var.get().startswith("17 cm")
+
+    panel.legend_vars["show_title"].set(True)
+    panel.legend_vars["title"].set("Nebulobunus")
+    PyMapprApp.on_publication_style(_publication_app(panel, [entry], entry))
+    assert panel.legend_options().show_title is True
+    assert panel.legend_options().title == "Nebulobunus"
+    panel.legend_vars["title"].set("")
+
+
+def test_publication_style_marks_holotypes_with_open_symbols(panel):
+    from test_open_symbols import harvestmen
+    entry = harvestmen()
+    PyMapprApp.on_publication_style(_publication_app(panel, [entry], entry))
+    assert (entry.open_by, entry.open_values) == ("Type status", ["Holotype"])
+    assert panel.open_by_var.get() == "Type status"
+    assert panel.open_value_var.get() == "Holotype"
+    # A choice the user already made is left alone.
+    entry.open_by, entry.open_values = "Type status", ["Paratype"]
+    PyMapprApp.on_publication_style(_publication_app(panel, [entry], entry))
+    assert entry.open_values == ["Paratype"]

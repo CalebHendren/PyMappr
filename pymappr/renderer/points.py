@@ -34,6 +34,8 @@ class PointsMixin:
         # label. The app works it out because ordering by count needs the
         # data; None keeps the order the point groups were added in.
         self._legend_row_order: list[str] | None = None
+        # (label, PointStyle) rows closing the legend; see set_points.
+        self._legend_notes: list = []
         self._point_alpha = 1.0
         # Outline (colour, width) around filled markers, map and legend alike.
         self._point_edge = (POINT_EDGE_COLOR, POINT_EDGE_WIDTH)
@@ -49,11 +51,15 @@ class PointsMixin:
 
     def set_points(self, groups, sections: list | None,
                    row_order: list[str] | None,
-                   options: LegendOptions) -> None:
+                   options: LegendOptions, notes: list | None = None) -> None:
         """Install the point groups and everything about the legend that
         describes them at once, so the legend is built once rather than once
         per setter. When the points themselves are unchanged - a legend
-        setting changed - they are left as drawn."""
+        setting changed - they are left as drawn.
+
+        *notes* are (label, style) rows closing the legend that belong to no
+        group, such as what open symbols mark."""
+        self._legend_notes = list(notes or [])
         groups = self._as_groups(groups)
         unchanged = (len(groups) == len(self._point_groups) and all(
             style == old_style and np.array_equal(lons, old_lons)
@@ -128,7 +134,7 @@ class PointsMixin:
         """(face, edge, edge width) for a marker: open markers draw only an
         outline in their own colour, filled ones take the point outline."""
         if style.is_open:
-            return "none", style.color, 1.2
+            return style.fill or "none", style.color, 1.2
         return (style.color, *self._point_edge)
 
     def _rebuild_points(self) -> None:
@@ -167,7 +173,7 @@ class PointsMixin:
         """The matplotlib legend keywords shared by both draw paths."""
         opts = self._legend
         return {
-            "title": opts.title,
+            "title": opts.title if opts.show_title else None,
             "fontsize": opts.fontsize,
             "title_fontsize": opts.title_fontsize,
             "ncols": max(int(opts.columns), 1),
@@ -196,12 +202,23 @@ class PointsMixin:
     def _legend_placement(self) -> dict:
         """Legend ``loc``/``bbox_to_anchor`` kwargs: the automatic location,
         or - once the legend has been dragged - its manual lower-left anchor
-        in axes fraction (no bounds)."""
+        in axes fraction (no bounds).
+
+        A legend in the scale bar's corner sits beyond the bar instead of
+        on it: its frame is opaque and would hide the bar completely."""
         if self._legend_anchor is not None:
             # borderaxespad=0 pins the lower-left corner exactly on the
             # anchor, so grabbing an auto-placed legend doesn't make it hop.
             return {"loc": "lower left", "bbox_to_anchor": self._legend_anchor,
                     "borderaxespad": 0.0}
+        clear = getattr(self, "_scale_bar_clear", None)
+        if clear is not None and clear[0] == self._legend.location:
+            corner, frac, points = clear
+            x = 0.0 if corner.endswith("left") else 1.0
+            lift = mtransforms.ScaledTranslation(0.0, points / 72.0,
+                                                 self.fig.dpi_scale_trans)
+            return {"loc": corner, "bbox_to_anchor": (x, frac),
+                    "bbox_transform": self.ax.transAxes + lift}
         return {"loc": self._legend.location}
 
     def _update_legend(self) -> None:
@@ -216,8 +233,10 @@ class PointsMixin:
             self._draw_structured_legend()
             return
         groups = self._ordered_point_groups()
-        handles = [self._legend_handle(style) for _label, style, _, _ in groups]
-        for handle, (label, *_rest) in zip(handles, groups):
+        rows = [(label, style) for label, style, _, _ in groups]
+        rows += self._legend_notes
+        handles = [self._legend_handle(style) for _label, style in rows]
+        for handle, (label, _style) in zip(handles, rows):
             handle.set_label(label)
         leg = self.ax.legend(handles=handles, **self._legend_kwargs(False))
         self._finish_legend(leg)
@@ -257,7 +276,11 @@ class PointsMixin:
             handles.append(blank())
             labels.append(" ")
 
-        for title, entries in self._legend_sections:
+        sections = list(self._legend_sections)
+        notes = self._legend_notes
+        if notes:
+            sections.append(("", notes))
+        for title, entries in sections:
             if handles:  # spacer between sections
                 spacer()
             if title:  # section titles can be turned off entirely

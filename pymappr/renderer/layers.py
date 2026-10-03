@@ -97,6 +97,9 @@ class LayersMixin:
         # Desired state, kept independently of the artists so the whole
         # scene can be rebuilt when the projection changes.
         self._line_visible: set[str] = set()
+        # Extra zoom levels of vector detail while an export renders at
+        # more pixels than the screen (see ViewMixin._vector_detail_for).
+        self._detail_boost = 0.0
         self._fill_visible: set[str] = set()
         self._point_layers_visible: set[str] = set()
         self._bathymetry_visible = False
@@ -336,12 +339,14 @@ class LayersMixin:
         spec = LAYER_SPECS.get(source)
         if spec is None:  # derived layers have one fixed resolution
             return source
-        return spec.directory_for_zoom(self._zoom_level())
+        return spec.directory_for_zoom(self._zoom_level()
+                                       + self._detail_boost)
 
     def _projected_frame(self, source: str):
         return self.store.frame_projected(source, self.proj.crs,
                                           self.proj.max_lat,
-                                          zoom=self._zoom_level(),
+                                          zoom=(self._zoom_level()
+                                                + self._detail_boost),
                                           clip_shape=self.proj.clip_shape())
 
     def _sync_resolutions(self) -> None:

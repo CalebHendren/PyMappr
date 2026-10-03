@@ -14,6 +14,7 @@ import matplotlib
 
 matplotlib.use("TkAgg")
 
+import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
 
 from matplotlib.backends.backend_tkagg import NavigationToolbar2Tk  # noqa: E402
@@ -23,17 +24,18 @@ from pymappr import __version__, updates  # noqa: E402
 from pymappr.files import projects  # noqa: E402
 from pymappr.files.data_loader import (  # noqa: E402
     OPEN_FILETYPES, PointDataset, build_dataset, build_manual_dataset,
-    combine_name_columns, guess_mapping, headers_look_like_data, list_sheets,
-    read_table)
+    combine_name_columns, far_points, guess_mapping, headers_look_like_data,
+    list_sheets, read_table)
 from pymappr.files.projects import (  # noqa: E402
     PROJECT_EXTENSION, DatasetEntry)
 from pymappr.geo.layers import LayerStore  # noqa: E402
 from pymappr.renderer import MapRenderer  # noqa: E402
+from pymappr.renderer.geometry import lon_span  # noqa: E402
 from pymappr.styling.decorations import (  # noqa: E402
     CompassOptions, ScaleBarOptions)
 from pymappr.styling.layout import (  # noqa: E402
-    MapLayout, column_key, editor_rows, layout_points,
-    organise_publication_legend, with_default_title)
+    MapLayout, column_key, column_values, editor_rows, holotype_marking,
+    layout_points, organise_publication_legend, with_default_title)
 from pymappr.styling.legend import (  # noqa: E402
     ENTRY_ORDERS, PUBLICATION_LEGEND, LegendOptions)
 from pymappr.styling.styles import (  # noqa: E402
@@ -48,13 +50,17 @@ from pymappr.ui.legend_editor import LegendEditorDialog  # noqa: E402
 from pymappr.ui.manual_entry import ManualEntryDialog  # noqa: E402
 from pymappr.ui.map_canvas import DebouncedFigureCanvasTkAgg  # noqa: E402
 from pymappr.ui.projects_dialog import ProjectsDialog  # noqa: E402
+from pymappr.ui.save_image import (  # noqa: E402
+    AS_ON_SCREEN, JOURNAL_PAGE_WIDTH)
 
 MAX_SKIPPED_SHOWN = 12
 UNTITLED = "Untitled"
-# The export DPI of the "Publication style" preset (the point and legend
+# The export DPI and print width of the "Publication style" preset, a
+# Zootaxa / Phytotaxa figure: 600 dpi, 17 cm wide (the point and legend
 # halves are pymappr.styling.styles.PUBLICATION_POINT_EDGE and
 # pymappr.styling.legend.PUBLICATION_LEGEND).
 PUBLICATION_DPI = "600"
+PUBLICATION_WIDTH = JOURNAL_PAGE_WIDTH
 PROJECT_FILETYPES = [("PyMappr project", "*" + PROJECT_EXTENSION),
                      ("All files", "*.*")]
 
@@ -622,6 +628,7 @@ class PyMapprApp:
                 "hide_grid_labels": p.hide_grid_labels_var.get(),
                 "line_width": p.line_width_var.get(),
                 "dpi": p.dpi_var.get(),
+                "export_width": p.export_width_var.get(),
                 "ocean": p.ocean_var.get(),
                 "lake_fill": p.lake_fill_var.get(),
                 "bathymetry": p.bathymetry_var.get(),
@@ -683,6 +690,7 @@ class PyMapprApp:
         p.hide_grid_labels_var.set(m["hide_grid_labels"])
         p.line_width_var.set(m["line_width"])
         p.dpi_var.set(m["dpi"])
+        p.export_width_var.set(m.get("export_width", AS_ON_SCREEN))
         p.ocean_var.set(m["ocean"])
         p.lake_fill_var.set(m["lake_fill"])
         p.bathymetry_var.set(m["bathymetry"])
@@ -803,6 +811,24 @@ class PyMapprApp:
                 f"{len(dataset.skipped)}:\n\n{shown}", parent=self.root)
         return True
 
+    def _report_far_points(self, dataset: PointDataset) -> None:
+        """Point out stray points - usually a missing minus sign or
+        hemisphere letter - which otherwise only show as a map zoomed out
+        to the whole world. They stay on the map; the file is the place
+        to fix them."""
+        notes = far_points(dataset)
+        if not notes:
+            return
+        shown = "\n".join(notes[:MAX_SKIPPED_SHOWN])
+        more = len(notes) - MAX_SKIPPED_SHOWN
+        if more > 0:
+            shown += f"\n\N{HORIZONTAL ELLIPSIS} and {more} more"
+        messagebox.showwarning(
+            "Points far from the rest",
+            f"{shown}\n\nA point this far from the others is often a "
+            "coordinate missing its minus sign or hemisphere letter. "
+            "Check these rows in the file.", parent=self.root)
+
     def _add_entry(self, entry: DatasetEntry) -> None:
         self.entries.append(entry)
         self.active = len(self.entries) - 1
@@ -855,6 +881,7 @@ class PyMapprApp:
         self._add_entry(DatasetEntry(dataset=dataset, name=short,
                                      group_by=labels[0] if labels else ""))
         self.set_status(f"Loaded {len(dataset)} points from {short}.")
+        self._report_far_points(dataset)
 
     def on_manual_entry(self) -> None:
         """Type or paste points by hand (legend name + coordinate lines)."""
@@ -976,6 +1003,7 @@ class PyMapprApp:
         self.panel.set_dataset_controls(
             choices, entry.group_by or "None", entry.color_by or "None",
             entry.symbol_by or "None", entry.vary_symbols)
+        self._sync_open_controls(entry, choices)
         self.panel.dataset_visible_var.set(entry.visible)
         self.filter_bar.set_dataset(entry.dataset.frame,
                                     entry.dataset.name_labels,
@@ -1011,7 +1039,8 @@ class PyMapprApp:
         self.renderer.set_points(
             [(label, style, rows["lon"].to_numpy(), rows["lat"].to_numpy())
              for label, style, rows in layout.groups],
-            layout.sections, layout.row_order, options)
+            layout.sections, layout.row_order, options,
+            [layout.open_note] if layout.open_note else None)
         self.renderer.redraw()
         self._warn_marker_load([d.entry for d in layout.datasets], options)
 
@@ -1103,13 +1132,19 @@ class PyMapprApp:
                   if e.visible and len(e.dataset)]
         if not frames:
             return
-        x0 = min(frame["lon"].min() for frame in frames)
-        x1 = max(frame["lon"].max() for frame in frames)
+        # The shortest span, so points either side of the antimeridian
+        # (Fiji and Samoa) frame the Pacific, not the whole world.
+        x0, x1 = lon_span(np.concatenate([frame["lon"].to_numpy()
+                                          for frame in frames]))
         y0 = min(frame["lat"].min() for frame in frames)
         y1 = max(frame["lat"].max() for frame in frames)
         pad_x = max((x1 - x0) * 0.15, 2.0)
         pad_y = max((y1 - y0) * 0.15, 2.0)
-        self.renderer.set_extent((max(x0 - pad_x, -180), min(x1 + pad_x, 180),
+        if x1 > 180:  # across the antimeridian: no 180 edge to stop at
+            west, east = x0 - pad_x, x1 + pad_x
+        else:
+            west, east = max(x0 - pad_x, -180), min(x1 + pad_x, 180)
+        self.renderer.set_extent((west, east,
                                   max(y0 - pad_y, -90), min(y1 + pad_y, 90)))
         self.toolbar.update()  # make this view the toolbar's Home
         self.renderer.redraw()
@@ -1124,6 +1159,38 @@ class PyMapprApp:
         entry.group_by = "" if value == "None" else value
         # Row customizations are keyed by value, so any that still name a
         # group that exists keep applying and the rest lie dormant.
+        self._push_points()
+
+    def _sync_open_controls(self, entry: DatasetEntry,
+                            choices: list[str]) -> None:
+        values = column_values(entry, entry.open_by) if entry.open_by else []
+        chosen = entry.open_values[0] if entry.open_values else ""
+        self.panel.set_open_controls(choices, entry.open_by or "None",
+                                     values, chosen)
+
+    def on_open_by(self) -> None:
+        """The open-symbol column changed: offer its values, starting on
+        "Holotype" when there is one."""
+        entry = self._active_entry()
+        if entry is None:
+            return
+        column = self.panel.open_by_var.get()
+        entry.open_by = "" if column == "None" else column
+        values = column_values(entry, entry.open_by) if entry.open_by else []
+        chosen = next((v for v in values if v.lower() == "holotype"),
+                      values[0] if values else "")
+        entry.open_values = [chosen] if chosen else []
+        self._sync_open_controls(entry, ["None"]
+                                 + list(entry.dataset.name_labels))
+        self._push_points()
+
+    def on_open_symbols(self) -> None:
+        """The value drawn with open symbols changed."""
+        entry = self._active_entry()
+        if entry is None:
+            return
+        value = self.panel.open_value_var.get()
+        entry.open_values = [value] if entry.open_by and value else []
         self._push_points()
 
     def on_style_scheme(self) -> None:
@@ -1194,23 +1261,41 @@ class PyMapprApp:
         p.palette_var.set(BLACK_AND_WHITE_NAME)
         p.set_point_edge(*PUBLICATION_POINT_EDGE)
         p.set_point_alpha(1.0)
-        p.set_legend_options(organise_publication_legend(
-            self.entries, dataclasses.replace(p.legend_options(),
-                                              **PUBLICATION_LEGEND)))
+        legend = dataclasses.replace(p.legend_options(), **PUBLICATION_LEGEND)
+        if not (legend.title or "").strip():
+            # No heading for a journal legend: the caption says what the
+            # symbols are, and a column name ("Genus Species") reads oddly.
+            # A title the user typed is kept.
+            legend = dataclasses.replace(legend, show_title=False)
+        p.set_legend_options(organise_publication_legend(self.entries,
+                                                         legend))
         p.dpi_var.set(PUBLICATION_DPI)
+        p.export_width_var.set(PUBLICATION_WIDTH)
         # Three shades alone cannot tell more than three groups apart.
         for entry in self.entries:
             entry.vary_symbols = True
+            # Holotypes as open symbols, when a Type status column names
+            # them and the user has not chosen open symbols already.
+            marking = None if entry.open_by else holotype_marking(entry)
+            if marking:
+                entry.open_by, value = marking
+                entry.open_values = [value]
         p.vary_symbols_var.set(True)
         active = self._active_entry()
         if active is not None:
             p.color_by_var.set(active.color_by or "None")
+            p.set_open_controls(
+                ["None"] + list(active.dataset.name_labels),
+                active.open_by or "None",
+                column_values(active, active.open_by)
+                if active.open_by else [],
+                active.open_values[0] if active.open_values else "")
         self.renderer.set_point_alpha(1.0)
         self.renderer.set_point_edge(*p.point_edge())
         self._push_points()
         self.set_status("Applied the publication style. Export with "
                         "File \N{RIGHTWARDS ARROW} Save map as "
-                        f"({PUBLICATION_DPI} DPI).")
+                        f"({PUBLICATION_DPI} DPI, 17 cm wide).")
 
     def on_legend_options(self) -> None:
         """Any legend setting changed. Rebuilding is one legend build, so

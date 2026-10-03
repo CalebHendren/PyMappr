@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 
+import matplotlib
 import matplotlib.transforms as mtransforms
 import numpy as np
 from matplotlib.collections import LineCollection
@@ -14,9 +15,11 @@ from matplotlib.ticker import AutoLocator, FuncFormatter, MultipleLocator
 
 from pymappr.geo.layers import CONTINENT_EXTENTS, LayerStore
 from pymappr.geo.projections import get_projection
-from pymappr.renderer.geometry import (clamp_zoom_factor, export_geometry,
-                                       format_lat, format_lon,
-                                       oriented_axes_rect, refit_xlim)
+from pymappr.renderer.geometry import (PAGE_HEIGHT_CM, clamp_zoom_factor,
+                                       export_geometry, format_lat,
+                                       format_lon, oriented_axes_rect,
+                                       refit_xlim)
+from pymappr.renderer.grid_labels import GridLabelFormatter, GridLocator
 from pymappr.renderer.tables import (MARGINS_PLAIN, MARGINS_WITH_TICKS,
                                      ORIENTATION_ASPECT, Z_GRID)
 
@@ -26,6 +29,12 @@ _WRAP_OFFSETS = (-1, 0, 1)
 # Fraction of the shorter side of the map box the globe's disk spans, so it
 # sits centred with a margin instead of running the full length of the canvas.
 _GLOBE_FILL = 0.88
+
+# Lettering in a saved PDF or SVG stays editable text: TrueType (Type 42)
+# fonts in a PDF and real <text> elements in an SVG. matplotlib's defaults
+# (Type 3 fonts, glyph outlines) are hard for a journal's production staff
+# or an illustration program to edit.
+_VECTOR_RC = {"pdf.fonttype": 42, "ps.fonttype": 42, "svg.fonttype": "none"}
 
 # A scroll-wheel or zoom-button zoom renders for real once no notch has come
 # for this long (milliseconds). Until then each notch only rescales the map
@@ -147,7 +156,11 @@ class ViewMixin:
         if width / height < box_ratio:  # widen to fill the canvas
             new_w = height * box_ratio
             if new_w <= world_w:
-                cx = min(max((x0 + x1) / 2, wx0 + new_w / 2), wx1 - new_w / 2)
+                cx = (x0 + x1) / 2
+                # Kept inside the world, unless the extent runs across the
+                # antimeridian onto the wrap-around copy on purpose.
+                if wx0 <= x0 and x1 <= wx1:
+                    cx = min(max(cx, wx0 + new_w / 2), wx1 - new_w / 2)
                 x0, x1 = cx - new_w / 2, cx + new_w / 2
         else:  # grow vertically to fill the canvas
             new_h = width / box_ratio
@@ -568,15 +581,30 @@ class ViewMixin:
         for artist in self._artists.pop("graticule", []):
             artist.remove()
         on = self._graticule is not None
-        # Axis ticks and their labels only make sense on the rectangular
-        # default projection; curved projections draw the grid manually.
-        labels_on = on and self._graticule_labels and self.proj.is_geographic
+        # On the rectangular default projection the grid lines are the axis
+        # ticks. Curved projections draw the grid themselves and label it
+        # where it meets the frame; the globe's grid never reaches the
+        # frame, so the globe goes unlabelled.
+        labels_on = (on and self._graticule_labels
+                     and not self.proj.hemisphere)
         if on and self.proj.is_geographic:
             self.ax.xaxis.set_major_locator(MultipleLocator(self._graticule))
             self.ax.yaxis.set_major_locator(MultipleLocator(self._graticule))
             self.ax.grid(True, color="#787878", linewidth=0.4, alpha=0.7)
             for line in (*self.ax.get_xgridlines(), *self.ax.get_ygridlines()):
                 line.set_zorder(Z_GRID)
+            self.ax.xaxis.set_major_formatter(
+                GridLabelFormatter(self, "x", None))
+            self.ax.yaxis.set_major_formatter(
+                GridLabelFormatter(self, "y", None))
+        elif labels_on:
+            self.ax.grid(False)
+            self._artists["graticule"] = self._projected_graticule()
+            for which, axis in (("x", self.ax.xaxis), ("y", self.ax.yaxis)):
+                locator = GridLocator(self, which)
+                axis.set_major_locator(locator)
+                axis.set_major_formatter(
+                    GridLabelFormatter(self, which, locator))
         else:
             # Drop any degree-spaced locator: on projected axes (meters)
             # it would try to generate millions of ticks.
@@ -627,20 +655,30 @@ class ViewMixin:
     def redraw(self) -> None:
         self.fig.canvas.draw_idle()
 
-    def export_size_inches(self) -> tuple[float, float]:
-        """The saved image's size in inches at the current geometry.
+    def export_size_inches(self, width_cm: float | None = None
+                           ) -> tuple[float, float]:
+        """The saved image's size in inches at the current geometry, or at
+        a print width of *width_cm* (see :meth:`save_image`).
 
         For a portrait (letterboxed) map this is the cropped map, not the
         on-screen figure with its blank side bars; for a landscape map it
         equals the figure size. Used to report the output resolution and to
         drive the exported-code figure size."""
-        fig_w, fig_h = self.fig.get_size_inches()
-        (size, _rect) = export_geometry(self.ax.get_position().bounds,
-                                        float(fig_w), float(fig_h),
-                                        self._axes_margins)
+        (size, _rect) = self._export_geometry(width_cm)
         return size
 
-    def save_image(self, path: str, fmt: str = "png", dpi: int = 200) -> None:
+    def _export_geometry(self, width_cm: float | None):
+        fig_w, fig_h = self.fig.get_size_inches()
+        width_in = max_height_in = None
+        if width_cm is not None:
+            width_in = width_cm / 2.54
+            max_height_in = PAGE_HEIGHT_CM / 2.54
+        return export_geometry(self.ax.get_position().bounds,
+                               float(fig_w), float(fig_h),
+                               self._axes_margins, width_in, max_height_in)
+
+    def save_image(self, path: str, fmt: str = "png", dpi: int = 200,
+                   width_cm: float | None = None) -> None:
         """Write the map to *path* in the given format.
 
         ``fmt`` is a short key: ``png``, ``jpg``/``jpeg``, ``tiff``/``tif``,
@@ -652,15 +690,45 @@ class ViewMixin:
         A portrait map is letterboxed on screen; before writing, the figure
         is temporarily resized so the file is cropped to the map (no blank
         side bars) and then restored.
+
+        *width_cm* saves the map at that print width (no taller than a
+        journal page) instead of its on-screen size, so the lettering prints
+        at its point size: a map from a large window scaled down to a 17 cm
+        page would otherwise shrink a 9 pt legend to 6 pt or less.
         """
         fmt = fmt.lower()
-        with self._cropped_for_export(), self.basemap_detail_for(dpi):
+        with (self._vector_detail_for(dpi, width_cm),
+              self._cropped_for_export(width_cm),
+              self.basemap_detail_for(dpi)):
             if fmt in ("tif", "tiff"):
                 self._save_tiff(path, dpi)
                 return
             if fmt in ("jpg", "jpeg"):
                 fmt = "jpeg"  # JPEG has no alpha; the white facecolor fills it
-            self.fig.savefig(path, format=fmt, dpi=dpi, facecolor="white")
+            with matplotlib.rc_context(_VECTOR_RC):
+                self.fig.savefig(path, format=fmt, dpi=dpi, facecolor="white")
+
+    @contextmanager
+    def _vector_detail_for(self, dpi: float, width_cm: float | None = None):
+        """Draw coastlines and borders from the finer Natural Earth data an
+        export at *dpi* can show. The resolution follows the zoom, judged
+        at screen pixels; a 600-dpi file has several times as many, and the
+        50m outlines that look right on screen are visibly coarse in it
+        (small islands lose their shape)."""
+        screen_px = self.fig.get_size_inches()[0] * self.fig.dpi
+        export_px = self.export_size_inches(width_cm)[0] * dpi
+        boost = max(float(np.log2(max(export_px, 1.0) / max(screen_px, 1.0))),
+                    0.0)
+        if boost < 0.5:
+            yield
+            return
+        self._detail_boost = boost
+        try:
+            self._sync_resolutions()
+            yield
+        finally:
+            self._detail_boost = 0.0
+            self._sync_resolutions()
 
     @contextmanager
     def basemap_detail_for(self, dpi: float):
@@ -678,15 +746,14 @@ class ViewMixin:
             self._refresh_basemap()
 
     @contextmanager
-    def _cropped_for_export(self):
+    def _cropped_for_export(self, width_cm: float | None = None):
         """Temporarily resize the figure so a saved image is cropped to the
-        map axes (dropping any orientation letterbox bars), restoring the
-        on-screen geometry afterwards. A no-op for a full-canvas map."""
+        map axes (dropping any orientation letterbox bars) and, with
+        *width_cm*, scaled to that print width, restoring the on-screen
+        geometry afterwards. A no-op for a full-canvas map at screen size."""
         old_size = tuple(self.fig.get_size_inches())
         old_bounds = self.ax.get_position().bounds
-        (new_w, new_h), rect = export_geometry(
-            old_bounds, float(old_size[0]), float(old_size[1]),
-            self._axes_margins)
+        (new_w, new_h), rect = self._export_geometry(width_cm)
         if (abs(new_w - old_size[0]) < 1e-3
                 and abs(new_h - old_size[1]) < 1e-3):
             yield  # landscape / already full-canvas: nothing to crop
@@ -704,9 +771,14 @@ class ViewMixin:
             self.redraw()
 
     def _save_tiff(self, path: str, dpi: int) -> None:
-        # Render to PNG in memory first; matplotlib's Agg backend does not
-        # embed DPI metadata in TIFF files, so we hand off to Pillow which
-        # writes the correct XResolution/YResolution TIFF tags.
+        """Write a TIFF the way journals ask for one (Zootaxa, Phytotaxa):
+        LZW-compressed, without an alpha channel, and greyscale when the map
+        has no colour in it. An uncompressed RGBA TIFF of a 600-dpi map runs
+        to ~90 MB; this is well under 1 MB for a black-and-white map.
+
+        Rendered to PNG in memory first; matplotlib's Agg backend does not
+        embed DPI metadata in TIFF files, so Pillow writes the file with the
+        correct XResolution/YResolution tags."""
         import io
 
         from PIL import Image
@@ -714,5 +786,9 @@ class ViewMixin:
         buf = io.BytesIO()
         self.fig.savefig(buf, format="png", dpi=dpi, facecolor="white")
         buf.seek(0)
-        img = Image.open(buf)
-        img.save(path, format="TIFF", dpi=(dpi, dpi))
+        img = Image.open(buf).convert("RGB")  # opaque white: alpha adds nothing
+        pixels = np.asarray(img)
+        if ((pixels[..., 0] == pixels[..., 1]).all()
+                and (pixels[..., 1] == pixels[..., 2]).all()):
+            img = img.convert("L")
+        img.save(path, format="TIFF", dpi=(dpi, dpi), compression="tiff_lzw")

@@ -4,12 +4,13 @@ import csv
 from dataclasses import dataclass, field
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 from pymappr.files.coords import (CoordinateError, parse_latitude,
                                   parse_longitude)
 
-__all__ = ["ColumnMapping", "PointDataset", "read_table",
+__all__ = ["ColumnMapping", "PointDataset", "read_table", "far_points",
            "list_sheets", "headers_look_like_data", "guess_mapping",
            "build_dataset", "load_csv", "build_manual_dataset",
            "combine_name_columns", "SPREADSHEET_EXTENSIONS",
@@ -59,6 +60,9 @@ class PointDataset:
     frame: pd.DataFrame  # columns: name1..nameN, lon, lat
     source_path: str
     skipped: list[str] = field(default_factory=list)  # per-row error messages
+    # The file row each point came from, for messages about a point; empty
+    # when the points did not come from a file read here.
+    source_rows: list[int] = field(default_factory=list)
 
     def __len__(self) -> int:
         return len(self.frame)
@@ -276,7 +280,79 @@ def build_dataset(frame: pd.DataFrame, mapping: ColumnMapping,
     else:
         labels = [f"Name {i + 1}" for i in range(len(name_cols))]
     result.attrs["name_labels"] = list(labels)
-    return PointDataset(frame=result, source_path=source_path, skipped=skipped)
+    return PointDataset(frame=result, source_path=source_path, skipped=skipped,
+                        source_rows=[int(row_number[idx])
+                                     for idx in frame.index[~bad]])
+
+
+# A point is "far from the rest" when the nearest other point is at least
+# this far away, and this many times further than points usually are from
+# their nearest neighbour. Checked only for datasets small enough to
+# compare every pair quickly.
+FAR_POINT_KM = 1000.0
+FAR_POINT_FACTOR = 10.0
+_FAR_POINT_MAX_ROWS = 5000
+_EARTH_KM = 6371.0
+
+
+def _unit_vectors(lons, lats) -> np.ndarray:
+    lon, lat = np.radians(lons), np.radians(lats)
+    return np.column_stack([np.cos(lat) * np.cos(lon),
+                            np.cos(lat) * np.sin(lon), np.sin(lat)])
+
+
+def _nearest_km(points: np.ndarray, others: np.ndarray,
+                same: bool) -> np.ndarray:
+    """Great-circle distance from each of *points* to the nearest of
+    *others* (unit vectors), skipping a point's own entry when *same*."""
+    nearest = np.empty(len(points))
+    for start in range(0, len(points), 500):
+        dots = np.clip(points[start:start + 500] @ others.T, -1.0, 1.0)
+        if same:
+            rows = np.arange(len(dots))
+            dots[rows, start + rows] = -1.0
+        nearest[start:start + 500] = np.arccos(dots.max(axis=1)) * _EARTH_KM
+    return nearest
+
+
+def far_points(dataset: PointDataset) -> list[str]:
+    """Plain-language notes on points far from all the others.
+
+    A lone point an ocean away from the rest is usually a coordinate typed
+    without its minus sign or hemisphere letter (88.21 for 88.21 W). Each
+    note names the row and, when flipping a sign puts the point among the
+    others, which sign that is. Empty when nothing stands out."""
+    frame = dataset.frame
+    if not 5 <= len(frame) <= _FAR_POINT_MAX_ROWS:
+        return []
+    lons = frame["lon"].to_numpy(float)
+    lats = frame["lat"].to_numpy(float)
+    vectors = _unit_vectors(lons, lats)
+    nearest = _nearest_km(vectors, vectors, same=True)
+    typical = float(np.median(nearest))
+    limit = max(FAR_POINT_KM, FAR_POINT_FACTOR * typical)
+    far = np.flatnonzero(nearest > limit)
+    if not len(far) or len(far) > len(frame) // 5:
+        return []  # a widespread dataset, not a stray point
+    keep = np.setdiff1d(np.arange(len(frame)), far)
+    rest = vectors[keep]
+    rows = dataset.source_rows
+    notes = []
+    for i in far:
+        where = f"row {rows[i]}" if len(rows) == len(frame) else "a point"
+        note = (f"{where} ({lats[i]:g}, {lons[i]:g}) is "
+                f"{nearest[i]:,.0f} km from the nearest other point")
+        for what, lon, lat in (("longitude", -lons[i], lats[i]),
+                               ("latitude", lons[i], -lats[i]),
+                               ("longitude and latitude", -lons[i],
+                                -lats[i])):
+            moved = _nearest_km(_unit_vectors([lon], [lat]), rest, False)
+            if moved[0] <= limit:
+                note += (f"; with the opposite sign on its {what} it "
+                         "would sit with the rest")
+                break
+        notes.append(note + ".")
+    return notes
 
 
 def combine_name_columns(dataset: PointDataset, labels: list[str],

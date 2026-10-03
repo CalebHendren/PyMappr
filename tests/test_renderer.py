@@ -1628,3 +1628,164 @@ def test_label_and_marker_caches_follow_the_region_not_just_the_crs():
     fx, _fy = r.proj.forward(features["x"].to_numpy(),
                              features["y"].to_numpy(), clamp=False)
     np.testing.assert_array_equal(px, fx)
+
+
+def _black_marker_renderer():
+    r = _renderer(4.0, 3.0)
+    r.set_extent("World")
+    r.ax.plot([-60.0], [20.0], marker="s", markersize=8, color="black")
+    return r
+
+
+def test_a_tiff_is_lzw_compressed_greyscale_without_alpha(tmp_path):
+    from PIL import Image
+
+    r = _black_marker_renderer()
+    path = tmp_path / "map.tif"
+    r.save_image(str(path), "tiff", dpi=150)
+    with Image.open(path) as img:
+        assert img.mode == "L"
+        assert img.info["compression"] == "tiff_lzw"
+        assert img.info["dpi"] == (150, 150)
+        assert img.size == (600, 450)
+
+
+def test_a_tiff_with_colour_stays_rgb(tmp_path):
+    from PIL import Image
+
+    r = _black_marker_renderer()
+    r.ax.plot([0.0], [0.0], marker="o", markersize=8, color="red")
+    path = tmp_path / "map.tif"
+    r.save_image(str(path), "tiff", dpi=100)
+    with Image.open(path) as img:
+        assert img.mode == "RGB"
+        assert img.info["compression"] == "tiff_lzw"
+
+
+def test_vector_exports_keep_text_editable(tmp_path):
+    r = _black_marker_renderer()
+    r.ax.set_title("Nebulobunus")
+    r.save_image(str(tmp_path / "map.pdf"), "pdf")
+    r.save_image(str(tmp_path / "map.svg"), "svg")
+    pdf = (tmp_path / "map.pdf").read_bytes()
+    assert b"/FontFile2" in pdf and b"/Subtype /Type3" not in pdf  # TrueType
+    svg = (tmp_path / "map.svg").read_text(encoding="utf-8")
+    assert "<text" in svg and "Nebulobunus" in svg
+    # The setting is scoped to the export, not left on for the session.
+    assert matplotlib.rcParams["pdf.fonttype"] == 3
+
+
+def test_export_geometry_scales_the_map_to_a_print_width():
+    # A 9 x 6.5 in landscape canvas, axes filling it inside fixed margins.
+    margins = (0.05, 0.05, 0.95, 0.95)
+    bounds = (0.05, 0.05, 0.9, 0.9)
+    (w, h), rect = export_geometry(bounds, 9.0, 6.5, margins,
+                                   width_in=17 / 2.54)
+    assert w == pytest.approx(17 / 2.54)
+    # The tick-label gutters keep their inches; the map box keeps its shape.
+    assert rect[0] * w == pytest.approx(0.05 * 9.0)
+    box_w, box_h = rect[2] * w, rect[3] * h
+    assert box_w / box_h == pytest.approx((0.9 * 9.0) / (0.9 * 6.5))
+
+
+def test_export_geometry_keeps_a_tall_map_within_the_page_height():
+    margins = (0.05, 0.05, 0.95, 0.95)
+    bounds = (0.05, 0.05, 0.9, 0.9)
+    (w, h), _rect = export_geometry(bounds, 4.0, 12.0, margins,
+                                    width_in=17 / 2.54,
+                                    max_height_in=25 / 2.54)
+    assert h == pytest.approx(25 / 2.54)
+    assert w < 17 / 2.54
+
+
+def test_a_tiff_saved_at_a_print_width_is_that_wide(tmp_path):
+    from PIL import Image
+
+    r = _black_marker_renderer()   # a 4 x 3 in canvas
+    path = tmp_path / "map.tif"
+    r.save_image(str(path), "tiff", dpi=300, width_cm=17.0)
+    with Image.open(path) as img:
+        assert abs(img.size[0] - 17 / 2.54 * 300) <= 1  # whole pixels
+    # The on-screen figure is put back.
+    assert tuple(r.fig.get_size_inches()) == pytest.approx((4.0, 3.0))
+    assert r.export_size_inches(17.0)[0] == pytest.approx(17 / 2.54)
+
+
+def _legend_and_bar_boxes(r):
+    r.fig.canvas.draw()
+    renderer = r.fig.canvas.get_renderer()
+    legend = r.ax.get_legend().get_window_extent(renderer)
+    bar = mtransforms_union([a.get_window_extent(renderer)
+                             for a in r._artists["scale_bar"]])
+    return legend, bar
+
+
+def mtransforms_union(boxes):
+    from matplotlib.transforms import Bbox
+    return Bbox.union(boxes)
+
+
+@pytest.mark.parametrize("corner", ["lower left", "upper right"])
+def test_a_legend_in_the_scale_bars_corner_leaves_the_bar_visible(corner):
+    r = _renderer(9.0, 6.5)
+    r.set_extent((-100.0, -77.0, 6.0, 21.0))
+    r.set_point_groups([(f"Taxon {i}", PointStyle(color="#000000"),
+                         np.array([-90.0 + i]), np.array([15.0]))
+                        for i in range(5)])
+    r.set_legend(LegendOptions(location=corner))
+    r.set_scale_bar(ScaleBarOptions(show=True, position=corner))
+    legend, bar = _legend_and_bar_boxes(r)
+    assert not legend.overlaps(bar)
+    # Still clear when the map is saved at another size.
+    r.fig.set_size_inches(17 / 2.54, 17 / 2.54 * 6.5 / 9.0)
+    legend, bar = _legend_and_bar_boxes(r)
+    assert not legend.overlaps(bar)
+
+
+def test_a_legend_elsewhere_keeps_its_corner():
+    r = _renderer(9.0, 6.5)
+    r.set_extent((-100.0, -77.0, 6.0, 21.0))
+    r.set_point_groups([("A", PointStyle(color="#000000"),
+                         np.array([-90.0]), np.array([15.0]))])
+    r.set_legend(LegendOptions(location="upper left"))
+    r.set_scale_bar(ScaleBarOptions(show=True, position="lower left"))
+    assert r._legend_placement() == {"loc": "upper left"}
+
+
+@pytest.mark.parametrize("lons, expected", [
+    ([177.9, 179.2, -179.98, -172.4, -171.7], (177.9, 188.3)),
+    ([-95.0, -80.0, -88.0], (-95.0, -80.0)),
+    ([10.0], (10.0, 10.0)),
+    ([-100.0, 100.0, 0.0], (-100.0, 100.0)),  # no shorter way round
+    ([-170.0, 170.0, 0.0], (0.0, 190.0)),
+])
+def test_lon_span_takes_the_short_way_round(lons, expected):
+    from pymappr.renderer.geometry import lon_span
+    assert lon_span(lons) == pytest.approx(expected)
+
+
+@pytest.mark.parametrize("projection", ["Equirectangular", "Robinson",
+                                        "Mercator"])
+def test_an_extent_across_the_antimeridian_frames_just_that(projection):
+    r = _renderer(9.0, 6.5)
+    r.set_projection(projection)
+    r.set_extent((175.0, 191.0, -23.5, -11.0))
+    x0, x1 = r.ax.get_xlim()
+    # A small window onto the Pacific, not the whole world.
+    assert (x1 - x0) < r.proj.world_width / 8
+
+
+def test_a_sharp_export_draws_finer_coastlines(monkeypatch):
+    r = _renderer(9.0, 6.5)
+    seen = []
+    monkeypatch.setattr(r, "_sync_resolutions",
+                        lambda: seen.append(r._detail_boost))
+    with r._vector_detail_for(600, 17.0):
+        pass
+    # 17 cm at 600 dpi is ~4000 px against 900 on screen: two zoom levels.
+    assert seen[0] == pytest.approx(np.log2(17 / 2.54 * 600 / 900), abs=1e-6)
+    assert seen[-1] == 0.0 and r._detail_boost == 0.0
+    seen.clear()
+    with r._vector_detail_for(100):  # screen resolution: nothing to do
+        pass
+    assert seen == []

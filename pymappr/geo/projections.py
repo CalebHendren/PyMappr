@@ -283,6 +283,15 @@ class Projection:
         x0, x1, y0, y1 = (float(v) for v in extent)
         if self.crs is None:
             return x0, x1, y0, y1
+        seam = self.lon_0 + 180.0
+        if not self.hemisphere and self.lon_halfspan >= 180.0 and x1 > seam:
+            # A box across the antimeridian, its east edge given past 180:
+            # that part is drawn on the world copy one world-width east.
+            west = self.project_extent((x0, seam - 1e-9, y0, y1))
+            east = self.project_extent((seam - 360.0 + 1e-9, x1 - 360.0,
+                                        y0, y1))
+            return (west[0], east[1] + self.world_width,
+                    min(west[2], east[2]), max(west[3], east[3]))
         y0 = max(y0, self.min_lat)
         y1 = min(y1, self.max_lat)
         n = 40
