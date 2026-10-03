@@ -2,8 +2,8 @@ import math
 
 import pytest
 
-from pymappr.files.coords import (CoordinateError, parse_latitude,
-                                  parse_longitude)
+from pymappr.files.coords import (CoordinateError, parse_coordinate,
+                                  parse_latitude, parse_longitude)
 
 
 def close(a, b):
@@ -143,3 +143,13 @@ class TestSecondsMarkerVsSouth:
     def test_latitude_digit_run_is_not_split(self):
         assert close(parse_latitude("30s"), -30.0)
         assert close(parse_latitude("45d30s"), -45.5)
+
+
+@pytest.mark.parametrize("text, kind, expected", [
+    ("-122d30m15s", "longitude", -(122 + 30 / 60 + 15 / 3600)),
+    ("+122d30m15s", "longitude", 122 + 30 / 60 + 15 / 3600),
+    ("- 122 30 15s", "longitude", -(122 + 30 / 60 + 15 / 3600)),
+    ("-45d30m15s", "latitude", -(45 + 30 / 60 + 15 / 3600)),
+])
+def test_signed_dms_keeps_its_seconds_marker(text, kind, expected):
+    assert parse_coordinate(text, kind) == pytest.approx(expected)

@@ -67,10 +67,11 @@ const DMS_RE = /^(\d+(?:[.,]\d+)?(?![\d.,]))\s*(?:[°ºd]|deg(?:rees)?)?(?:[\s:]
 function toFloat(t){ return parseFloat(String(t).replace(",",".")); }
 // A trailing "s" closes a DMS value rather than meaning South when it sits
 // right against the seconds digits and the text reads as D M S, and either
-// the minutes carry an explicit marker or the value is a longitude.
+// the minutes carry an explicit marker or the value is a longitude. A leading
+// sign ("-122d30m15s") is not part of the DMS text.
 function isSecondsMarker(text, m, kind){
   if(m[2].toLowerCase()!=="s" || !/\d/.test(text.charAt(text.length-2))) return false;
-  const dms = text.match(DMS_RE);
+  const dms = text.replace(/^[+-]\s*/,"").match(DMS_RE);
   if(!dms || !dms[2] || !dms[4]) return false;
   return kind==="longitude" || !!dms[3];
 }
@@ -94,10 +95,11 @@ function parseCoordinate(value, kind){
     if(sign!==null) throw new Error("cannot combine sign and hemisphere");
     neg = text[0]==="-"; text=text.slice(1).trim();
   }
+  // Plain decimal degrees: one number with at most one decimal mark, as
+  // Python's float() accepts. "45.30.15" and "45,30,15" are not numbers.
   let deg;
-  const plain = toFloat(text);
-  if(!Number.isNaN(plain) && /^[\d.,]+$/.test(text)){
-    deg = plain;
+  if(/^(?:\d+(?:[.,]\d*)?|[.,]\d+)(?:e[+-]?\d+)?$/i.test(text)){
+    deg = toFloat(text);
   } else {
     const dm = text.match(DMS_RE);
     if(!dm) throw new Error("cannot parse "+kind+" "+value);

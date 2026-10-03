@@ -64,6 +64,10 @@ class ColumnMapperDialog(tk.Toplevel):
             self._sheet_var = None
 
         self._headers_var = tk.BooleanVar(value=headers)
+        # How self.frame was read; a failed re-read puts the controls back
+        # to these, so the mapping never describes a read that did not happen.
+        self._frame_headers = headers
+        self._frame_sheet = self._sheet_var.get() if self._sheet_var else None
         check = ttk.Checkbutton(
             body, text="First row contains column headers",
             variable=self._headers_var, command=self._reload)
@@ -128,9 +132,13 @@ class ColumnMapperDialog(tk.Toplevel):
             guess = guess_mapping(frame)
         except Exception as exc:  # noqa: BLE001 - show any read error
             self._error.config(text=str(exc))
+            self._headers_var.set(self._frame_headers)
+            if self._sheet_var:
+                self._sheet_var.set(self._frame_sheet)
             return
         self._error.config(text="")
         self.frame = frame
+        self._frame_headers, self._frame_sheet = headers, sheet
         self._populate(frame, guess)
 
     def _populate(self, frame: pd.DataFrame, guess: ColumnMapping) -> None:
@@ -199,9 +207,9 @@ class ColumnMapperDialog(tk.Toplevel):
                  if self._name_vars[c].get() and c not in (lon, lat)]
         self.result = ColumnMapping(
             longitude=lon, latitude=lat, names=names,
-            use_headers=(self._headers_var.get()
+            use_headers=(self._frame_headers
                          and self._use_headers_var.get()),
-            header_row=self._headers_var.get())
+            header_row=self._frame_headers)
         self.destroy()
 
     def _cancel(self) -> None:

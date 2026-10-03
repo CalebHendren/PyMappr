@@ -196,3 +196,12 @@ def test_out_of_range_origin_is_normalised_not_rejected():
     lam = get_projection("Lambert Azimuthal (custom)", 0, 95)
     assert "+lat_0=90" in lam.crs
     assert get_projection("Lambert: Europe", 400, 50).lon_0 == 40
+
+
+def test_non_finite_origin_falls_back_to_the_default():
+    for name in (GLOBE, LAMBERT_PROJECTIONS[0]):
+        expected = get_projection(name)
+        for bad in (float("inf"), float("-inf"), float("nan")):
+            projection = get_projection(name, bad, bad)
+            assert projection.crs == expected.crs
+            assert np.isfinite(projection.bounds).all()

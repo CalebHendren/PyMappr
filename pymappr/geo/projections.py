@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from functools import lru_cache
 
@@ -412,9 +413,15 @@ def normalize_origin(lon_0: float, lat_0: float) -> tuple[float, float]:
     return lon, max(-90.0, min(90.0, float(lat_0)))
 
 
+def _or_default(value: float | None, default: float) -> float:
+    """*value*, or *default* when it is None or not finite ("inf" typed into
+    a centre field, or one stored in a saved project)."""
+    return default if value is None or not math.isfinite(value) else value
+
+
 def _build_globe(lon_0: float | None, lat_0: float | None) -> Projection:
-    lon0, lat0 = normalize_origin(0.0 if lon_0 is None else lon_0,
-                                  0.0 if lat_0 is None else lat_0)
+    lon0, lat0 = normalize_origin(_or_default(lon_0, 0.0),
+                                  _or_default(lat_0, 0.0))
     crs = proj4_string(GLOBE, lon0, lat0)
     lons, lats = _cap_ring(lon0, lat0, _HORIZON_RADIUS)
     xs, ys = _transformer(crs).transform(lons, lats)
@@ -430,8 +437,8 @@ def _build_globe(lon_0: float | None, lat_0: float | None) -> Projection:
 def _build_lambert(name: str, lon_0: float | None,
                    lat_0: float | None) -> Projection:
     d = LAMBERT_DEFS[name]
-    lon0, lat0 = normalize_origin(d.lon_0 if lon_0 is None else lon_0,
-                                  d.lat_0 if lat_0 is None else lat_0)
+    lon0, lat0 = normalize_origin(_or_default(lon_0, d.lon_0),
+                                  _or_default(lat_0, d.lat_0))
     crs = proj4_string(name, lon0, lat0)
     bounds = _bounds_from_grid(crs, lon0 - d.lon_halfspan,
                                lon0 + d.lon_halfspan, d.lat_min, d.lat_max)

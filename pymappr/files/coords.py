@@ -40,11 +40,11 @@ def _is_seconds_marker(text: str, m: re.Match, kind: str) -> bool:
     read as degrees, minutes and seconds. It is then the seconds marker if the
     minutes carry an explicit marker ("45d30m15s") or if the value is a
     longitude, which has no South. Otherwise "45 30 15s" stays South, like
-    "45 30 15 S".
+    "45 30 15 S". A leading sign ("-122d30m15s") is not part of the DMS text.
     """
     if m.group(2).lower() != "s" or not text[-2:-1].isdigit():
         return False
-    dms = _DMS_RE.match(text)
+    dms = _DMS_RE.match(re.sub(r"^[+-]\s*", "", text))
     if not dms or not (dms.group("min") and dms.group("sec")):
         return False
     return kind == "longitude" or bool(dms.group("minmark"))

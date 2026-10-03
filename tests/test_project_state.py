@@ -244,3 +244,44 @@ def test_opening_another_project_after_renaming_the_open_one(
     app.on_projects()
     assert saved == [new]
     assert app.project_path == dialog.open_path
+
+
+def test_dialog_records_a_case_only_rename(monkeypatch, tmp_path):
+    # Windows paths compare without case; the rename must still count.
+    dialog = _real_dialog(None)
+    ProjectsDialog._record_rename(dialog, tmp_path / "survey.pymappr",
+                                  tmp_path / "Survey.pymappr")
+    assert dialog.renamed == {tmp_path / "survey.pymappr":
+                              tmp_path / "Survey.pymappr"}
+    assert str(dialog.renamed[tmp_path / "survey.pymappr"]).endswith(
+        "Survey.pymappr")
+
+
+class _SessionApp(_StubApp):
+    """The stub app with the real session autosave and restore."""
+
+    def __init__(self):
+        super().__init__()
+        self.entries = []
+        self.root = SimpleNamespace(geometry=lambda *a: "800x600")
+
+    _save_session = PyMapprApp._save_session
+    _restore_session = PyMapprApp._restore_session
+
+
+@pytest.mark.parametrize("edited", [False, True])
+def test_unsaved_changes_survive_a_restart(monkeypatch, tmp_path, edited):
+    monkeypatch.setattr(projects, "session_path",
+                        lambda: tmp_path / "session.pymappr")
+    app = _SessionApp()
+    if edited:
+        app.state["settings"] = "edited"
+    app._save_session()
+
+    again = _SessionApp()
+    again.state = {"entries": [], "settings": "default"}
+    again._apply_state = lambda state: again.state.update(
+        entries=state["entries"], settings=state["settings"])
+    again._restore_session()
+    assert again.state["settings"] == ("edited" if edited else "mine")
+    assert (again._snapshot() != again._clean_snapshot) is edited

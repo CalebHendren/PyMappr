@@ -1911,3 +1911,20 @@ def test_exported_r_script_wraps_the_world_and_its_basemap(tmp_path):
     state["view"] = {"xlim": [100, 260], "ylim": [-40, 60]}
     result = run_exported_r(tmp_path, state, [hawaii])
     assert_r_map_saved(tmp_path, result)
+
+
+def test_non_finite_origin_exports_the_default_centre():
+    assert codegen._origin({"proj_lon0": "inf", "proj_lat0": "nan"}) == (
+        None, None)
+    assert codegen._origin({"proj_lon0": "1e400", "proj_lat0": "12.5"}) == (
+        None, 12.5)
+
+
+def test_export_filename_drops_the_extension_before_the_device_rule():
+    used = set()
+    assert codegen._export_filename("CON.csv", ".csv", used, "data") == (
+        "CON_.csv")
+    assert codegen._export_filename("sites.csv.", ".csv", used, "data") == (
+        "sites.csv")
+    assert codegen._export_filename(".csv", ".csv", used, "data") == (
+        "data.csv")
