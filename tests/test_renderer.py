@@ -1673,3 +1673,39 @@ def test_vector_exports_keep_text_editable(tmp_path):
     assert "<text" in svg and "Nebulobunus" in svg
     # The setting is scoped to the export, not left on for the session.
     assert matplotlib.rcParams["pdf.fonttype"] == 3
+
+
+def test_export_geometry_scales_the_map_to_a_print_width():
+    # A 9 x 6.5 in landscape canvas, axes filling it inside fixed margins.
+    margins = (0.05, 0.05, 0.95, 0.95)
+    bounds = (0.05, 0.05, 0.9, 0.9)
+    (w, h), rect = export_geometry(bounds, 9.0, 6.5, margins,
+                                   width_in=17 / 2.54)
+    assert w == pytest.approx(17 / 2.54)
+    # The tick-label gutters keep their inches; the map box keeps its shape.
+    assert rect[0] * w == pytest.approx(0.05 * 9.0)
+    box_w, box_h = rect[2] * w, rect[3] * h
+    assert box_w / box_h == pytest.approx((0.9 * 9.0) / (0.9 * 6.5))
+
+
+def test_export_geometry_keeps_a_tall_map_within_the_page_height():
+    margins = (0.05, 0.05, 0.95, 0.95)
+    bounds = (0.05, 0.05, 0.9, 0.9)
+    (w, h), _rect = export_geometry(bounds, 4.0, 12.0, margins,
+                                    width_in=17 / 2.54,
+                                    max_height_in=25 / 2.54)
+    assert h == pytest.approx(25 / 2.54)
+    assert w < 17 / 2.54
+
+
+def test_a_tiff_saved_at_a_print_width_is_that_wide(tmp_path):
+    from PIL import Image
+
+    r = _black_marker_renderer()   # a 4 x 3 in canvas
+    path = tmp_path / "map.tif"
+    r.save_image(str(path), "tiff", dpi=300, width_cm=17.0)
+    with Image.open(path) as img:
+        assert abs(img.size[0] - 17 / 2.54 * 300) <= 1  # whole pixels
+    # The on-screen figure is put back.
+    assert tuple(r.fig.get_size_inches()) == pytest.approx((4.0, 3.0))
+    assert r.export_size_inches(17.0)[0] == pytest.approx(17 / 2.54)

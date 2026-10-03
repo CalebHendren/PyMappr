@@ -15,9 +15,10 @@ from matplotlib.ticker import AutoLocator, FuncFormatter, MultipleLocator
 
 from pymappr.geo.layers import CONTINENT_EXTENTS, LayerStore
 from pymappr.geo.projections import get_projection
-from pymappr.renderer.geometry import (clamp_zoom_factor, export_geometry,
-                                       format_lat, format_lon,
-                                       oriented_axes_rect, refit_xlim)
+from pymappr.renderer.geometry import (PAGE_HEIGHT_CM, clamp_zoom_factor,
+                                       export_geometry, format_lat,
+                                       format_lon, oriented_axes_rect,
+                                       refit_xlim)
 from pymappr.renderer.tables import (MARGINS_PLAIN, MARGINS_WITH_TICKS,
                                      ORIENTATION_ASPECT, Z_GRID)
 
@@ -634,20 +635,30 @@ class ViewMixin:
     def redraw(self) -> None:
         self.fig.canvas.draw_idle()
 
-    def export_size_inches(self) -> tuple[float, float]:
-        """The saved image's size in inches at the current geometry.
+    def export_size_inches(self, width_cm: float | None = None
+                           ) -> tuple[float, float]:
+        """The saved image's size in inches at the current geometry, or at
+        a print width of *width_cm* (see :meth:`save_image`).
 
         For a portrait (letterboxed) map this is the cropped map, not the
         on-screen figure with its blank side bars; for a landscape map it
         equals the figure size. Used to report the output resolution and to
         drive the exported-code figure size."""
-        fig_w, fig_h = self.fig.get_size_inches()
-        (size, _rect) = export_geometry(self.ax.get_position().bounds,
-                                        float(fig_w), float(fig_h),
-                                        self._axes_margins)
+        (size, _rect) = self._export_geometry(width_cm)
         return size
 
-    def save_image(self, path: str, fmt: str = "png", dpi: int = 200) -> None:
+    def _export_geometry(self, width_cm: float | None):
+        fig_w, fig_h = self.fig.get_size_inches()
+        width_in = max_height_in = None
+        if width_cm is not None:
+            width_in = width_cm / 2.54
+            max_height_in = PAGE_HEIGHT_CM / 2.54
+        return export_geometry(self.ax.get_position().bounds,
+                               float(fig_w), float(fig_h),
+                               self._axes_margins, width_in, max_height_in)
+
+    def save_image(self, path: str, fmt: str = "png", dpi: int = 200,
+                   width_cm: float | None = None) -> None:
         """Write the map to *path* in the given format.
 
         ``fmt`` is a short key: ``png``, ``jpg``/``jpeg``, ``tiff``/``tif``,
@@ -659,9 +670,15 @@ class ViewMixin:
         A portrait map is letterboxed on screen; before writing, the figure
         is temporarily resized so the file is cropped to the map (no blank
         side bars) and then restored.
+
+        *width_cm* saves the map at that print width (no taller than a
+        journal page) instead of its on-screen size, so the lettering prints
+        at its point size: a map from a large window scaled down to a 17 cm
+        page would otherwise shrink a 9 pt legend to 6 pt or less.
         """
         fmt = fmt.lower()
-        with self._cropped_for_export(), self.basemap_detail_for(dpi):
+        with (self._cropped_for_export(width_cm),
+              self.basemap_detail_for(dpi)):
             if fmt in ("tif", "tiff"):
                 self._save_tiff(path, dpi)
                 return
@@ -686,15 +703,14 @@ class ViewMixin:
             self._refresh_basemap()
 
     @contextmanager
-    def _cropped_for_export(self):
+    def _cropped_for_export(self, width_cm: float | None = None):
         """Temporarily resize the figure so a saved image is cropped to the
-        map axes (dropping any orientation letterbox bars), restoring the
-        on-screen geometry afterwards. A no-op for a full-canvas map."""
+        map axes (dropping any orientation letterbox bars) and, with
+        *width_cm*, scaled to that print width, restoring the on-screen
+        geometry afterwards. A no-op for a full-canvas map at screen size."""
         old_size = tuple(self.fig.get_size_inches())
         old_bounds = self.ax.get_position().bounds
-        (new_w, new_h), rect = export_geometry(
-            old_bounds, float(old_size[0]), float(old_size[1]),
-            self._axes_margins)
+        (new_w, new_h), rect = self._export_geometry(width_cm)
         if (abs(new_w - old_size[0]) < 1e-3
                 and abs(new_h - old_size[1]) < 1e-3):
             yield  # landscape / already full-canvas: nothing to crop

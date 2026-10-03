@@ -277,3 +277,20 @@ def test_a_wrapped_origin_is_used_exactly_as_shown(panel):
     assert lon0 == pytest.approx(-169.8765433)
     # Reading the field again builds the same centre.
     assert panel.projection_origin()[0] == lon0
+
+
+@pytest.mark.parametrize("text, expected", [
+    ("As on screen", None), ("", None),
+    ("17 cm (Zootaxa / Phytotaxa page)", 17.0), ("8 cm (one column)", 8.0),
+    ("12", 12.0), ("12.5 cm", 12.5), ("12,5", 12.5), ("8CM", 8.0),
+])
+def test_print_widths_parse(text, expected):
+    from pymappr.ui.save_image import parse_print_width
+    assert parse_print_width(text) == expected
+
+
+@pytest.mark.parametrize("text", ["wide", "0.5", "250 cm", "12 in"])
+def test_bad_print_widths_are_rejected(text):
+    from pymappr.ui.save_image import parse_print_width
+    with pytest.raises(ValueError):
+        parse_print_width(text)

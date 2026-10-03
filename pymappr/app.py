@@ -48,13 +48,17 @@ from pymappr.ui.legend_editor import LegendEditorDialog  # noqa: E402
 from pymappr.ui.manual_entry import ManualEntryDialog  # noqa: E402
 from pymappr.ui.map_canvas import DebouncedFigureCanvasTkAgg  # noqa: E402
 from pymappr.ui.projects_dialog import ProjectsDialog  # noqa: E402
+from pymappr.ui.save_image import (  # noqa: E402
+    AS_ON_SCREEN, JOURNAL_PAGE_WIDTH)
 
 MAX_SKIPPED_SHOWN = 12
 UNTITLED = "Untitled"
-# The export DPI of the "Publication style" preset (the point and legend
+# The export DPI and print width of the "Publication style" preset, a
+# Zootaxa / Phytotaxa figure: 600 dpi, 17 cm wide (the point and legend
 # halves are pymappr.styling.styles.PUBLICATION_POINT_EDGE and
 # pymappr.styling.legend.PUBLICATION_LEGEND).
 PUBLICATION_DPI = "600"
+PUBLICATION_WIDTH = JOURNAL_PAGE_WIDTH
 PROJECT_FILETYPES = [("PyMappr project", "*" + PROJECT_EXTENSION),
                      ("All files", "*.*")]
 
@@ -622,6 +626,7 @@ class PyMapprApp:
                 "hide_grid_labels": p.hide_grid_labels_var.get(),
                 "line_width": p.line_width_var.get(),
                 "dpi": p.dpi_var.get(),
+                "export_width": p.export_width_var.get(),
                 "ocean": p.ocean_var.get(),
                 "lake_fill": p.lake_fill_var.get(),
                 "bathymetry": p.bathymetry_var.get(),
@@ -683,6 +688,7 @@ class PyMapprApp:
         p.hide_grid_labels_var.set(m["hide_grid_labels"])
         p.line_width_var.set(m["line_width"])
         p.dpi_var.set(m["dpi"])
+        p.export_width_var.set(m.get("export_width", AS_ON_SCREEN))
         p.ocean_var.set(m["ocean"])
         p.lake_fill_var.set(m["lake_fill"])
         p.bathymetry_var.set(m["bathymetry"])
@@ -1198,6 +1204,7 @@ class PyMapprApp:
             self.entries, dataclasses.replace(p.legend_options(),
                                               **PUBLICATION_LEGEND)))
         p.dpi_var.set(PUBLICATION_DPI)
+        p.export_width_var.set(PUBLICATION_WIDTH)
         # Three shades alone cannot tell more than three groups apart.
         for entry in self.entries:
             entry.vary_symbols = True
@@ -1210,7 +1217,7 @@ class PyMapprApp:
         self._push_points()
         self.set_status("Applied the publication style. Export with "
                         "File \N{RIGHTWARDS ARROW} Save map as "
-                        f"({PUBLICATION_DPI} DPI).")
+                        f"({PUBLICATION_DPI} DPI, 17 cm wide).")
 
     def on_legend_options(self) -> None:
         """Any legend setting changed. Rebuilding is one legend build, so

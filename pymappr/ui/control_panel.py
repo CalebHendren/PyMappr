@@ -25,6 +25,7 @@ from pymappr.styling.legend import (COUNT_FORMATS, ENTRY_ORDERS, FONT_FAMILIES,
 from pymappr.styling.styles import (DEFAULT_PALETTE_NAME, PALETTES,
                                     POINT_EDGE_COLOR, POINT_EDGE_WIDTH,
                                     palette_for)
+from pymappr.ui.save_image import AS_ON_SCREEN
 
 PANEL_WIDTH = 320
 # How long typing has to pause before a text or number box redraws the map.
@@ -683,10 +684,11 @@ class ControlPanel(ttk.Frame):
 
     def _build_export_section(self, tab) -> None:
         sec = self._section(tab, "Export")
-        # Persisted default DPI (also saved in the project). The picker in
-        # the "Save map as..." dialog reads and updates it; format,
-        # resolution and DPI are all chosen there.
+        # Persisted default DPI and print width (also saved in the
+        # project). The "Save map as..." dialog reads and updates them;
+        # format, print width and DPI are all chosen there.
         self.dpi_var = tk.StringVar(value="200")
+        self.export_width_var = tk.StringVar(value=AS_ON_SCREEN)
         ttk.Button(sec, text="Save map as\N{HORIZONTAL ELLIPSIS}",
                    command=self.app.on_save_image).pack(fill="x", pady=2)
         ttk.Button(sec, text="Export as code (Python/R)"
@@ -697,7 +699,8 @@ class ControlPanel(ttk.Frame):
                                                                pady=(6, 2))
         ttk.Label(sec, text="Black & white points with black outlines and "
                             "varied shapes, a plain boxed legend with italic "
-                            "names, and 600 DPI export.",
+                            "names, and 600 DPI export 17 cm wide, the "
+                            "Zootaxa / Phytotaxa page.",
                   wraplength=PANEL_WIDTH - 60,
                   foreground="#666666").pack(anchor="w")
 

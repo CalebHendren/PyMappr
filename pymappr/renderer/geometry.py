@@ -60,9 +60,16 @@ def clamp_zoom_factor(factor: float, width: float,
     return min(factor, width / (world_width * 1e-6))
 
 
+# The printed area of a journal page: Zootaxa and Phytotaxa set figures
+# within 17 x 25 cm. A map saved at a print width never runs taller.
+PAGE_HEIGHT_CM = 25.0
+
+
 def export_geometry(pos_bounds: tuple[float, float, float, float],
                     fig_w: float, fig_h: float,
-                    margins: tuple[float, float, float, float]
+                    margins: tuple[float, float, float, float],
+                    width_in: float | None = None,
+                    max_height_in: float | None = None
                     ) -> tuple[tuple[float, float],
                                tuple[float, float, float, float]]:
     """Figure size (inches) and axes rectangle for a saved image that crops
@@ -74,12 +81,23 @@ def export_geometry(pos_bounds: tuple[float, float, float, float],
     kept at its on-screen inches, and the tick-label / edge margins are kept
     at their on-screen inches too (so labels never crowd off a narrow
     portrait crop); only the blank orientation side bars are dropped. A
-    full-canvas (landscape) map comes back at the figure size unchanged."""
+    full-canvas (landscape) map comes back at the figure size unchanged.
+
+    With *width_in* the map box is scaled, keeping its shape, so the whole
+    image is that wide - and no taller than *max_height_in*, which wins when
+    both cannot hold. Text and symbols are sized in points, so they then
+    print at their stated size whatever the window size was."""
     _x0, _y0, pw, ph = pos_bounds
     box_w, box_h = pw * fig_w, ph * fig_h
     left, bottom, right, top = margins
     left_gutter, right_gutter = left * fig_w, (1.0 - right) * fig_w
     bottom_gutter, top_gutter = bottom * fig_h, (1.0 - top) * fig_h
+    if width_in is not None:
+        scale = max(width_in - left_gutter - right_gutter, 1e-3) / box_w
+        if max_height_in is not None:
+            room = max(max_height_in - bottom_gutter - top_gutter, 1e-3)
+            scale = min(scale, room / box_h)
+        box_w, box_h = box_w * scale, box_h * scale
     exp_w = box_w + left_gutter + right_gutter
     exp_h = box_h + bottom_gutter + top_gutter
     rect = (left_gutter / exp_w, bottom_gutter / exp_h,
