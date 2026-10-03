@@ -19,6 +19,7 @@ from pymappr.renderer.geometry import (PAGE_HEIGHT_CM, clamp_zoom_factor,
                                        export_geometry, format_lat,
                                        format_lon, oriented_axes_rect,
                                        refit_xlim)
+from pymappr.renderer.grid_labels import GridLabelFormatter, GridLocator
 from pymappr.renderer.tables import (MARGINS_PLAIN, MARGINS_WITH_TICKS,
                                      ORIENTATION_ASPECT, Z_GRID)
 
@@ -580,15 +581,30 @@ class ViewMixin:
         for artist in self._artists.pop("graticule", []):
             artist.remove()
         on = self._graticule is not None
-        # Axis ticks and their labels only make sense on the rectangular
-        # default projection; curved projections draw the grid manually.
-        labels_on = on and self._graticule_labels and self.proj.is_geographic
+        # On the rectangular default projection the grid lines are the axis
+        # ticks. Curved projections draw the grid themselves and label it
+        # where it meets the frame; the globe's grid never reaches the
+        # frame, so the globe goes unlabelled.
+        labels_on = (on and self._graticule_labels
+                     and not self.proj.hemisphere)
         if on and self.proj.is_geographic:
             self.ax.xaxis.set_major_locator(MultipleLocator(self._graticule))
             self.ax.yaxis.set_major_locator(MultipleLocator(self._graticule))
             self.ax.grid(True, color="#787878", linewidth=0.4, alpha=0.7)
             for line in (*self.ax.get_xgridlines(), *self.ax.get_ygridlines()):
                 line.set_zorder(Z_GRID)
+            self.ax.xaxis.set_major_formatter(
+                GridLabelFormatter(self, "x", None))
+            self.ax.yaxis.set_major_formatter(
+                GridLabelFormatter(self, "y", None))
+        elif labels_on:
+            self.ax.grid(False)
+            self._artists["graticule"] = self._projected_graticule()
+            for which, axis in (("x", self.ax.xaxis), ("y", self.ax.yaxis)):
+                locator = GridLocator(self, which)
+                axis.set_major_locator(locator)
+                axis.set_major_formatter(
+                    GridLabelFormatter(self, which, locator))
         else:
             # Drop any degree-spaced locator: on projected axes (meters)
             # it would try to generate millions of ticks.

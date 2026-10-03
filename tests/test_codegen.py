@@ -441,7 +441,7 @@ def test_figure_size_drives_export_geometry():
 
 
 def test_graticule_labels_follow_the_app():
-    # Labeled ticks only on the plain projection with labels not hidden.
+    # Labeled ticks on every projection but the globe, labels not hidden.
     on = codegen.build_config(make_state(
         map={"projection": "Equirectangular"}), [])
     assert on["graticule"] == {"interval": 5.0, "labels": True}
@@ -452,7 +452,54 @@ def test_graticule_labels_follow_the_app():
     assert hidden["graticule"]["labels"] is False
     assert hidden["margins"] == codegen.MARGINS_PLAIN
     curved = codegen.build_config(make_state(), [])  # Robinson
-    assert curved["graticule"]["labels"] is False
+    assert curved["graticule"]["labels"] is True
+    assert curved["margins"] == codegen.MARGINS_WITH_TICKS
+    globe = codegen.build_config(make_state(
+        map={"projection": "Globe (Orthographic)", "proj_lon0": "0",
+             "proj_lat0": "0"}), [])
+    assert globe["graticule"]["labels"] is False
+
+
+@pytest.mark.parametrize("projection, extent", [
+    ("Lambert: Europe", "Europe"),
+    ("Robinson", "World"),
+    ("Mercator", (-100.0, -77.0, 6.0, 21.0)),
+])
+def test_exported_python_labels_the_grid_like_the_app(projection, extent):
+    import matplotlib
+    matplotlib.use("Agg")
+    from matplotlib.backends.backend_agg import FigureCanvasAgg
+    from matplotlib.figure import Figure
+
+    from pymappr.geo.layers import LayerStore
+    from pymappr.renderer import MapRenderer
+
+    def labels(ax):
+        return ([t.get_text() for t in ax.get_xticklabels() if t.get_text()],
+                [t.get_text() for t in ax.get_yticklabels() if t.get_text()])
+
+    app_fig = Figure(figsize=(9, 6.5), dpi=100)
+    FigureCanvasAgg(app_fig)
+    r = MapRenderer(app_fig, LayerStore())
+    r.set_projection(projection)
+    r.set_extent(extent)
+    r.set_graticule(5.0)
+    app_fig.canvas.draw()
+
+    state = make_state(map={"projection": projection,
+                            "graticule": "5\N{DEGREE SIGN}"})
+    ns = exec_python(codegen.generate_code(state, [], "Python"))
+    fig = ns["plt"].figure(figsize=(9, 6.5), dpi=100)
+    ax = fig.add_axes(list(r.ax.get_position().bounds))
+    ax.tick_params(labelsize=7, length=2.5, direction="out")
+    ax.set_xlim(*r.ax.get_xlim())
+    ax.set_ylim(*r.ax.get_ylim())
+    ns["draw_graticule"](ax)
+    fig.canvas.draw()
+    exported = labels(ax)
+    ns["plt"].close(fig)
+    assert exported == labels(r.ax)
+    assert exported[0] and exported[1]
 
 
 # ------------------------------------------------- renderer fidelity bits

@@ -56,7 +56,8 @@ import geopandas as gpd
 from matplotlib.collections import LineCollection
 from matplotlib.lines import Line2D
 from matplotlib.patches import Polygon, Rectangle
-from matplotlib.ticker import FuncFormatter, MultipleLocator
+from matplotlib.ticker import (Formatter, FuncFormatter, Locator,
+                               MultipleLocator)
 
 # Resolve the cache and any data/ files next to this script, so it runs
 # the same no matter which directory it is launched from.
@@ -432,18 +433,183 @@ def format_lat(value, _pos=None):
         return "0\N{DEGREE SIGN}"
     return f"{abs(value):g}\N{DEGREE SIGN}{'S' if value < 0 else 'N'}"
 
+# Grid labels, as in the app: every n-th line keeps its label so neighbours
+# never run together, and on a projected map the ticks go where each
+# meridian meets the bottom of the frame and each parallel the left.
+LABEL_STRIDES = (1, 2, 3, 4, 6, 9, 12, 18, 36)
+LABEL_WIDTH_EMS = 5 * 0.62 + 1.0
+LABEL_HEIGHT_EMS = 1.2 + 0.6
+
+
+def edge_crossings(xs, ys, edge, along):
+    """Where a polyline crosses y = edge (along "x", returning x) or
+    x = edge (along "y", returning y)."""
+    cut, other = (ys, xs) if along == "x" else (xs, ys)
+    found = []
+    d = cut - edge
+    for i in range(len(d) - 1):
+        a, b = d[i], d[i + 1]
+        if not (np.isfinite(a) and np.isfinite(b)) or a * b > 0 or a == b:
+            continue
+        if not (np.isfinite(other[i]) and np.isfinite(other[i + 1])):
+            continue
+        t = a / (a - b)
+        found.append(float(other[i] + t * (other[i + 1] - other[i])))
+    return found
+
+
+def edge_ticks(xs, ys, view, along):
+    """Tick positions where a grid line meets the bottom or left edge; a
+    line stopping short is continued straight on from its end."""
+    (x0, x1), (y0, y1) = view
+    if along == "x":
+        ticks = [x for x in edge_crossings(xs, ys, y0, "x") if x0 <= x <= x1]
+    else:
+        ticks = [y for y in edge_crossings(xs, ys, x0, "y") if y0 <= y <= y1]
+    if ticks:
+        return ticks
+    good = np.isfinite(xs) & np.isfinite(ys)
+    if good.sum() < 4:
+        return []
+    xs, ys = xs[good], ys[good]
+    end = int(np.argmin(ys if along == "x" else xs))
+    if 0 < end < len(xs) - 1:
+        return []
+    inner = 3 if end == 0 else len(xs) - 4
+    x, y = float(xs[end]), float(ys[end])
+    if not (x0 <= x <= x1 and y0 <= y <= y1):
+        return []
+    dx, dy = x - float(xs[inner]), y - float(ys[inner])
+    if along == "x":
+        if dy >= 0:
+            return []
+        t = (y0 - y) / dy
+        tick, reach = x + t * dx, (x1 - x0)
+        ok = x0 <= tick <= x1
+    else:
+        if dx >= 0:
+            return []
+        t = (x0 - x) / dx
+        tick, reach = y + t * dy, (y1 - y0)
+        ok = y0 <= tick <= y1
+    drift = abs(t * (dx if along == "x" else dy))
+    return [tick] if ok and drift <= 0.03 * reach else []
+
+
+def label_stride(spacing_pts, label_pts):
+    if spacing_pts <= 0:
+        return LABEL_STRIDES[-1]
+    need = label_pts / spacing_pts
+    return next((s for s in LABEL_STRIDES if s >= need), LABEL_STRIDES[-1])
+
+
+class GridLocator(Locator):
+    """Ticks where the projected graticule meets the frame."""
+
+    def __init__(self, ax, which):
+        self.ax = ax
+        self.which = which
+        self.degrees = {}
+
+    def __call__(self):
+        step = GRATICULE["interval"]
+        if not step:
+            return []
+        view = (tuple(sorted(self.ax.get_xlim())),
+                tuple(sorted(self.ax.get_ylim())))
+        found = {}
+        world_w = PROJ["bounds"][1] - PROJ["bounds"][0]
+        offsets = (0.0,) if PROJ["hemisphere"] else (-world_w, 0.0, world_w)
+        if self.which == "x":
+            lats = np.linspace(PROJ["min_lat"], PROJ["max_lat"], 361)
+            for lon in np.arange(-180.0, 180.0, step):
+                xs, ys = proj_forward(np.full_like(lats, lon), lats,
+                                      clamp=False)
+                for off in offsets:
+                    for x in edge_ticks(xs + off, ys, view, "x"):
+                        found[x] = float(lon)
+        else:
+            span = PROJ["lon_halfspan"]
+            lons = PROJ["lon_0"] + np.linspace(-span, span, 721)
+            first = math.ceil(PROJ["min_lat"] / step) * step
+            for lat in np.arange(first, PROJ["max_lat"] + step / 2, step):
+                if abs(lat) > 90:
+                    continue
+                xs, ys = proj_forward(lons, np.full_like(lons, lat),
+                                      clamp=False)
+                for off in offsets:
+                    for y in edge_ticks(xs + off, ys, view, "y"):
+                        found[y] = float(lat)
+        self.degrees = found
+        return sorted(found)
+
+
+class GridLabelFormatter(Formatter):
+    """Degree labels, thinned so neighbours never run together."""
+
+    def __init__(self, ax, which, locator=None):
+        self.ax = ax
+        self.which = which
+        self.locator = locator
+
+    def _degree(self, value):
+        if self.locator is None:
+            return float(value)
+        return self.locator.degrees.get(value, float("nan"))
+
+    def _text(self, degree):
+        if not np.isfinite(degree):
+            return ""
+        return format_lon(degree) if self.which == "x" else format_lat(degree)
+
+    def __call__(self, value, pos=None):
+        return self._text(self._degree(value))
+
+    def format_ticks(self, values):
+        values = list(values)
+        step = GRATICULE["interval"]
+        stride = self._stride(values)
+        labels = []
+        for degree in (self._degree(v) for v in values):
+            keep = (step and np.isfinite(degree)
+                    and round(degree / step) % stride == 0)
+            labels.append(self._text(degree) if keep else "")
+        return labels
+
+    def _stride(self, values):
+        if len(values) < 2:
+            return 1
+        ax = self.ax
+        if self.which == "x":
+            px = ax.transData.transform(
+                np.column_stack([values, np.zeros(len(values))]))[:, 0]
+        else:
+            px = ax.transData.transform(
+                np.column_stack([np.zeros(len(values)), values]))[:, 1]
+        gaps = np.diff(np.sort(px))
+        gaps = gaps[gaps > 0]
+        if not len(gaps):
+            return 1
+        ticks = (ax.xaxis if self.which == "x" else ax.yaxis).get_major_ticks()
+        size = ticks[0].label1.get_fontsize() if ticks else 7.0
+        ems = LABEL_WIDTH_EMS if self.which == "x" else LABEL_HEIGHT_EMS
+        return label_stride(float(gaps.min()) * 72.0 / ax.figure.dpi,
+                            ems * size)
+
 
 def draw_graticule(ax):
     """The lon/lat grid exactly like the app: labelled axis ticks on the
     plain projection, projected polylines on curved ones."""
     interval = GRATICULE["interval"]
-    labels_on = bool(interval) and GRATICULE["labels"] and MAP_CRS is None
+    labels_on = bool(interval) and GRATICULE["labels"]
     if interval and MAP_CRS is None:
         ax.xaxis.set_major_locator(MultipleLocator(interval))
         ax.yaxis.set_major_locator(MultipleLocator(interval))
         ax.grid(True, color="#787878", linewidth=0.4, alpha=0.7)
         for line in (*ax.get_xgridlines(), *ax.get_ygridlines()):
             line.set_zorder(Z_GRID)
+        ax.xaxis.set_major_formatter(GridLabelFormatter(ax, "x"))
+        ax.yaxis.set_major_formatter(GridLabelFormatter(ax, "y"))
     elif interval:
         max_lat = PROJ["max_lat"]
         segments = []
@@ -467,6 +633,12 @@ def draw_graticule(ax):
                 col.set_transform(mtransforms.Affine2D().translate(off, 0)
                                   + ax.transData)
             ax.add_collection(col)
+        if labels_on:
+            for which, axis in (("x", ax.xaxis), ("y", ax.yaxis)):
+                locator = GridLocator(ax, which)
+                axis.set_major_locator(locator)
+                axis.set_major_formatter(
+                    GridLabelFormatter(ax, which, locator))
     ax.tick_params(labelbottom=labels_on, labelleft=labels_on,
                    bottom=labels_on, left=labels_on)
     if PROJ["hemisphere"]:  # the globe's horizon circle

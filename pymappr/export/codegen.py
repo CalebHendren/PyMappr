@@ -511,9 +511,11 @@ def build_config(state: dict, entries, project_name: str = "map",
     projection = get_projection(projection_name, lon0, lat0)
 
     graticule = _GRATICULE_DEGREES.get(str(m.get("graticule", "Off")))
+    # As in the app: every projection but the globe (whose grid never
+    # reaches the frame) labels its grid.
     labels_on = (graticule is not None
                  and not bool(m.get("hide_grid_labels", False))
-                 and projection.is_geographic)
+                 and not projection.hemisphere)
     margins = MARGINS_WITH_TICKS if labels_on else MARGINS_PLAIN
 
     base_size = figure_size or DEFAULT_FIGSIZE
