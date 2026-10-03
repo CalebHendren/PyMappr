@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 
+import matplotlib
 import matplotlib.transforms as mtransforms
 import numpy as np
 from matplotlib.collections import LineCollection
@@ -26,6 +27,12 @@ _WRAP_OFFSETS = (-1, 0, 1)
 # Fraction of the shorter side of the map box the globe's disk spans, so it
 # sits centred with a margin instead of running the full length of the canvas.
 _GLOBE_FILL = 0.88
+
+# Lettering in a saved PDF or SVG stays editable text: TrueType (Type 42)
+# fonts in a PDF and real <text> elements in an SVG. matplotlib's defaults
+# (Type 3 fonts, glyph outlines) are hard for a journal's production staff
+# or an illustration program to edit.
+_VECTOR_RC = {"pdf.fonttype": 42, "ps.fonttype": 42, "svg.fonttype": "none"}
 
 # A scroll-wheel or zoom-button zoom renders for real once no notch has come
 # for this long (milliseconds). Until then each notch only rescales the map
@@ -660,7 +667,8 @@ class ViewMixin:
                 return
             if fmt in ("jpg", "jpeg"):
                 fmt = "jpeg"  # JPEG has no alpha; the white facecolor fills it
-            self.fig.savefig(path, format=fmt, dpi=dpi, facecolor="white")
+            with matplotlib.rc_context(_VECTOR_RC):
+                self.fig.savefig(path, format=fmt, dpi=dpi, facecolor="white")
 
     @contextmanager
     def basemap_detail_for(self, dpi: float):
@@ -704,9 +712,14 @@ class ViewMixin:
             self.redraw()
 
     def _save_tiff(self, path: str, dpi: int) -> None:
-        # Render to PNG in memory first; matplotlib's Agg backend does not
-        # embed DPI metadata in TIFF files, so we hand off to Pillow which
-        # writes the correct XResolution/YResolution TIFF tags.
+        """Write a TIFF the way journals ask for one (Zootaxa, Phytotaxa):
+        LZW-compressed, without an alpha channel, and greyscale when the map
+        has no colour in it. An uncompressed RGBA TIFF of a 600-dpi map runs
+        to ~90 MB; this is well under 1 MB for a black-and-white map.
+
+        Rendered to PNG in memory first; matplotlib's Agg backend does not
+        embed DPI metadata in TIFF files, so Pillow writes the file with the
+        correct XResolution/YResolution tags."""
         import io
 
         from PIL import Image
@@ -714,5 +727,9 @@ class ViewMixin:
         buf = io.BytesIO()
         self.fig.savefig(buf, format="png", dpi=dpi, facecolor="white")
         buf.seek(0)
-        img = Image.open(buf)
-        img.save(path, format="TIFF", dpi=(dpi, dpi))
+        img = Image.open(buf).convert("RGB")  # opaque white: alpha adds nothing
+        pixels = np.asarray(img)
+        if ((pixels[..., 0] == pixels[..., 1]).all()
+                and (pixels[..., 1] == pixels[..., 2]).all()):
+            img = img.convert("L")
+        img.save(path, format="TIFF", dpi=(dpi, dpi), compression="tiff_lzw")

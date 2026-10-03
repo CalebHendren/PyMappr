@@ -1628,3 +1628,48 @@ def test_label_and_marker_caches_follow_the_region_not_just_the_crs():
     fx, _fy = r.proj.forward(features["x"].to_numpy(),
                              features["y"].to_numpy(), clamp=False)
     np.testing.assert_array_equal(px, fx)
+
+
+def _black_marker_renderer():
+    r = _renderer(4.0, 3.0)
+    r.set_extent("World")
+    r.ax.plot([-60.0], [20.0], marker="s", markersize=8, color="black")
+    return r
+
+
+def test_a_tiff_is_lzw_compressed_greyscale_without_alpha(tmp_path):
+    from PIL import Image
+
+    r = _black_marker_renderer()
+    path = tmp_path / "map.tif"
+    r.save_image(str(path), "tiff", dpi=150)
+    with Image.open(path) as img:
+        assert img.mode == "L"
+        assert img.info["compression"] == "tiff_lzw"
+        assert img.info["dpi"] == (150, 150)
+        assert img.size == (600, 450)
+
+
+def test_a_tiff_with_colour_stays_rgb(tmp_path):
+    from PIL import Image
+
+    r = _black_marker_renderer()
+    r.ax.plot([0.0], [0.0], marker="o", markersize=8, color="red")
+    path = tmp_path / "map.tif"
+    r.save_image(str(path), "tiff", dpi=100)
+    with Image.open(path) as img:
+        assert img.mode == "RGB"
+        assert img.info["compression"] == "tiff_lzw"
+
+
+def test_vector_exports_keep_text_editable(tmp_path):
+    r = _black_marker_renderer()
+    r.ax.set_title("Nebulobunus")
+    r.save_image(str(tmp_path / "map.pdf"), "pdf")
+    r.save_image(str(tmp_path / "map.svg"), "svg")
+    pdf = (tmp_path / "map.pdf").read_bytes()
+    assert b"/FontFile2" in pdf and b"/Subtype /Type3" not in pdf  # TrueType
+    svg = (tmp_path / "map.svg").read_text(encoding="utf-8")
+    assert "<text" in svg and "Nebulobunus" in svg
+    # The setting is scoped to the export, not left on for the session.
+    assert matplotlib.rcParams["pdf.fonttype"] == 3
