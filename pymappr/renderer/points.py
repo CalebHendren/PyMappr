@@ -196,12 +196,23 @@ class PointsMixin:
     def _legend_placement(self) -> dict:
         """Legend ``loc``/``bbox_to_anchor`` kwargs: the automatic location,
         or - once the legend has been dragged - its manual lower-left anchor
-        in axes fraction (no bounds)."""
+        in axes fraction (no bounds).
+
+        A legend in the scale bar's corner sits beyond the bar instead of
+        on it: its frame is opaque and would hide the bar completely."""
         if self._legend_anchor is not None:
             # borderaxespad=0 pins the lower-left corner exactly on the
             # anchor, so grabbing an auto-placed legend doesn't make it hop.
             return {"loc": "lower left", "bbox_to_anchor": self._legend_anchor,
                     "borderaxespad": 0.0}
+        clear = getattr(self, "_scale_bar_clear", None)
+        if clear is not None and clear[0] == self._legend.location:
+            corner, frac, points = clear
+            x = 0.0 if corner.endswith("left") else 1.0
+            lift = mtransforms.ScaledTranslation(0.0, points / 72.0,
+                                                 self.fig.dpi_scale_trans)
+            return {"loc": corner, "bbox_to_anchor": (x, frac),
+                    "bbox_transform": self.ax.transAxes + lift}
         return {"loc": self._legend.location}
 
     def _update_legend(self) -> None:

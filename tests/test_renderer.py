@@ -1709,3 +1709,44 @@ def test_a_tiff_saved_at_a_print_width_is_that_wide(tmp_path):
     # The on-screen figure is put back.
     assert tuple(r.fig.get_size_inches()) == pytest.approx((4.0, 3.0))
     assert r.export_size_inches(17.0)[0] == pytest.approx(17 / 2.54)
+
+
+def _legend_and_bar_boxes(r):
+    r.fig.canvas.draw()
+    renderer = r.fig.canvas.get_renderer()
+    legend = r.ax.get_legend().get_window_extent(renderer)
+    bar = mtransforms_union([a.get_window_extent(renderer)
+                             for a in r._artists["scale_bar"]])
+    return legend, bar
+
+
+def mtransforms_union(boxes):
+    from matplotlib.transforms import Bbox
+    return Bbox.union(boxes)
+
+
+@pytest.mark.parametrize("corner", ["lower left", "upper right"])
+def test_a_legend_in_the_scale_bars_corner_leaves_the_bar_visible(corner):
+    r = _renderer(9.0, 6.5)
+    r.set_extent((-100.0, -77.0, 6.0, 21.0))
+    r.set_point_groups([(f"Taxon {i}", PointStyle(color="#000000"),
+                         np.array([-90.0 + i]), np.array([15.0]))
+                        for i in range(5)])
+    r.set_legend(LegendOptions(location=corner))
+    r.set_scale_bar(ScaleBarOptions(show=True, position=corner))
+    legend, bar = _legend_and_bar_boxes(r)
+    assert not legend.overlaps(bar)
+    # Still clear when the map is saved at another size.
+    r.fig.set_size_inches(17 / 2.54, 17 / 2.54 * 6.5 / 9.0)
+    legend, bar = _legend_and_bar_boxes(r)
+    assert not legend.overlaps(bar)
+
+
+def test_a_legend_elsewhere_keeps_its_corner():
+    r = _renderer(9.0, 6.5)
+    r.set_extent((-100.0, -77.0, 6.0, 21.0))
+    r.set_point_groups([("A", PointStyle(color="#000000"),
+                         np.array([-90.0]), np.array([15.0]))])
+    r.set_legend(LegendOptions(location="upper left"))
+    r.set_scale_bar(ScaleBarOptions(show=True, position="lower left"))
+    assert r._legend_placement() == {"loc": "upper left"}

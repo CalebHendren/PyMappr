@@ -1928,3 +1928,37 @@ def test_export_filename_drops_the_extension_before_the_device_rule():
         "sites.csv")
     assert codegen._export_filename(".csv", ".csv", used, "data") == (
         "data.csv")
+
+
+def test_exported_legend_clears_a_scale_bar_in_its_corner(tmp_path):
+    state = make_state(map={"scale_bar": {"show": True,
+                                          "position": "lower left"}})
+    state["legend"]["location"] = "lower left"
+    ns = exec_python(codegen.generate_code(state, [], "Python"))
+    fig = ns["plt"].figure(figsize=(6, 4))
+    ax = fig.add_axes([0.05, 0.05, 0.9, 0.9])
+    ns["SCALE_BAR_CLEAR"] = ("lower left", 0.08, 11.2)
+    placement = ns["legend_placement"](ax)
+    assert placement["loc"] == "lower left"
+    assert placement["bbox_to_anchor"] == (0.0, 0.08)
+    ns["LEGEND"]["location"] = "upper right"
+    assert ns["legend_placement"](ax) == {"loc": "upper right"}
+    ns["plt"].close(fig)
+
+    r = codegen.generate_code(state, [], "R")
+    out = run_r_harness(tmp_path, r, """
+clear <- scale_bar_clearance()
+stopifnot(identical(clear$corner, "lower left"), clear$y > 0.05)
+SCALE_BAR$show <- FALSE
+stopifnot(is.null(scale_bar_clearance()))
+""")
+    assert "HARNESS OK" in out
+
+
+@run_r
+def test_exported_r_script_with_legend_and_bar_in_one_corner(tmp_path):
+    state = r_run_state("Mercator")
+    state["map"]["scale_bar"] = {"show": True, "position": "lower left"}
+    state["legend"]["location"] = "lower left"
+    result = run_exported_r(tmp_path, state, [cities_entry()])
+    assert_r_map_saved(tmp_path, result)

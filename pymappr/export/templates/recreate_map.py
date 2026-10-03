@@ -750,6 +750,9 @@ BAR_HEIGHT = 0.011
 BAR_GAP = 0.005
 LABEL_GAP = 0.012
 LABEL_ROOM = 0.030
+# Where a legend in the scale bar's corner has to stop to leave the bar in
+# view: (corner, axes-fraction y, points). Set by draw_scale_bar.
+SCALE_BAR_CLEAR = None
 
 
 def fit_bar_width(ax, metres, x, row, right_anchored):
@@ -788,6 +791,7 @@ def fit_bar_width(ax, metres, x, row, right_anchored):
 def draw_scale_bar(ax):
     """A geodesically measured scale bar, drawn in axes-fraction coordinates
     so it keeps its place at any figure size."""
+    global SCALE_BAR_CLEAR
     opts = SCALE_BAR
     if not opts["show"]:
         return
@@ -852,6 +856,17 @@ def draw_scale_bar(ax):
                 ha="center", va="bottom" if above else "top",
                 fontsize=opts["fontsize"], color=opts["color"],
                 path_effects=LABEL_HALO, zorder=Z_SCALE_BAR, clip_on=False)
+    if not dragged:
+        # Above the bar and its label in a lower corner, below the bar (and
+        # any second label) in an upper one; the label is sized in points.
+        text = opts["fontsize"] * 1.4
+        if opts["position"].startswith("lower"):
+            SCALE_BAR_CLEAR = (opts["position"], base_y + stack + LABEL_GAP,
+                               text)
+        elif n > 1:
+            SCALE_BAR_CLEAR = (opts["position"], base_y - LABEL_GAP, -text)
+        else:
+            SCALE_BAR_CLEAR = (opts["position"], base_y, 0.0)
 
 
 # ------------------------------------------------------------- point data
@@ -982,10 +997,24 @@ def legend_handle(style, size=None):
                   markeredgecolor=edge, markeredgewidth=edge_w)
 
 
-def legend_kwargs():
+def legend_placement(ax):
+    """The legend's loc, lifted clear of the scale bar when they share a
+    corner: the legend frame is opaque and would hide the bar."""
+    clear = SCALE_BAR_CLEAR
+    if clear is None or clear[0] != LEGEND["location"]:
+        return dict(loc=LEGEND["location"])
+    corner, frac, points = clear
+    lift = mtransforms.ScaledTranslation(0.0, points / 72.0,
+                                         ax.figure.dpi_scale_trans)
+    return dict(loc=corner,
+                bbox_to_anchor=(0.0 if corner.endswith("left") else 1.0, frac),
+                bbox_transform=ax.transAxes + lift)
+
+
+def legend_kwargs(ax):
     """The legend keywords shared by both draw paths, from LEGEND."""
     return dict(
-        loc=LEGEND["location"], title=LEGEND["title"] or None,
+        **legend_placement(ax), title=LEGEND["title"] or None,
         fontsize=LEGEND["fontsize"], title_fontsize=LEGEND["title_fontsize"],
         ncols=LEGEND["columns"], markerscale=LEGEND["marker_scale"],
         labelspacing=LEGEND["label_spacing"],
@@ -1076,7 +1105,7 @@ def add_legend(ax):
         handles = [legend_handle(style) for _label, style in rows]
         for handle, (label, _style) in zip(handles, rows):
             handle.set_label(label)
-        leg = ax.legend(handles=handles, **legend_kwargs())
+        leg = ax.legend(handles=handles, **legend_kwargs(ax))
         style_legend(ax.figure, leg, set())
         return
     handles, labels, header_rows = [], [], []
@@ -1112,7 +1141,7 @@ def add_legend(ax):
                     header_rows.append(len(labels))
             handles.append(legend_handle(style, size=45))
             labels.append(indent * (depth + 1) + label)
-    leg = ax.legend(handles, labels, **legend_kwargs())
+    leg = ax.legend(handles, labels, **legend_kwargs(ax))
     style_legend(ax.figure, leg, set(header_rows))
 
 

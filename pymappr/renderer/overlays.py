@@ -26,6 +26,10 @@ class OverlaysMixin:
         self._compass = CompassOptions()
         self._scale_bar = ScaleBarOptions()
         self._scale_bar_note: str | None = None
+        # (corner, axes-fraction y, points) a legend in the scale bar's
+        # corner must keep beyond to leave the bar visible; see
+        # _scale_bar_clearance.
+        self._scale_bar_clear: tuple[str, float, float] | None = None
 
     def set_compass(self, options: CompassOptions) -> None:
         """Set the north arrow's options."""
@@ -204,9 +208,30 @@ class OverlaysMixin:
         return width
 
     def _apply_scale_bar(self) -> None:
+        before = self._scale_bar_clear
+        self._draw_scale_bar_artists()
+        if self._scale_bar_clear != before:
+            # A legend in the bar's corner moves to keep it in view.
+            self._update_legend()
+
+    def _scale_bar_clearance(self, opts, base_y: float, stack: float,
+                             units: list) -> tuple[str, float, float]:
+        """Where a legend in the bar's corner has to stop: above the bar
+        and its label in a lower corner, below the bar (and any second
+        label) in an upper one. The label is sized in points, so the
+        clearance is an axes fraction plus points."""
+        text = opts.fontsize * 1.4
+        if opts.position.startswith("lower"):
+            return opts.position, base_y + stack + self._LABEL_GAP, text
+        if len(units) > 1:
+            return opts.position, base_y - self._LABEL_GAP, -text
+        return opts.position, base_y, 0.0
+
+    def _draw_scale_bar_artists(self) -> None:
         for artist in self._artists.pop("scale_bar", []):
             artist.remove()
         self._scale_bar_note = None
+        self._scale_bar_clear = None
         opts = self._scale_bar
         if not opts.show:
             return
@@ -254,6 +279,9 @@ class OverlaysMixin:
 
         self._artists["scale_bar"] = self._draw_scale_bar(
             bars, x, base_y, right_anchored, opts)
+        if not dragged:
+            self._scale_bar_clear = self._scale_bar_clearance(
+                opts, base_y, stack, units)
 
     def _draw_scale_bar(self, bars, x, base_y, right_anchored, opts) -> list:
         """Draw the bar(s) and their labels in axes-fraction coordinates, so
