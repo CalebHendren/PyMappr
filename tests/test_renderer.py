@@ -1750,3 +1750,26 @@ def test_a_legend_elsewhere_keeps_its_corner():
     r.set_legend(LegendOptions(location="upper left"))
     r.set_scale_bar(ScaleBarOptions(show=True, position="lower left"))
     assert r._legend_placement() == {"loc": "upper left"}
+
+
+@pytest.mark.parametrize("lons, expected", [
+    ([177.9, 179.2, -179.98, -172.4, -171.7], (177.9, 188.3)),
+    ([-95.0, -80.0, -88.0], (-95.0, -80.0)),
+    ([10.0], (10.0, 10.0)),
+    ([-100.0, 100.0, 0.0], (-100.0, 100.0)),  # no shorter way round
+    ([-170.0, 170.0, 0.0], (0.0, 190.0)),
+])
+def test_lon_span_takes_the_short_way_round(lons, expected):
+    from pymappr.renderer.geometry import lon_span
+    assert lon_span(lons) == pytest.approx(expected)
+
+
+@pytest.mark.parametrize("projection", ["Equirectangular", "Robinson",
+                                        "Mercator"])
+def test_an_extent_across_the_antimeridian_frames_just_that(projection):
+    r = _renderer(9.0, 6.5)
+    r.set_projection(projection)
+    r.set_extent((175.0, 191.0, -23.5, -11.0))
+    x0, x1 = r.ax.get_xlim()
+    # A small window onto the Pacific, not the whole world.
+    assert (x1 - x0) < r.proj.world_width / 8

@@ -155,7 +155,11 @@ class ViewMixin:
         if width / height < box_ratio:  # widen to fill the canvas
             new_w = height * box_ratio
             if new_w <= world_w:
-                cx = min(max((x0 + x1) / 2, wx0 + new_w / 2), wx1 - new_w / 2)
+                cx = (x0 + x1) / 2
+                # Kept inside the world, unless the extent runs across the
+                # antimeridian onto the wrap-around copy on purpose.
+                if wx0 <= x0 and x1 <= wx1:
+                    cx = min(max(cx, wx0 + new_w / 2), wx1 - new_w / 2)
                 x0, x1 = cx - new_w / 2, cx + new_w / 2
         else:  # grow vertically to fill the canvas
             new_h = width / box_ratio

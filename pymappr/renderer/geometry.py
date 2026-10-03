@@ -5,6 +5,8 @@ tested on its own."""
 
 from __future__ import annotations
 
+import numpy as np
+
 
 def oriented_axes_rect(margins: tuple[float, float, float, float],
                        fig_w: float, fig_h: float,
@@ -103,6 +105,23 @@ def export_geometry(pos_bounds: tuple[float, float, float, float],
     rect = (left_gutter / exp_w, bottom_gutter / exp_h,
             box_w / exp_w, box_h / exp_h)
     return (exp_w, exp_h), rect
+
+
+def lon_span(lons) -> tuple[float, float]:
+    """The shortest run of longitude covering every value, as (west, east).
+
+    Points on both sides of the antimeridian (Fiji at 178E, Samoa at 172W)
+    span 178 to 188 - east given past 180 - rather than 172W to 178E, the
+    whole world the other way round."""
+    values = np.unique(np.asarray(lons, dtype=float))
+    values = values[np.isfinite(values)]
+    if len(values) < 2:
+        return float(values[0]), float(values[-1])
+    gaps = np.diff(values)
+    widest = int(np.argmax(gaps))
+    if gaps[widest] <= 360.0 - (values[-1] - values[0]):
+        return float(values[0]), float(values[-1])
+    return float(values[widest + 1]), float(values[widest] + 360.0)
 
 
 def _norm_lon(value: float) -> float:

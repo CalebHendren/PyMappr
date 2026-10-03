@@ -14,6 +14,7 @@ import matplotlib
 
 matplotlib.use("TkAgg")
 
+import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
 
 from matplotlib.backends.backend_tkagg import NavigationToolbar2Tk  # noqa: E402
@@ -29,6 +30,7 @@ from pymappr.files.projects import (  # noqa: E402
     PROJECT_EXTENSION, DatasetEntry)
 from pymappr.geo.layers import LayerStore  # noqa: E402
 from pymappr.renderer import MapRenderer  # noqa: E402
+from pymappr.renderer.geometry import lon_span  # noqa: E402
 from pymappr.styling.decorations import (  # noqa: E402
     CompassOptions, ScaleBarOptions)
 from pymappr.styling.layout import (  # noqa: E402
@@ -1109,13 +1111,19 @@ class PyMapprApp:
                   if e.visible and len(e.dataset)]
         if not frames:
             return
-        x0 = min(frame["lon"].min() for frame in frames)
-        x1 = max(frame["lon"].max() for frame in frames)
+        # The shortest span, so points either side of the antimeridian
+        # (Fiji and Samoa) frame the Pacific, not the whole world.
+        x0, x1 = lon_span(np.concatenate([frame["lon"].to_numpy()
+                                          for frame in frames]))
         y0 = min(frame["lat"].min() for frame in frames)
         y1 = max(frame["lat"].max() for frame in frames)
         pad_x = max((x1 - x0) * 0.15, 2.0)
         pad_y = max((y1 - y0) * 0.15, 2.0)
-        self.renderer.set_extent((max(x0 - pad_x, -180), min(x1 + pad_x, 180),
+        if x1 > 180:  # across the antimeridian: no 180 edge to stop at
+            west, east = x0 - pad_x, x1 + pad_x
+        else:
+            west, east = max(x0 - pad_x, -180), min(x1 + pad_x, 180)
+        self.renderer.set_extent((west, east,
                                   max(y0 - pad_y, -90), min(y1 + pad_y, 90)))
         self.toolbar.update()  # make this view the toolbar's Home
         self.renderer.redraw()
