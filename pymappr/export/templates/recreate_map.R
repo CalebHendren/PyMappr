@@ -226,6 +226,13 @@ load_all_points <- function() {
       renamed <- groups %in% names(spec$style_keys)
       keys[renamed] <- spec$style_keys[groups[renamed]]
     }
+    # Rows marked for open symbols (type localities, say) take the open
+    # form of their group's style, under their own key.
+    if (!is.null(spec$open_col) && length(spec$open_values) > 0
+        && spec$open_col %in% names(df)) {
+      marked <- df[[spec$open_col]] %in% spec$open_values
+      keys[marked] <- paste0(keys[marked], OPEN_KEY_SUFFIX)
+    }
     data.frame(lon = df$`_lon`, lat = df$`_lat`, key = unname(keys))
   })
   merged <- do.call(rbind, frames)

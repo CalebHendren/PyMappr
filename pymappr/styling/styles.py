@@ -6,7 +6,7 @@ from dataclasses import dataclass
 
 import pandas as pd
 
-__all__ = ["PointStyle", "MARKERS", "OPEN_SUFFIX", "DEFAULT_PALETTE",
+__all__ = ["PointStyle", "MARKERS", "OPEN_SUFFIX", "open_form", "DEFAULT_PALETTE",
            "OKABE_ITO", "BLACK_AND_WHITE", "BLACK_AND_WHITE_NAME", "PALETTES",
            "DEFAULT_PALETTE_NAME", "palette_for", "POINT_EDGE_COLOR",
            "POINT_EDGE_WIDTH", "group_points", "default_styles",
@@ -111,6 +111,15 @@ class PointStyle:
     def is_open(self) -> bool:
         """Open markers draw only the outline in the style's color."""
         return self.marker.endswith(OPEN_SUFFIX)
+
+
+def open_form(style: PointStyle) -> PointStyle:
+    """*style* drawn as an outline only: the open form of its symbol, in
+    its colour, at its size."""
+    if style.is_open:
+        return style
+    return PointStyle(color=style.color, marker=style.marker + OPEN_SUFFIX,
+                      size=style.size)
 
 
 # Legend rows are identified by a tagged key, so a value that appears in both

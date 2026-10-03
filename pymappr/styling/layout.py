@@ -15,14 +15,17 @@ from pymappr.files.projects import DatasetEntry
 from pymappr.styling.legend import (LegendOptions, format_count, is_hidden,
                                     legend_counts, legend_sections,
                                     manual_order, order_labels, override_label)
-from pymappr.styling.styles import (PointStyle, apply_override,
+from pymappr.styling.styles import (OPEN_SUFFIX, PointStyle, apply_override,
                                     attribute_style_maps, default_styles,
-                                    group_points, owner_map, resolve_nesting,
-                                    row_key, style_by_attributes)
+                                    group_points, open_form, owner_map,
+                                    resolve_nesting, row_key,
+                                    style_by_attributes)
 
 __all__ = ["DatasetLayout", "MapLayout", "column_key", "group_styles",
            "layout_points", "with_default_title", "editor_rows",
-           "parent_name_column", "organise_publication_legend"]
+           "parent_name_column", "organise_publication_legend",
+           "column_values", "holotype_marking", "open_mask",
+           "OPEN_GROUP_PREFIX"]
 
 
 @dataclass
@@ -43,6 +46,10 @@ class DatasetLayout:
     # Group-by mode: where this dataset's colours start in the palette, so
     # several datasets on one map get distinct default colours.
     palette_offset: int = 0
+    # (label, style, rows) for the rows drawn with open symbols (see
+    # DatasetEntry.open_by), each group's in the open form of its style.
+    # Drawn over the groups; their rows are not in groups.
+    open_groups: list = field(default_factory=list)
 
 
 @dataclass
@@ -52,10 +59,87 @@ class MapLayout:
     sections: list | None
     # ... otherwise the plain legend's rows, in order.
     row_order: list | None
+    # A last legend row saying what open symbols mark - (label, style) -
+    # or None when no open symbols are drawn.
+    open_note: tuple | None = None
 
     @property
     def groups(self) -> list:
-        return [group for dataset in self.datasets for group in dataset.groups]
+        """Everything to draw, in draw order: open symbols last, on top."""
+        return ([group for dataset in self.datasets
+                 for group in dataset.groups]
+                + [group for dataset in self.datasets
+                   for group in dataset.open_groups])
+
+
+# The label prefix of an open-symbol draw group, which no legend row uses.
+OPEN_GROUP_PREFIX = "_open: "
+
+
+def open_mask(entry: DatasetEntry, rows):
+    """Which of *rows* draw with open symbols, or None when none can."""
+    key = column_key(entry, entry.open_by)
+    if key is None or key not in rows.columns or not entry.open_values:
+        return None
+    values = {str(v) for v in entry.open_values}
+    return rows[key].fillna("").astype(str).isin(values).to_numpy()
+
+
+def column_values(entry: DatasetEntry, label: str) -> list[str]:
+    """The distinct non-blank values of a name column, sorted."""
+    key = column_key(entry, label)
+    frame = entry.dataset.frame
+    if key is None or key not in frame.columns:
+        return []
+    values = frame[key].fillna("").astype(str).str.strip()
+    return sorted(v for v in values.unique() if v)
+
+
+# Column names a type-status column goes by, compared in lower case.
+_TYPE_STATUS_NAMES = ("type status", "typestatus", "type", "status",
+                      "type material")
+
+
+def holotype_marking(entry: DatasetEntry) -> tuple[str, str] | None:
+    """(column, value) marking the holotypes, when the dataset has a
+    type-status column with a "Holotype" value; None otherwise."""
+    for label in entry.dataset.name_labels:
+        if label.strip().lower() not in _TYPE_STATUS_NAMES:
+            continue
+        for value in column_values(entry, label):
+            if value.lower() == "holotype":
+                return label, value
+    return None
+
+
+def _split_open(layout: DatasetLayout) -> None:
+    """Move the rows marked by the entry's open_by/open_values out of each
+    group into an open-symbol group of the same style."""
+    kept = []
+    for label, style, rows in layout.groups:
+        mask = open_mask(layout.entry, rows)
+        if mask is None or not mask.any():
+            kept.append((label, style, rows))
+            continue
+        kept.append((label, style, rows[~mask]))
+        layout.open_groups.append((OPEN_GROUP_PREFIX + label,
+                                   open_form(style), rows[mask]))
+    layout.groups = kept
+
+
+def _open_note(datasets: list, options: LegendOptions) -> tuple | None:
+    """The legend row explaining the open symbols: the marked values, with
+    a neutral open circle."""
+    values: list[str] = []
+    for dataset in datasets:
+        if dataset.open_groups:
+            values += [v for v in dataset.entry.open_values
+                       if v not in values]
+    if not values:
+        return None
+    return (", ".join(values),
+            PointStyle(color=options.symbol_swatch_color,
+                       marker="Circle" + OPEN_SUFFIX, size=30.0))
 
 
 def column_key(entry: DatasetEntry, label: str) -> str | None:
@@ -275,10 +359,12 @@ def layout_points(entries, options: LegendOptions, palette: list[str],
             if sectioned and layout.rows:
                 sections.append((entry.name if options.section_titles
                                  else "", layout.rows))
+        _split_open(layout)
         datasets.append(layout)
     return MapLayout(datasets=datasets,
                      sections=sections if sectioned else None,
-                     row_order=None if sectioned else row_order)
+                     row_order=None if sectioned else row_order,
+                     open_note=_open_note(datasets, options))
 
 
 # ------------------------------------------------------------ legend editor

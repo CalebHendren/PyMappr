@@ -457,6 +457,18 @@ class ControlPanel(ttk.Frame):
             self.app.on_style_scheme, width=18)
         ttk.Label(sec, text="(Symbol by = compact color/symbol legend)",
                   foreground="#666666").pack(anchor="w")
+
+        # Open symbols: rows holding a chosen value (Type status = Holotype)
+        # draw as the outline of their group's symbol - the usual way to
+        # pick out type localities - with a legend row saying so.
+        self.open_by_var = tk.StringVar(value="None")
+        self.open_by_box = self._combo_row(
+            sec, "Open symbols for:", self.open_by_var, ["None"],
+            self.app.on_open_by, width=18)
+        self.open_value_var = tk.StringVar(value="")
+        self.open_value_box = self._combo_row(
+            sec, "where it is:", self.open_value_var, [],
+            self.app.on_open_symbols, width=18)
         # Joins e.g. Genus + Species into one "Genus Species" column, so a
         # legend row can carry the full name.
         ttk.Button(sec, text="Combine columns\N{HORIZONTAL ELLIPSIS}",
@@ -1092,6 +1104,15 @@ class ControlPanel(ttk.Frame):
             box.configure(values=choices)
             var.set(value if value in choices else "None")
         self.vary_symbols_var.set(vary_symbols)
+
+    def set_open_controls(self, choices: list[str], open_by: str,
+                          values: list[str], chosen: str) -> None:
+        """Point the open-symbol controls at the selected dataset: the
+        column choices, and that column's values with *chosen* selected."""
+        self.open_by_box.configure(values=choices)
+        self.open_by_var.set(open_by if open_by in choices else "None")
+        self.open_value_box.configure(values=values)
+        self.open_value_var.set(chosen if chosen in values else "")
 
     def set_file_info(self, text: str) -> None:
         color = "#666666" if text == "No data loaded" else "#333333"

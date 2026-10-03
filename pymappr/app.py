@@ -34,8 +34,8 @@ from pymappr.renderer.geometry import lon_span  # noqa: E402
 from pymappr.styling.decorations import (  # noqa: E402
     CompassOptions, ScaleBarOptions)
 from pymappr.styling.layout import (  # noqa: E402
-    MapLayout, column_key, editor_rows, layout_points,
-    organise_publication_legend, with_default_title)
+    MapLayout, column_key, column_values, editor_rows, holotype_marking,
+    layout_points, organise_publication_legend, with_default_title)
 from pymappr.styling.legend import (  # noqa: E402
     ENTRY_ORDERS, PUBLICATION_LEGEND, LegendOptions)
 from pymappr.styling.styles import (  # noqa: E402
@@ -1003,6 +1003,7 @@ class PyMapprApp:
         self.panel.set_dataset_controls(
             choices, entry.group_by or "None", entry.color_by or "None",
             entry.symbol_by or "None", entry.vary_symbols)
+        self._sync_open_controls(entry, choices)
         self.panel.dataset_visible_var.set(entry.visible)
         self.filter_bar.set_dataset(entry.dataset.frame,
                                     entry.dataset.name_labels,
@@ -1038,7 +1039,8 @@ class PyMapprApp:
         self.renderer.set_points(
             [(label, style, rows["lon"].to_numpy(), rows["lat"].to_numpy())
              for label, style, rows in layout.groups],
-            layout.sections, layout.row_order, options)
+            layout.sections, layout.row_order, options,
+            [layout.open_note] if layout.open_note else None)
         self.renderer.redraw()
         self._warn_marker_load([d.entry for d in layout.datasets], options)
 
@@ -1159,6 +1161,38 @@ class PyMapprApp:
         # group that exists keep applying and the rest lie dormant.
         self._push_points()
 
+    def _sync_open_controls(self, entry: DatasetEntry,
+                            choices: list[str]) -> None:
+        values = column_values(entry, entry.open_by) if entry.open_by else []
+        chosen = entry.open_values[0] if entry.open_values else ""
+        self.panel.set_open_controls(choices, entry.open_by or "None",
+                                     values, chosen)
+
+    def on_open_by(self) -> None:
+        """The open-symbol column changed: offer its values, starting on
+        "Holotype" when there is one."""
+        entry = self._active_entry()
+        if entry is None:
+            return
+        column = self.panel.open_by_var.get()
+        entry.open_by = "" if column == "None" else column
+        values = column_values(entry, entry.open_by) if entry.open_by else []
+        chosen = next((v for v in values if v.lower() == "holotype"),
+                      values[0] if values else "")
+        entry.open_values = [chosen] if chosen else []
+        self._sync_open_controls(entry, ["None"]
+                                 + list(entry.dataset.name_labels))
+        self._push_points()
+
+    def on_open_symbols(self) -> None:
+        """The value drawn with open symbols changed."""
+        entry = self._active_entry()
+        if entry is None:
+            return
+        value = self.panel.open_value_var.get()
+        entry.open_values = [value] if entry.open_by and value else []
+        self._push_points()
+
     def on_style_scheme(self) -> None:
         """Color-by / symbol-by column or symbol variation changed."""
         entry = self._active_entry()
@@ -1240,10 +1274,22 @@ class PyMapprApp:
         # Three shades alone cannot tell more than three groups apart.
         for entry in self.entries:
             entry.vary_symbols = True
+            # Holotypes as open symbols, when a Type status column names
+            # them and the user has not chosen open symbols already.
+            marking = None if entry.open_by else holotype_marking(entry)
+            if marking:
+                entry.open_by, value = marking
+                entry.open_values = [value]
         p.vary_symbols_var.set(True)
         active = self._active_entry()
         if active is not None:
             p.color_by_var.set(active.color_by or "None")
+            p.set_open_controls(
+                ["None"] + list(active.dataset.name_labels),
+                active.open_by or "None",
+                column_values(active, active.open_by)
+                if active.open_by else [],
+                active.open_values[0] if active.open_values else "")
         self.renderer.set_point_alpha(1.0)
         self.renderer.set_point_edge(*p.point_edge())
         self._push_points()

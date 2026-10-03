@@ -34,6 +34,8 @@ class PointsMixin:
         # label. The app works it out because ordering by count needs the
         # data; None keeps the order the point groups were added in.
         self._legend_row_order: list[str] | None = None
+        # (label, PointStyle) rows closing the legend; see set_points.
+        self._legend_notes: list = []
         self._point_alpha = 1.0
         # Outline (colour, width) around filled markers, map and legend alike.
         self._point_edge = (POINT_EDGE_COLOR, POINT_EDGE_WIDTH)
@@ -49,11 +51,15 @@ class PointsMixin:
 
     def set_points(self, groups, sections: list | None,
                    row_order: list[str] | None,
-                   options: LegendOptions) -> None:
+                   options: LegendOptions, notes: list | None = None) -> None:
         """Install the point groups and everything about the legend that
         describes them at once, so the legend is built once rather than once
         per setter. When the points themselves are unchanged - a legend
-        setting changed - they are left as drawn."""
+        setting changed - they are left as drawn.
+
+        *notes* are (label, style) rows closing the legend that belong to no
+        group, such as what open symbols mark."""
+        self._legend_notes = list(notes or [])
         groups = self._as_groups(groups)
         unchanged = (len(groups) == len(self._point_groups) and all(
             style == old_style and np.array_equal(lons, old_lons)
@@ -227,8 +233,10 @@ class PointsMixin:
             self._draw_structured_legend()
             return
         groups = self._ordered_point_groups()
-        handles = [self._legend_handle(style) for _label, style, _, _ in groups]
-        for handle, (label, *_rest) in zip(handles, groups):
+        rows = [(label, style) for label, style, _, _ in groups]
+        rows += self._legend_notes
+        handles = [self._legend_handle(style) for _label, style in rows]
+        for handle, (label, _style) in zip(handles, rows):
             handle.set_label(label)
         leg = self.ax.legend(handles=handles, **self._legend_kwargs(False))
         self._finish_legend(leg)
@@ -268,7 +276,11 @@ class PointsMixin:
             handles.append(blank())
             labels.append(" ")
 
-        for title, entries in self._legend_sections:
+        sections = list(self._legend_sections)
+        notes = self._legend_notes
+        if notes:
+            sections.append(("", notes))
+        for title, entries in sections:
             if handles:  # spacer between sections
                 spacer()
             if title:  # section titles can be turned off entirely

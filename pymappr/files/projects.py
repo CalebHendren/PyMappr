@@ -111,6 +111,11 @@ class DatasetEntry:
     color_by: str = ""
     symbol_by: str = ""
     vary_symbols: bool = False
+    # Rows whose open_by column holds one of open_values draw with the open
+    # (outline) form of their group's symbol - the usual way to pick out
+    # type localities (Type status = Holotype) on a distribution map.
+    open_by: str = ""
+    open_values: list[str] = field(default_factory=list)
     # Per-legend-row customization, keyed by pymappr.styling.styles.row_key: a
     # replacement label, a hidden flag, a manual position, and pinned
     # color/marker/size. Everything else about a row's look is worked out
@@ -136,6 +141,8 @@ def entry_to_dict(entry: DatasetEntry) -> dict:
         "color_by": entry.color_by,
         "symbol_by": entry.symbol_by,
         "vary_symbols": entry.vary_symbols,
+        "open_by": entry.open_by,
+        "open_values": list(entry.open_values),
         # "styles" is still written so a project saved here keeps its pinned
         # group styles in an older PyMappr, which knows nothing about
         # legend_overrides.
@@ -165,6 +172,8 @@ def entry_from_dict(data: dict) -> DatasetEntry:
         color_by=str(data.get("color_by", "")),
         symbol_by=str(data.get("symbol_by", "")),
         vary_symbols=bool(data.get("vary_symbols", False)),
+        open_by=str(data.get("open_by", "") or ""),
+        open_values=[str(v) for v in data.get("open_values") or []],
         legend_overrides=_overrides_from_dict(data),
         manual=dict(manual) if isinstance(manual, dict) else None,
     )

@@ -1132,21 +1132,35 @@ def marker_paint(style):
     return style["color"], POINT_EDGE["color"], POINT_EDGE["width"]
 
 
-def plot_dataset(ax, spec):
+def open_rows(df, spec):
+    """Which rows draw with the open form of their symbol (open_col holds
+    one of open_values - type localities, say)."""
+    column = spec.get("open_col")
+    if not column or column not in df.columns or not spec.get("open_values"):
+        return np.zeros(len(df), dtype=bool)
+    values = {str(v) for v in spec["open_values"]}
+    return df[column].fillna("").astype(str).isin(values).to_numpy()
+
+
+def plot_dataset(ax, spec, opened=False):
     """Scatter one dataset group by group with the app's marker styling:
     filled markers get the POINT_EDGE outline, open markers draw
-    outline-only."""
+    outline-only. With *opened*, only the open-symbol rows, each in the
+    open form of its group's style (drawn after every dataset, on top)."""
     df = load_points(spec)
     groups = point_groups(df, spec)
+    marked = open_rows(df, spec)
     xs, ys = proj_forward(df["_lon"].to_numpy(), df["_lat"].to_numpy())
     offsets = wrap_offsets()
     styles = spec["styles"]
     order = list(dict.fromkeys(list(styles) + sorted(set(groups))))
     for group in order:
-        mask = (groups == group).to_numpy()
+        mask = (groups == group).to_numpy() & (marked if opened else ~marked)
         if not mask.any():
             continue
         style = styles.get(group, FALLBACK_STYLE)
+        if opened:
+            style = dict(style, open=True)
         px = np.concatenate([xs[mask] + off for off in offsets])
         py = np.tile(ys[mask], len(offsets))
         face, edge, lw = marker_paint(style)
@@ -1272,6 +1286,8 @@ def add_legend(ax):
             rank = {label: i for i, label in enumerate(LEGEND_ROWS)}
             rows = sorted((row for row in rows if row[0] in rank),
                           key=lambda row: rank[row[0]])
+        if OPEN_NOTE is not None:
+            rows.append(OPEN_NOTE)
         if not rows:
             return
         handles = [legend_handle(style) for _label, style in rows]
@@ -1291,7 +1307,10 @@ def add_legend(ax):
         handles.append(blank())
         labels.append(" ")
 
-    for section_title, entries in LEGEND_SECTIONS:
+    sections = list(LEGEND_SECTIONS)
+    if OPEN_NOTE is not None:
+        sections.append(("", [(OPEN_NOTE[0], OPEN_NOTE[1], 0)]))
+    for section_title, entries in sections:
         if handles:  # spacer between sections
             spacer()
         if section_title:  # section titles can be turned off entirely
@@ -1334,6 +1353,8 @@ def main():
     draw_graticule(ax)
     for spec in DATASETS:
         plot_dataset(ax, spec)
+    for spec in DATASETS:
+        plot_dataset(ax, spec, opened=True)
     draw_labels(ax, fig)
     draw_compass(ax)
     draw_scale_bar(ax)
