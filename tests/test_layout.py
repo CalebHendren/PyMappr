@@ -242,3 +242,16 @@ def test_publication_legend_blocks_the_rows_by_genus():
         assert len({style.color for style in styles}) == 1
         assert styles[0].marker == "Circle"
     assert len({styles[0].color for styles in by_genus.values()}) == 3
+
+
+def test_a_legend_with_its_title_off_has_none():
+    import dataclasses
+
+    from pymappr.styling.layout import with_default_title
+    entry = DatasetEntry(dataset=build_manual_dataset(
+        "x", "10,10, A\n11,11, B\n"), name="x", group_by="Label")
+    titled = with_default_title([entry], LegendOptions())
+    assert titled.title == "Label"
+    off = with_default_title([entry], dataclasses.replace(
+        LegendOptions(), show_title=False, title="Typed"))
+    assert off.title is None

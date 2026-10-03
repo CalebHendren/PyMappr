@@ -87,6 +87,9 @@ class LegendOptions:
     #    exported scripts written before this dataclass keep loading.
     show: bool = True
     title: str | None = None
+    # Off for a legend with no heading at all, which journals often want:
+    # the figure caption says what the symbols are.
+    show_title: bool = True
     location: str = "best"
 
     # -- content: these change the rows themselves, so a change here has to

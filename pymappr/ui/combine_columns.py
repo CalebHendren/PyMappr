@@ -11,6 +11,26 @@ import tkinter as tk
 from tkinter import ttk
 
 
+_GENUS_NAMES = ("genus",)
+_SPECIES_NAMES = ("species", "specific epithet", "specificepithet",
+                  "epithet", "species epithet", "sp.", "sp")
+
+
+def default_columns(labels: list[str]) -> list[str]:
+    """The columns that start ticked: Genus and Species when they are
+    named so - in any position, since a table often goes on to Type
+    status or Country after them - and otherwise the last two, where
+    Genus and Species usually sit (after Family, say)."""
+    lowered = {label: label.strip().lower() for label in labels}
+    genus = next((label for label in labels
+                  if lowered[label] in _GENUS_NAMES), None)
+    species = next((label for label in labels
+                    if lowered[label] in _SPECIES_NAMES), None)
+    if genus and species:
+        return [genus, species]
+    return labels[-2:]
+
+
 class CombineColumnsDialog(tk.Toplevel):
     """``self.result`` is ``(labels, separator)``, or None when cancelled.
 
@@ -31,11 +51,10 @@ class CombineColumnsDialog(tk.Toplevel):
         body.pack(fill="both", expand=True)
         ttk.Label(body, text="Join these name columns, in this order:").pack(
             anchor="w")
-        # Genus and Species usually come last (after Family, say), so the
-        # last two start ticked.
         self._vars = {}
-        for index, label in enumerate(self._labels):
-            var = tk.BooleanVar(value=index >= len(self._labels) - 2)
+        ticked = default_columns(self._labels)
+        for label in self._labels:
+            var = tk.BooleanVar(value=label in ticked)
             ttk.Checkbutton(body, text=label, variable=var,
                             command=self._update).pack(anchor="w", padx=(8, 0))
             self._vars[label] = var

@@ -131,7 +131,10 @@ def _visible(entries) -> list[DatasetEntry]:
 def with_default_title(entries, options: LegendOptions) -> LegendOptions:
     """*options* with the title defaulted: a single dataset in group-by mode
     is titled by its group-by column. In Symbol-by mode the sections name the
-    columns, and with several datasets no one column fits."""
+    columns, and with several datasets no one column fits. With the title
+    turned off there is none, typed or defaulted."""
+    if not options.show_title:
+        return dataclasses.replace(options, title=None)
     if options.title is not None:
         return options
     visible = _visible(entries)

@@ -24,8 +24,8 @@ from pymappr import __version__, updates  # noqa: E402
 from pymappr.files import projects  # noqa: E402
 from pymappr.files.data_loader import (  # noqa: E402
     OPEN_FILETYPES, PointDataset, build_dataset, build_manual_dataset,
-    combine_name_columns, guess_mapping, headers_look_like_data, list_sheets,
-    read_table)
+    combine_name_columns, far_points, guess_mapping, headers_look_like_data,
+    list_sheets, read_table)
 from pymappr.files.projects import (  # noqa: E402
     PROJECT_EXTENSION, DatasetEntry)
 from pymappr.geo.layers import LayerStore  # noqa: E402
@@ -811,6 +811,24 @@ class PyMapprApp:
                 f"{len(dataset.skipped)}:\n\n{shown}", parent=self.root)
         return True
 
+    def _report_far_points(self, dataset: PointDataset) -> None:
+        """Point out stray points - usually a missing minus sign or
+        hemisphere letter - which otherwise only show as a map zoomed out
+        to the whole world. They stay on the map; the file is the place
+        to fix them."""
+        notes = far_points(dataset)
+        if not notes:
+            return
+        shown = "\n".join(notes[:MAX_SKIPPED_SHOWN])
+        more = len(notes) - MAX_SKIPPED_SHOWN
+        if more > 0:
+            shown += f"\n\N{HORIZONTAL ELLIPSIS} and {more} more"
+        messagebox.showwarning(
+            "Points far from the rest",
+            f"{shown}\n\nA point this far from the others is often a "
+            "coordinate missing its minus sign or hemisphere letter. "
+            "Check these rows in the file.", parent=self.root)
+
     def _add_entry(self, entry: DatasetEntry) -> None:
         self.entries.append(entry)
         self.active = len(self.entries) - 1
@@ -863,6 +881,7 @@ class PyMapprApp:
         self._add_entry(DatasetEntry(dataset=dataset, name=short,
                                      group_by=labels[0] if labels else ""))
         self.set_status(f"Loaded {len(dataset)} points from {short}.")
+        self._report_far_points(dataset)
 
     def on_manual_entry(self) -> None:
         """Type or paste points by hand (legend name + coordinate lines)."""
@@ -1208,9 +1227,14 @@ class PyMapprApp:
         p.palette_var.set(BLACK_AND_WHITE_NAME)
         p.set_point_edge(*PUBLICATION_POINT_EDGE)
         p.set_point_alpha(1.0)
-        p.set_legend_options(organise_publication_legend(
-            self.entries, dataclasses.replace(p.legend_options(),
-                                              **PUBLICATION_LEGEND)))
+        legend = dataclasses.replace(p.legend_options(), **PUBLICATION_LEGEND)
+        if not (legend.title or "").strip():
+            # No heading for a journal legend: the caption says what the
+            # symbols are, and a column name ("Genus Species") reads oddly.
+            # A title the user typed is kept.
+            legend = dataclasses.replace(legend, show_title=False)
+        p.set_legend_options(organise_publication_legend(self.entries,
+                                                         legend))
         p.dpi_var.set(PUBLICATION_DPI)
         p.export_width_var.set(PUBLICATION_WIDTH)
         # Three shades alone cannot tell more than three groups apart.

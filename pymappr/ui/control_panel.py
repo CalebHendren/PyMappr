@@ -115,6 +115,7 @@ LEGEND_ROWS = [
     ("Legend", None, [
         ("show", "check", "Show legend", None),
         ("location", "combo", "Position:", LEGEND_LOCATIONS),
+        ("show_title", "check", "Show a title", None),
         ("title", "text", "Title:", 18),
         (None, "note", "(blank = use the Group by column name)", None),
     ]),

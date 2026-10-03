@@ -167,7 +167,7 @@ class PointsMixin:
         """The matplotlib legend keywords shared by both draw paths."""
         opts = self._legend
         return {
-            "title": opts.title,
+            "title": opts.title if opts.show_title else None,
             "fontsize": opts.fontsize,
             "title_fontsize": opts.title_fontsize,
             "ncols": max(int(opts.columns), 1),

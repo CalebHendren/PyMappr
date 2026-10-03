@@ -1773,3 +1773,19 @@ def test_an_extent_across_the_antimeridian_frames_just_that(projection):
     x0, x1 = r.ax.get_xlim()
     # A small window onto the Pacific, not the whole world.
     assert (x1 - x0) < r.proj.world_width / 8
+
+
+def test_a_sharp_export_draws_finer_coastlines(monkeypatch):
+    r = _renderer(9.0, 6.5)
+    seen = []
+    monkeypatch.setattr(r, "_sync_resolutions",
+                        lambda: seen.append(r._detail_boost))
+    with r._vector_detail_for(600, 17.0):
+        pass
+    # 17 cm at 600 dpi is ~4000 px against 900 on screen: two zoom levels.
+    assert seen[0] == pytest.approx(np.log2(17 / 2.54 * 600 / 900), abs=1e-6)
+    assert seen[-1] == 0.0 and r._detail_boost == 0.0
+    seen.clear()
+    with r._vector_detail_for(100):  # screen resolution: nothing to do
+        pass
+    assert seen == []

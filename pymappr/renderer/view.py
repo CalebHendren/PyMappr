@@ -697,7 +697,8 @@ class ViewMixin:
         page would otherwise shrink a 9 pt legend to 6 pt or less.
         """
         fmt = fmt.lower()
-        with (self._cropped_for_export(width_cm),
+        with (self._vector_detail_for(dpi, width_cm),
+              self._cropped_for_export(width_cm),
               self.basemap_detail_for(dpi)):
             if fmt in ("tif", "tiff"):
                 self._save_tiff(path, dpi)
@@ -706,6 +707,28 @@ class ViewMixin:
                 fmt = "jpeg"  # JPEG has no alpha; the white facecolor fills it
             with matplotlib.rc_context(_VECTOR_RC):
                 self.fig.savefig(path, format=fmt, dpi=dpi, facecolor="white")
+
+    @contextmanager
+    def _vector_detail_for(self, dpi: float, width_cm: float | None = None):
+        """Draw coastlines and borders from the finer Natural Earth data an
+        export at *dpi* can show. The resolution follows the zoom, judged
+        at screen pixels; a 600-dpi file has several times as many, and the
+        50m outlines that look right on screen are visibly coarse in it
+        (small islands lose their shape)."""
+        screen_px = self.fig.get_size_inches()[0] * self.fig.dpi
+        export_px = self.export_size_inches(width_cm)[0] * dpi
+        boost = max(float(np.log2(max(export_px, 1.0) / max(screen_px, 1.0))),
+                    0.0)
+        if boost < 0.5:
+            yield
+            return
+        self._detail_boost = boost
+        try:
+            self._sync_resolutions()
+            yield
+        finally:
+            self._detail_boost = 0.0
+            self._sync_resolutions()
 
     @contextmanager
     def basemap_detail_for(self, dpi: float):
