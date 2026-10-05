@@ -14,7 +14,8 @@ from pymappr.files.projects import (DatasetEntry, entry_from_dict,
 from pymappr.styling.layout import (OPEN_GROUP_PREFIX, holotype_marking,
                                     layout_points)
 from pymappr.styling.legend import LegendOptions
-from pymappr.styling.styles import DEFAULT_PALETTE, OPEN_SUFFIX
+from pymappr.styling.styles import (BLACK_AND_WHITE, DEFAULT_PALETTE,
+                                    OPEN_SUFFIX, PointStyle, open_form)
 
 from test_codegen import (assert_r_map_saved, exec_python, make_state,
                           r_run_state, run_exported_r, run_r, run_r_harness)
@@ -62,6 +63,28 @@ def test_marked_rows_draw_in_the_open_form_of_their_groups_symbol():
     assert layout.row_order == ["Nebulobunus alpha", "Nebulobunus beta"]
     label, note_style = layout.open_note
     assert label == "Holotype" and note_style.is_open
+
+
+@pytest.mark.parametrize("color, outline", [("#ffffff", "#000000"),
+                                            ("#f0e442", "#000000"),
+                                            ("#808080", "#808080"),
+                                            ("#0072b2", "#0072b2")])
+def test_an_open_symbol_too_light_to_see_on_white_is_outlined_black(
+        color, outline):
+    # The black & white palette's white group drew its type localities
+    # white on white: invisible.
+    opened = open_form(PointStyle(color=color, marker="Square"))
+    assert (opened.color, opened.marker, opened.fill) == (
+        outline, "Square" + OPEN_SUFFIX, "#ffffff")
+
+
+def test_the_white_groups_holotypes_show_in_the_black_and_white_palette():
+    layout = layout_points([marked(vary_symbols=True)], LegendOptions(),
+                           BLACK_AND_WHITE)
+    (_l, filled, _r), (_ol, opened, _or) = (layout.datasets[0].groups[1],
+                                            layout.datasets[0].open_groups[1])
+    assert filled.color == "#ffffff"
+    assert opened.color == "#000000"
 
 
 def test_without_marked_rows_nothing_changes():
@@ -141,6 +164,21 @@ def test_exported_python_draws_open_symbols_and_the_note():
     ns["add_legend"](axes)
     texts = [t.get_text() for t in axes.get_legend().get_texts()]
     assert texts == ["Nebulobunus alpha", "Nebulobunus beta", "Holotype"]
+
+
+def test_exported_python_outlines_white_open_symbols_in_black():
+    matplotlib = pytest.importorskip("matplotlib")
+    matplotlib.use("Agg")
+    state = make_state(map={"projection": "Equirectangular",
+                            "palette": "Black & white"})
+    ns = exec_python(codegen.generate_code(state, [marked()], "Python"))
+    calls = []
+    ax = types.SimpleNamespace(scatter=lambda xs, ys, **kw: calls.append(
+        (sorted(ys), kw["edgecolors"])))
+    ns["plot_dataset"](ax, ns["DATASETS"][0], opened=True)
+    # beta is the white group: its holotype at 12N must not be white.
+    assert dict((ys[0], edge) for ys, edge in calls) == {
+        15.0: "#000000", 12.0: "#000000"}
 
 
 def test_exported_r_keys_open_rows_and_ends_the_legend_with_the_note(

@@ -124,12 +124,14 @@ class GridLocator(Locator):
         found: dict[float, float] = {}
         if self.which == "x":
             lats = np.linspace(proj.min_lat, proj.max_lat, 361)
+            ticks = []
             for lon in np.arange(-180.0, 180.0, step):
                 xs, ys = proj.forward(np.full_like(lats, lon), lats,
                                       clamp=False)
                 for off in r._offsets():
-                    for x in edge_ticks(xs + off, ys, view, "x"):
-                        found[x] = float(lon)
+                    ticks += [(x, float(lon), off)
+                              for x in edge_ticks(xs + off, ys, view, "x")]
+            found = self._meridian_ticks(ticks, view)
         else:
             span = proj.lon_halfspan
             lons = proj.lon_0 + np.linspace(-span, span, 721)
@@ -144,6 +146,31 @@ class GridLocator(Locator):
                         found[y] = float(lat)
         self.degrees = found
         return sorted(found)
+
+    def _meridian_ticks(self, ticks, view) -> dict[float, float]:
+        """Tick position -> longitude, from (x, lon, wrap offset) edge
+        crossings.
+
+        Meridians that meet the bottom edge at one point - at the pole of a
+        Mollweide or other pointed-pole world - cannot be told apart there,
+        so each of those is ticked below where it crosses the equator
+        instead, the widest and most evenly spread its meridians get."""
+        (x0, x1), (y0, y1) = view
+        close = 0.005 * (x1 - x0)
+        xs = sorted(x for x, _lon, _off in ticks)
+        crowded = {x for a, b in zip(xs, xs[1:]) if b - a <= close
+                   for x in (a, b)}
+        found: dict[float, float] = {}
+        proj = self.renderer.proj
+        for x, lon, off in ticks:
+            if x in crowded:
+                ex, ey = proj.forward(np.array([lon]), np.array([0.0]),
+                                      clamp=False)
+                x, y = float(ex[0]) + off, float(ey[0])
+                if not (np.isfinite(x) and x0 <= x <= x1 and y0 <= y <= y1):
+                    continue
+            found[x] = lon
+        return found
 
 
 class GridLabelFormatter(Formatter):

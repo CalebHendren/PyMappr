@@ -129,6 +129,27 @@ renders, are in [`docs/images/`](docs/images).
 
 ![Beetle localities in the publication style: black and white markers and one italic "Genus species" per legend line](docs/images/publication_style.png)
 
+### Gallery
+
+The settings in each map below suit its data, and every map has a
+labelled grid. The localities are generated for illustration, not real
+records. They are in [`sample_data/gallery/`](sample_data/gallery) if you
+want to try them.
+
+| Worldwide | Worldwide |
+|---|---|
+| ![Danaus plexippus, D. chrysippus and D. genutia on a Robinson world map over grey relief](docs/images/gallery_monarchs.png) | ![Chelonia mydas, Caretta caretta and Dermochelys coriacea on a Mollweide map with bathymetry](docs/images/gallery_sea_turtles.png) |
+| Robinson over grey shaded relief, colourblind-safe colours, and a one-row legend. | Mollweide with bathymetry for marine species, black & white symbols, and point counts in the legend. |
+| **Continent: Africa** | **Continent: Australia** |
+| ![Pan troglodytes, Pan paniscus and Gorilla gorilla on a Lambert map of Africa with rivers and lakes](docs/images/gallery_great_apes.png) | ![Macropus giganteus, M. fuliginosus and Osphranter rufus across Australia with deserts and state borders](docs/images/gallery_kangaroos.png) |
+| Lambert projection with rivers and lakes (the Congo divides chimpanzees from bonobos), and a nested genus / species key. | The Publication preset, with deserts and playas for the arid interior, state borders, a scale bar and a north arrow. |
+| **Country: New Zealand** | **Country: Madagascar** |
+| ![Apteryx mantelli, A. haastii and A. owenii in New Zealand over colour shaded relief](docs/images/gallery_kiwi.png) | ![Lemur catta, Eulemur fulvus and Propithecus verreauxi in Madagascar over ecoregions, holotypes as open symbols](docs/images/gallery_lemurs.png) |
+| Colour shaded relief showing the Southern Alps, outlined colour points, and a larger legend key. | Terrestrial ecoregions, black & white symbols, and holotypes as open symbols. |
+| **US state: Florida** | **US state: California** |
+| ![Alligator mississippiensis, Crocodylus acutus and Gopherus polyphemus in Florida with counties, rivers and lakes](docs/images/gallery_florida_herps.png) | ![Quercus lobata, Q. douglasii and Q. agrifolia in California over shaded relief](docs/images/gallery_california_oaks.png) |
+| County lines for county records, rivers and lakes, and a titled legend. | Shaded relief separating the valley, foothill and coast species, and a frameless legend. |
+
 ## Why PyMappr over AI
 
 You can ask a chatbot to draw a distribution map, and it may draw a good one.

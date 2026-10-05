@@ -29,13 +29,15 @@ from pymappr.files.data_loader import (  # noqa: E402
 from pymappr.files.projects import DatasetEntry  # noqa: E402
 from pymappr.geo.layers import LayerStore  # noqa: E402
 from pymappr.renderer import MapRenderer  # noqa: E402
-from pymappr.styling.decorations import CompassOptions  # noqa: E402
+from pymappr.styling.decorations import (  # noqa: E402
+    CompassOptions, ScaleBarOptions)
 from pymappr.styling.layout import (  # noqa: E402
     layout_points, with_default_title)
 from pymappr.styling.legend import (  # noqa: E402
     PUBLICATION_LEGEND, LegendOptions)
 from pymappr.styling.styles import (  # noqa: E402
-    BLACK_AND_WHITE, DEFAULT_PALETTE, PUBLICATION_POINT_EDGE)
+    BLACK_AND_WHITE, DEFAULT_PALETTE, OKABE_ITO, PUBLICATION_POINT_EDGE,
+    row_key)
 
 DPI = 110
 SAMPLES = REPO_ROOT / "sample_data"
@@ -66,7 +68,8 @@ def show_points(renderer: MapRenderer, entry: DatasetEntry,
     renderer.set_points(
         [(label, style, rows["lon"].to_numpy(), rows["lat"].to_numpy())
          for label, style, rows in layout.groups],
-        layout.sections, layout.row_order, options)
+        layout.sections, layout.row_order, options,
+        [layout.open_note] if layout.open_note else None)
 
 
 def readme_scenes(store: LayerStore) -> dict:
@@ -207,6 +210,153 @@ def readme_scenes(store: LayerStore) -> dict:
     return scenes
 
 
+# What the Publication preset sets, for the gallery maps that use it.
+PUBLICATION = dict(
+    palette=BLACK_AND_WHITE, combine=True, edge=PUBLICATION_POINT_EDGE,
+    entry=dict(color_by="Genus", vary_symbols=True),
+    legend=dict(order="az", show_title=False, **PUBLICATION_LEGEND))
+
+
+def gallery_map(store: LayerStore, name: str, *, extent="World",
+                figsize=(11, 7), portrait=False, projection=None,
+                basemap=None, ocean=None, bathymetry=False,
+                lines=(), fills=(), lake_fill=None,
+                palette=DEFAULT_PALETTE, combine=False, entry=None,
+                edge=None, alpha=None, legend=None, grid=10,
+                scale_bar: str | None = None, compass=False):
+    """One distribution map from the generated sample_data/gallery datasets.
+
+    Every look setting is an argument, so each map picks what suits its data:
+    *lines* and *fills* are layer keys, *entry* holds the DatasetEntry
+    styling (color_by, symbol_by, open_by ...), *legend* the LegendOptions
+    fields (location included), *edge* a (colour, width) point outline.
+    Returns (renderer, cropped)."""
+    data = sample(f"gallery/{name}.csv")
+    dataset = data.dataset
+    entry = dict(entry or {})
+    if combine:
+        dataset, label = combine_name_columns(dataset, ["Genus", "Species"])
+        entry["group_by"] = label
+    r = new_renderer(store, figsize=figsize)
+    if basemap:
+        r.set_basemap(basemap)
+    for key in ("countries", *lines):
+        r.set_layer(key, True)
+    for key in fills:
+        r.set_fill_layer(key, True)
+    if lake_fill:
+        r.set_lake_fill(lake_fill)
+    if ocean:
+        r.set_ocean(ocean)
+    if bathymetry:
+        r.set_bathymetry(True)
+    if projection:
+        r.set_projection(projection)
+    if portrait:
+        r.set_orientation("portrait")
+    r.set_extent(extent)
+    r.set_graticule(grid, show_labels=True)
+    if scale_bar:
+        r.set_scale_bar(ScaleBarOptions(show=True, position=scale_bar,
+                                        fontsize=9.0))
+    if compass:
+        r.set_compass(CompassOptions(show=True))
+    if edge:
+        r.set_point_edge(*edge)
+    if alpha is not None:
+        r.set_point_alpha(alpha)
+    show_points(r, DatasetEntry(dataset=dataset, name=data.name, **entry),
+                palette, **(legend or {}))
+    return r, portrait
+
+
+def gallery_scenes(store: LayerStore) -> dict:
+    """Distribution maps from sample_data/gallery, each styled the way its
+    data suggests (scripts/make_gallery_data.py writes the datasets)."""
+    def g(name, **kw):
+        return gallery_map(store, name, **kw)
+
+    return {
+        # Migratory butterflies over grey relief: colour-blind safe colours
+        # with the default white outline, and a wide three-column legend
+        # along the bottom.
+        "gallery_monarchs.png": g(
+            "gallery_monarchs", figsize=(12, 6.6), projection="Robinson",
+            basemap="relief_grey", grid=30, palette=OKABE_ITO,
+            combine=True,
+            legend=dict(location="lower center", columns=3, rounded=False,
+                        label_italic=True, show_title=False)),
+        # Marine: blue ocean with bathymetry, black and white outlined
+        # symbols, counts in the legend.
+        "gallery_sea_turtles.png": g(
+            "gallery_sea_turtles", figsize=(12, 6.6), projection="Mollweide",
+            ocean="blue", bathymetry=True, grid=30, **{
+                **PUBLICATION,
+                "legend": dict(location="lower left", counts=True,
+                               count_format="(n)",
+                               show_title=False, order="az",
+                               **PUBLICATION_LEGEND)}),
+        # Forest apes split by the Congo: rivers and lakes, nested
+        # genus > species key.
+        "gallery_great_apes.png": g(
+            "gallery_great_apes", extent="Africa", figsize=(10, 9),
+            projection="Lambert: Africa", lines=("rivers", "lakes_outline"),
+            lake_fill="blue", palette=OKABE_ITO, grid=10,
+            entry=dict(color_by="Genus", symbol_by="Species"),
+            legend=dict(location="lower left", section_titles=True,
+                        bold_groups=True, label_italic=True),
+            scale_bar="lower right"),
+        # Red kangaroo of the arid interior: deserts, playas, state borders.
+        "gallery_kangaroos.png": g(
+            "gallery_kangaroos", extent=(108, 156, -46, -8), figsize=(11, 8),
+            lines=("states",), fills=("deserts", "playas"), grid=10,
+            scale_bar="lower right", compass=True,
+            legend=dict(location="lower left", **PUBLICATION["legend"]),
+            **{k: v for k, v in PUBLICATION.items() if k != "legend"}),
+        # Alpine A. haastii: colour relief shows the Southern Alps.
+        "gallery_kiwi.png": g(
+            "gallery_kiwi", extent=(165, 179.5, -48.5, -34), figsize=(10, 9),
+            portrait=True, basemap="relief", grid=2, palette=OKABE_ITO,
+            edge=("#000000", 0.6), combine=True,
+            legend=dict(location="upper left", marker_scale=1.3,
+                        label_italic=True, show_title=False),
+            scale_bar="lower right"),
+        # Spiny vs humid forest: ecoregions, holotypes drawn open.
+        "gallery_lemurs.png": g(
+            "gallery_lemurs", extent=(41, 53, -27, -11), figsize=(10, 9),
+            portrait=True, fills=("ecoregions",), grid=2,
+            palette=BLACK_AND_WHITE, edge=PUBLICATION_POINT_EDGE,
+            combine=True, entry=dict(vary_symbols=True,
+                       open_by="Type status", open_values=["Holotype"],
+                       legend_overrides={
+                           row_key("group", name): {"size": 46}
+                           for name in ("Lemur catta", "Eulemur fulvus",
+                                        "Propithecus verreauxi")}),
+            legend=dict(location="lower right", label_italic=True,
+                        show_title=False),
+            scale_bar="lower left"),
+        # County-level records: counties, rivers, lakes, ocean.
+        "gallery_florida_herps.png": g(
+            "gallery_florida_herps", extent=(-88, -79, 24, 31.5),
+            figsize=(10, 9), portrait=True, lines=("states", "counties",
+                                                   "rivers"),
+            lake_fill="blue", ocean="blue", grid=2,
+            combine=True,
+            legend=dict(location="center left", show_title=True,
+                        title="Species", label_italic=True),
+            scale_bar="upper left"),
+        # Topography separates the valley, foothill and coast oaks.
+        "gallery_california_oaks.png": g(
+            "gallery_california_oaks", extent=(-125, -113.5, 32, 42.5),
+            figsize=(9, 9.5), lines=("states",), basemap="relief_alt",
+            grid=2, palette=BLACK_AND_WHITE, edge=PUBLICATION_POINT_EDGE,
+            combine=True, entry=dict(vary_symbols=True),
+            legend=dict(location="lower left", frame=False,
+                        label_italic=True, show_title=False),
+            scale_bar="upper right", compass=True),
+    }
+
+
 def extra_scenes(store: LayerStore) -> dict:
     """Layers the README images do not show, for a wider render check."""
     scenes = {}
@@ -258,6 +408,7 @@ def main() -> int:
         return 1
     args.out.mkdir(parents=True, exist_ok=True)
     scenes = readme_scenes(store)
+    scenes.update(gallery_scenes(store))
     if args.all:
         scenes.update(extra_scenes(store))
     for name, (renderer, cropped) in scenes.items():

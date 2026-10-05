@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import pandas as pd
+from matplotlib.colors import to_rgb
 
 __all__ = ["PointStyle", "MARKERS", "OPEN_SUFFIX", "open_form", "DEFAULT_PALETTE",
            "OKABE_ITO", "BLACK_AND_WHITE", "BLACK_AND_WHITE_NAME", "PALETTES",
@@ -119,14 +120,33 @@ class PointStyle:
 
 # The inside of the open symbols that mark rows (see open_form).
 OPEN_FILL = "#ffffff"
+# The outline an open symbol takes instead of its own colour when that colour
+# would vanish against OPEN_FILL - the white of the black & white palette.
+OPEN_LIGHT_OUTLINE = "#000000"
+# Relative luminance (0 black - 1 white) above which a colour is too light to
+# outline a white-filled symbol.
+OPEN_LIGHT_LUMINANCE = 0.85
+
+
+def luminance(color: str) -> float:
+    """The relative luminance of *color* (any matplotlib colour)."""
+    r, g, b = to_rgb(color)
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b
 
 
 def open_form(style: PointStyle) -> PointStyle:
     """*style* as an open symbol marking a row: the outline of its symbol,
     in its colour and size, filled white so it shows on top of the filled
-    symbols at the same place."""
+    symbols at the same place. A colour too light to see on white is
+    outlined in black instead."""
     marker = style.marker if style.is_open else style.marker + OPEN_SUFFIX
-    return PointStyle(color=style.color, marker=marker, size=style.size,
+    color = style.color
+    try:
+        if luminance(color) > OPEN_LIGHT_LUMINANCE:
+            color = OPEN_LIGHT_OUTLINE
+    except ValueError:
+        pass  # not a colour matplotlib knows; draw it as given
+    return PointStyle(color=color, marker=marker, size=style.size,
                       fill=OPEN_FILL)
 
 
