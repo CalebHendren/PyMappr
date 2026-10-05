@@ -9,11 +9,15 @@ from pymappr.files.projects import DatasetEntry, config_dir, safe_filename
 
 __all__ = ["PRESET_EXTENSION", "presets_dir", "preset_path", "list_presets",
            "save_preset", "load_preset", "delete_preset",
+           "built_in_deleted", "delete_built_in",
            "settings_from_state", "apply_dataset_style"]
 
 PRESET_EXTENSION = ".pymappr-preset"
 _FORMAT = "pymappr-preset"
 _FORMAT_VERSION = 1
+# Present in the presets folder once the user has deleted the built-in
+# preset, which has no file of its own to remove.
+_BUILT_IN_DELETED = ".built-in-deleted"
 
 # The parts of a project state that belong to this project alone: its data,
 # which dataset is selected, and where the map is zoomed. A preset carries
@@ -90,6 +94,14 @@ def load_preset(path: str | Path) -> tuple[str, dict]:
 
 def delete_preset(path: str | Path) -> None:
     Path(path).unlink()
+
+
+def built_in_deleted() -> bool:
+    return (presets_dir() / _BUILT_IN_DELETED).exists()
+
+
+def delete_built_in() -> None:
+    (presets_dir() / _BUILT_IN_DELETED).touch()
 
 
 # ---------------------------------------------------------------- applying

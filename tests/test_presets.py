@@ -49,6 +49,14 @@ def test_a_deleted_preset_is_no_longer_listed():
     assert list_presets() == []
 
 
+def test_deleting_the_built_in_preset_is_remembered_and_lists_nothing():
+    save_preset(presets.preset_path("Mine"), "Mine", {})
+    assert not presets.built_in_deleted()
+    presets.delete_built_in()
+    assert presets.built_in_deleted()
+    assert [name for name, _path in list_presets()] == ["Mine"]
+
+
 def test_a_project_file_is_not_a_preset(tmp_path):
     path = tmp_path / "project.pymappr-preset"
     path.write_text(json.dumps({"format": "pymappr-project", "state": {}}),

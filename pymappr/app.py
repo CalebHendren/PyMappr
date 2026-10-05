@@ -63,6 +63,7 @@ PUBLICATION_DPI = "600"
 PUBLICATION_WIDTH = JOURNAL_PAGE_WIDTH
 # The built-in preset, listed first; it runs on_publication_style rather
 # than restoring saved values, so it adapts to the data it is applied to.
+# The user may delete it, which hides it for good.
 BUILT_IN_PRESET = "Standard"
 PROJECT_FILETYPES = [("PyMappr project", "*" + PROJECT_EXTENSION),
                      ("All files", "*.*")]
@@ -151,6 +152,7 @@ class PyMapprApp:
         self._clean_snapshot = self._snapshot()
         self._set_title()
         self._presets: dict[str, Path] = {}
+        self._built_in = True
         self._refresh_presets()
 
         # Closing the window autosaves the session for the next launch.
@@ -1311,8 +1313,10 @@ class PyMapprApp:
 
     def _refresh_presets(self, selected: str | None = None) -> None:
         self._presets = dict(presets.list_presets())
-        self.panel.set_preset_names([BUILT_IN_PRESET] + list(self._presets),
-                                    selected or BUILT_IN_PRESET)
+        self._built_in = not presets.built_in_deleted()
+        self.panel.set_preset_names(
+            [BUILT_IN_PRESET] * self._built_in + list(self._presets),
+            selected)
 
     def _framing(self) -> tuple:
         """What decides where the map's coordinates lie: a view saved under
@@ -1323,7 +1327,9 @@ class PyMapprApp:
 
     def on_apply_preset(self) -> None:
         name = self.panel.preset_var.get()
-        if name == BUILT_IN_PRESET:
+        if not name:
+            return
+        if name == BUILT_IN_PRESET and self._built_in:
             self.on_publication_style()
             return
         path = self._presets.get(name)
@@ -1361,12 +1367,13 @@ class PyMapprApp:
         current = self.panel.preset_var.get()
         name = simpledialog.askstring(
             "Save preset", "Preset name:",
-            initialvalue="" if current == BUILT_IN_PRESET else current,
+            initialvalue=("" if current == BUILT_IN_PRESET and self._built_in
+                          else current),
             parent=self.root)
         if not name or not name.strip():
             return
         name = name.strip()
-        if name == BUILT_IN_PRESET:
+        if name == BUILT_IN_PRESET and self._built_in:
             messagebox.showinfo(
                 "Save preset", "That name belongs to the built-in "
                 f"{BUILT_IN_PRESET} preset. Choose another.", parent=self.root)
@@ -1391,11 +1398,9 @@ class PyMapprApp:
 
     def on_delete_preset(self) -> None:
         name = self.panel.preset_var.get()
+        built_in = name == BUILT_IN_PRESET and self._built_in
         path = self._presets.get(name)
-        if path is None:
-            messagebox.showinfo("Delete preset", "The built-in "
-                                f"{BUILT_IN_PRESET} preset cannot be "
-                                "deleted.", parent=self.root)
+        if not built_in and path is None:
             return
         if not messagebox.askyesno(
                 "Delete preset",
@@ -1403,7 +1408,10 @@ class PyMapprApp:
                 "\N{RIGHT DOUBLE QUOTATION MARK}?", parent=self.root):
             return
         try:
-            presets.delete_preset(path)
+            if built_in:
+                presets.delete_built_in()
+            else:
+                presets.delete_preset(path)
         except OSError as exc:
             messagebox.showerror("Delete preset", str(exc), parent=self.root)
         self._refresh_presets()

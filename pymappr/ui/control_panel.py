@@ -401,17 +401,12 @@ class ControlPanel(ttk.Frame):
             side="left", fill="x", expand=True, padx=(4, 0))
         ttk.Button(row, text="Delete", command=self.app.on_delete_preset).pack(
             side="left", fill="x", expand=True, padx=(4, 0))
-        ttk.Label(sec, text="A preset keeps every setting except your data "
-                            "and zoom. Standard: black & white outlined "
-                            "points, an italic boxed legend, and 600 DPI "
-                            "export 17 cm wide, the Zootaxa / Phytotaxa "
-                            "page.",
-                  wraplength=PANEL_WIDTH - 60,
-                  foreground="#666666").pack(anchor="w")
 
-    def set_preset_names(self, names: list[str], selected: str) -> None:
+    def set_preset_names(self, names: list[str],
+                         selected: str | None = None) -> None:
         self.preset_box.configure(values=names)
-        self.preset_var.set(selected if selected in names else names[0])
+        self.preset_var.set(selected if selected in names
+                            else names[0] if names else "")
 
     def _build_data_section(self, tab) -> None:
         sec = self._section(tab, "Datasets")
