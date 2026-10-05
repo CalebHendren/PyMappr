@@ -177,7 +177,7 @@ class LegendOptions:
         return 0.4 if sectioned else 0.8
 
 
-# The legend half of the "Publication style" preset: a plain white box with a
+# The legend half of the built-in "Standard" preset: a plain white box with a
 # thin black border, and italic entries because taxon names are set in
 # italics. Only these fields change; everything else keeps the user's value.
 PUBLICATION_LEGEND = {

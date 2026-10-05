@@ -402,7 +402,7 @@ class ControlPanel(ttk.Frame):
         ttk.Button(row, text="Delete", command=self.app.on_delete_preset).pack(
             side="left", fill="x", expand=True, padx=(4, 0))
         ttk.Label(sec, text="A preset keeps every setting except your data "
-                            "and zoom. Publication: black & white outlined "
+                            "and zoom. Standard: black & white outlined "
                             "points, an italic boxed legend, and 600 DPI "
                             "export 17 cm wide, the Zootaxa / Phytotaxa "
                             "page.",

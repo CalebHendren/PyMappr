@@ -87,7 +87,7 @@ DEFAULT_PALETTE_NAME = "Default"
 # colour instead). White keeps overlapping points apart on a light map.
 POINT_EDGE_COLOR = "#ffffff"
 POINT_EDGE_WIDTH = 0.5
-# The point half of the "Publication style" preset: a thin black outline, so
+# The point half of the built-in "Standard" preset: a thin black outline, so
 # the white points of the black & white palette still show (the legend half
 # is pymappr.styling.legend.PUBLICATION_LEGEND).
 PUBLICATION_POINT_EDGE = ("#000000", 0.6)

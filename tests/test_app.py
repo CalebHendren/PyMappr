@@ -129,10 +129,10 @@ def test_the_map_tab_no_longer_carries_a_publication_button(panel):
 
 
 def test_the_built_in_preset_is_listed_first_and_selected(panel):
-    panel.set_preset_names(["Publication", "Mine"], "Gone")
-    assert panel.preset_box.cget("values") == ("Publication", "Mine")
-    assert panel.preset_var.get() == "Publication"
-    panel.set_preset_names(["Publication", "Mine"], "Mine")
+    panel.set_preset_names(["Standard", "Mine"], "Gone")
+    assert panel.preset_box.cget("values") == ("Standard", "Mine")
+    assert panel.preset_var.get() == "Standard"
+    panel.set_preset_names(["Standard", "Mine"], "Mine")
     assert panel.preset_var.get() == "Mine"
 
 

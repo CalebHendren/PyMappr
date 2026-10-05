@@ -7,7 +7,7 @@ style the points, and export a map ready for a paper.
 ![PyMappr](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-blue)
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.21522496.svg)](https://doi.org/10.5281/zenodo.21522496)
 
-![PyMappr main window with grouped beetle localities and a legend](docs/images/app_points.png)
+![PyMappr main window with hornbill localities across South and Southeast Asia, grouped by genus](docs/images/app_points.png)
 
 ## Download
 
@@ -61,10 +61,8 @@ python -m pymappr
   underline for the labels and title. Customize legend renames, hides,
   reorders and restyles individual rows.
 - Presets save every setting except your data and zoom, to apply to any
-  other project in one click. A built-in Publication preset sets up a
+  other project in one click. The built-in Standard preset sets up a
   journal figure (see [below](#publication-ready-figures)).
-
-![European orchids grouped by genus](docs/images/orchids_europe.png)
 
 ### The map
 
@@ -78,17 +76,8 @@ python -m pymappr
 - A geodesically measured scale bar in kilometres, miles or both, with
   corner, segmented or plain styling, an automatic or fixed length, and
   drag-to-place. The north arrow takes the same placement controls.
-- Landscape or portrait framing.
-
-![Cities, airports, and ports](docs/images/cities_europe.png)
-
-Portrait reframes the map as a tall page instead of a wide band of ocean:
-
-![Portrait orientation in the app](docs/images/app_portrait.png)
-
-| Portrait | Landscape |
-|----------|-----------|
-| ![Portrait beetle map](docs/images/beetles_portrait.png) | ![Landscape beetle map](docs/images/beetles_landscape.png) |
+- Landscape or portrait framing. The New Zealand, Madagascar and Florida
+  maps in the [gallery](#gallery) are portrait.
 
 More examples, including bathymetry, boundaries, time zones, and basemap
 renders, are in [`docs/images/`](docs/images).
@@ -111,7 +100,7 @@ renders, are in [`docs/images/`](docs/images).
 1. **Data tab > Combine columns...** joins Genus and Species into one name
    column and groups by it, so each legend line reads *Eleusis chapadensis*.
    The source file is left as it is.
-2. **Data tab > Presets**, choose **Publication (Zootaxa / Phytotaxa)** and
+2. **Data tab > Presets**, choose **Standard** and
    click **Apply**. It sets the map up for Zootaxa,
    Phytotaxa and similar journals: black & white points with black outlines
    and varied shapes, a plain boxed legend with italic names sorted A-Z,
@@ -125,9 +114,9 @@ renders, are in [`docs/images/`](docs/images).
    TIFF comes out greyscale and LZW-compressed, well under the 2 MB at which
    Zootaxa asks for JPEG instead.
 
-![The app after Combine columns and the Publication preset](docs/images/app_publication.png)
+![The app after Combine columns and the Standard preset](docs/images/app_publication.png)
 
-![Beetle localities in the publication style: black and white markers and one italic "Genus species" per legend line](docs/images/publication_style.png)
+![Beetle localities with the Standard preset: black and white markers and one italic "Genus species" per legend line](docs/images/publication_style.png)
 
 ### Gallery
 
@@ -142,7 +131,7 @@ want to try them.
 | Robinson over grey shaded relief, colourblind-safe colours, and a one-row legend. | Mollweide with bathymetry for marine species, black & white symbols, and point counts in the legend. |
 | **Continent: Africa** | **Continent: Australia** |
 | ![Pan troglodytes, Pan paniscus and Gorilla gorilla on a Lambert map of Africa with rivers and lakes](docs/images/gallery_great_apes.png) | ![Macropus giganteus, M. fuliginosus and Osphranter rufus across Australia with deserts and state borders](docs/images/gallery_kangaroos.png) |
-| Lambert projection with rivers and lakes (the Congo divides chimpanzees from bonobos), and a nested genus / species key. | The Publication preset, with deserts and playas for the arid interior, state borders, a scale bar and a north arrow. |
+| Lambert projection with rivers and lakes (the Congo divides chimpanzees from bonobos), and a nested genus / species key. | The Standard preset, with deserts and playas for the arid interior, state borders, a scale bar and a north arrow. |
 | **Country: New Zealand** | **Country: Madagascar** |
 | ![Apteryx mantelli, A. haastii and A. owenii in New Zealand over colour shaded relief](docs/images/gallery_kiwi.png) | ![Lemur catta, Eulemur fulvus and Propithecus verreauxi in Madagascar over ecoregions, holotypes as open symbols](docs/images/gallery_lemurs.png) |
 | Colour shaded relief showing the Southern Alps, outlined colour points, and a larger legend key. | Terrestrial ecoregions, black & white symbols, and holotypes as open symbols. |
@@ -186,8 +175,8 @@ on the Data tab puts both on one legend line without editing the file:
 
 ![Combine columns dialog joining Genus and Species](docs/images/combine_columns.png)
 
-[`sample_data/`](sample_data) has sample datasets for beetles, seabirds, and
-orchids.
+[`sample_data/`](sample_data) has sample datasets for beetles, hornbills,
+seabirds, and orchids.
 
 ## MiniMappr (browser version)
 
