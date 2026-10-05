@@ -85,6 +85,36 @@ def test_a_lambert_map_is_labelled_where_the_grid_meets_the_frame():
     assert "15\N{DEGREE SIGN}S" in ys and "20\N{DEGREE SIGN}S" in ys
 
 
+def test_a_pointed_pole_world_labels_its_meridians_at_the_equator():
+    # Every Mollweide meridian meets the bottom edge at the pole, where
+    # only one label (0°) used to survive.
+    r = _renderer("Mollweide")
+    r.set_extent("World")
+    r.set_graticule(30.0)
+    xs, _ys = _labels(r)
+    assert {"120\N{DEGREE SIGN}W", "60\N{DEGREE SIGN}W", "0\N{DEGREE SIGN}",
+            "60\N{DEGREE SIGN}E", "120\N{DEGREE SIGN}E"} <= set(xs)
+    ticks = sorted(r.ax.get_xticks())
+    equator = [float(r.proj.forward(np.array([lon]), np.array([0.0]))[0][0])
+               for lon in (-60.0, 0.0, 60.0)]
+    assert [min(ticks, key=lambda t: abs(t - x)) for x in equator] == \
+        pytest.approx(equator)
+
+
+def test_a_flat_pole_world_keeps_its_labels_on_the_edge():
+    r = _renderer("Robinson")
+    r.set_extent("World")
+    r.set_graticule(30.0)
+    xs, _ys = _labels(r)
+    assert len(xs) >= 6
+    # Where the 60°E meridian meets the bottom, not where it crosses the
+    # equator: the pole line is narrower than the equator.
+    loc = r.ax.xaxis.get_major_locator()
+    at = next(x for x, lon in loc.degrees.items() if lon == 60.0)
+    eq = float(r.proj.forward(np.array([60.0]), np.array([0.0]))[0][0])
+    assert at < 0.9 * eq
+
+
 def test_the_globe_and_hidden_labels_stay_unlabelled():
     r = _renderer("Globe (Orthographic)")
     r.set_graticule(10.0)

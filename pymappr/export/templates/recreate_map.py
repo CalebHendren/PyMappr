@@ -47,6 +47,7 @@ def ensure_dependencies():
 
 ensure_dependencies()
 
+import matplotlib.colors as mcolors
 import matplotlib.patheffects as patheffects
 import matplotlib.pyplot as plt
 import matplotlib.transforms as mtransforms
@@ -1132,6 +1133,13 @@ def marker_paint(style):
     return style["color"], POINT_EDGE["color"], POINT_EDGE["width"]
 
 
+def open_outline(color):
+    """*color*, or black when it is too light to outline a white-filled
+    open symbol (the white of the black & white palette)."""
+    r, g, b = mcolors.to_rgb(color)
+    return "#000000" if 0.2126 * r + 0.7152 * g + 0.0722 * b > 0.85 else color
+
+
 def open_rows(df, spec):
     """Which rows draw with the open form of their symbol (open_col holds
     one of open_values - type localities, say)."""
@@ -1161,8 +1169,10 @@ def plot_dataset(ax, spec, opened=False):
         style = styles.get(group, FALLBACK_STYLE)
         if opened:
             # The open form, filled white so it shows over the filled
-            # symbols at the same place.
-            style = dict(style, open=True, fill="#ffffff")
+            # symbols at the same place; a colour too light to see on that
+            # white is outlined in black.
+            style = dict(style, open=True, fill="#ffffff",
+                         color=open_outline(style["color"]))
         px = np.concatenate([xs[mask] + off for off in offsets])
         py = np.tile(ys[mask], len(offsets))
         face, edge, lw = marker_paint(style)
