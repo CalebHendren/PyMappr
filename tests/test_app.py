@@ -1,14 +1,16 @@
 """Tests for app handlers, each run on a stand-in for the app that holds
 only what the handler reads, so no main window is built.
 
-The publication-style test builds a real control panel, so it skips
-wherever Tk cannot open a display (a headless Linux runner, typically).
+The preset and publication-style tests build a real control panel, so
+they skip wherever Tk cannot open a display (a headless Linux runner,
+typically).
 """
 
 from __future__ import annotations
 
 import tkinter as tk
 from pathlib import Path
+from tkinter import ttk
 from types import SimpleNamespace
 
 import matplotlib
@@ -64,7 +66,7 @@ def test_a_scroll_with_no_cursor_position_does_nothing():
     assert app.renderer.calls == []
 
 
-# ------------------------------------------------------- publication style
+# ----------------------------------------------------------------- presets
 
 class _FakeApp:
     """Swallows every handler the panel wires its widgets to."""
@@ -93,6 +95,48 @@ def panel(tk_root):
     yield widget
     widget.destroy()
 
+
+def _tab_widgets(panel, title):
+    """Every widget on the panel's *title* tab, in the order it was made."""
+    notebook = panel.notebook
+    tab = next(panel.nametowidget(name) for name in notebook.tabs()
+               if notebook.tab(name, "text") == title)
+    found, pending = [], [tab]
+    while pending:
+        widget = pending.pop(0)
+        found.append(widget)
+        pending[:0] = widget.winfo_children()
+    return found
+
+
+def _sections(panel, title):
+    return [w.cget("text") for w in _tab_widgets(panel, title)
+            if isinstance(w, ttk.LabelFrame) and w.cget("text")]
+
+
+def test_presets_come_first_on_the_data_tab(panel):
+    assert _sections(panel, "Data")[0] == "Presets"
+    texts = [w.cget("text") for w in _tab_widgets(panel, "Data")
+             if isinstance(w, ttk.Button)]
+    assert texts[:3] == ["Apply", "Save current as\N{HORIZONTAL ELLIPSIS}",
+                         "Delete"]
+
+
+def test_the_map_tab_no_longer_carries_a_publication_button(panel):
+    texts = [w.cget("text") for w in _tab_widgets(panel, "Map")
+             if isinstance(w, ttk.Button)]
+    assert not any("publication" in str(text).lower() for text in texts)
+
+
+def test_the_built_in_preset_is_listed_first_and_selected(panel):
+    panel.set_preset_names(["Publication", "Mine"], "Gone")
+    assert panel.preset_box.cget("values") == ("Publication", "Mine")
+    assert panel.preset_var.get() == "Publication"
+    panel.set_preset_names(["Publication", "Mine"], "Mine")
+    assert panel.preset_var.get() == "Mine"
+
+
+# ------------------------------------------------------- publication style
 
 def _species(**kwargs) -> DatasetEntry:
     """The sample beetles grouped by a "Genus Species" column."""
