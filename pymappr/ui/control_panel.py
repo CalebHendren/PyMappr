@@ -229,6 +229,7 @@ class ControlPanel(ttk.Frame):
         layers_tab = self._scroll_tab("Layers")
         labels_tab = self._scroll_tab("Labels")
 
+        self._build_presets_section(data_tab)
         self._build_data_section(data_tab)
         self._build_legend_section(legend_tab)
 
@@ -382,6 +383,35 @@ class ControlPanel(ttk.Frame):
                                width=width)
 
     # ------------------------------------------------------------ data tab
+
+    def _build_presets_section(self, tab) -> None:
+        """Saved settings to carry from one project to the next. First on
+        the Data tab, so a new project can pick its look in one click."""
+        sec = self._section(tab, "Presets")
+        self.preset_var = tk.StringVar()
+        self.preset_box = ttk.Combobox(sec, textvariable=self.preset_var,
+                                       state="readonly")
+        self.preset_box.pack(fill="x", pady=2)
+        row = ttk.Frame(sec)
+        row.pack(fill="x", pady=2)
+        ttk.Button(row, text="Apply", command=self.app.on_apply_preset).pack(
+            side="left", fill="x", expand=True)
+        ttk.Button(row, text="Save current as\N{HORIZONTAL ELLIPSIS}",
+                   command=self.app.on_save_preset).pack(
+            side="left", fill="x", expand=True, padx=(4, 0))
+        ttk.Button(row, text="Delete", command=self.app.on_delete_preset).pack(
+            side="left", fill="x", expand=True, padx=(4, 0))
+        ttk.Label(sec, text="A preset keeps every setting except your data "
+                            "and zoom. Publication: black & white outlined "
+                            "points, an italic boxed legend, and 600 DPI "
+                            "export 17 cm wide, the Zootaxa / Phytotaxa "
+                            "page.",
+                  wraplength=PANEL_WIDTH - 60,
+                  foreground="#666666").pack(anchor="w")
+
+    def set_preset_names(self, names: list[str], selected: str) -> None:
+        self.preset_box.configure(values=names)
+        self.preset_var.set(selected if selected in names else names[0])
 
     def _build_data_section(self, tab) -> None:
         sec = self._section(tab, "Datasets")
@@ -707,15 +737,6 @@ class ControlPanel(ttk.Frame):
         ttk.Button(sec, text="Export as code (Python/R)"
                             "\N{HORIZONTAL ELLIPSIS}",
                    command=self.app.on_export_code).pack(fill="x", pady=2)
-        ttk.Button(sec, text="Apply publication style",
-                   command=self.app.on_publication_style).pack(fill="x",
-                                                               pady=(6, 2))
-        ttk.Label(sec, text="Black & white points with black outlines and "
-                            "varied shapes, a plain boxed legend with italic "
-                            "names, and 600 DPI export 17 cm wide, the "
-                            "Zootaxa / Phytotaxa page.",
-                  wraplength=PANEL_WIDTH - 60,
-                  foreground="#666666").pack(anchor="w")
 
     # ---------------------------------------------------------- layers tab
 

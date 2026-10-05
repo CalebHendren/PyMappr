@@ -21,7 +21,7 @@ from matplotlib.backends.backend_tkagg import NavigationToolbar2Tk  # noqa: E402
 from matplotlib.figure import Figure  # noqa: E402
 
 from pymappr import __version__, updates  # noqa: E402
-from pymappr.files import projects  # noqa: E402
+from pymappr.files import presets, projects  # noqa: E402
 from pymappr.files.data_loader import (  # noqa: E402
     OPEN_FILETYPES, PointDataset, build_dataset, build_manual_dataset,
     combine_name_columns, far_points, guess_mapping, headers_look_like_data,
@@ -61,6 +61,9 @@ UNTITLED = "Untitled"
 # pymappr.styling.legend.PUBLICATION_LEGEND).
 PUBLICATION_DPI = "600"
 PUBLICATION_WIDTH = JOURNAL_PAGE_WIDTH
+# The built-in preset, listed first; it runs on_publication_style rather
+# than restoring saved values, so it adapts to the data it is applied to.
+PUBLICATION_PRESET = "Publication (Zootaxa / Phytotaxa)"
 PROJECT_FILETYPES = [("PyMappr project", "*" + PROJECT_EXTENSION),
                      ("All files", "*.*")]
 
@@ -147,6 +150,8 @@ class PyMapprApp:
         self._default_state = self._collect_state()
         self._clean_snapshot = self._snapshot()
         self._set_title()
+        self._presets: dict[str, Path] = {}
+        self._refresh_presets()
 
         # Closing the window autosaves the session for the next launch.
         root.protocol("WM_DELETE_WINDOW", self.on_exit)
@@ -653,15 +658,30 @@ class PyMapprApp:
 
     def _apply_state(self, state: dict) -> None:
         """Restore a collected state: datasets, map settings, and view."""
-        p = self.panel
-        defaults = self._default_state
-
         self.entries = [projects.entry_from_dict(d)
                         for d in state.get("datasets", [])]
         active = state.get("active")
         if not (isinstance(active, int) and 0 <= active < len(self.entries)):
             active = 0 if self.entries else None
         self.active = active
+
+        self._apply_settings(state)
+
+        view = dict(state.get("view", {}))
+        xlim, ylim = view.get("xlim"), view.get("ylim")
+        if (isinstance(xlim, (list, tuple)) and len(xlim) == 2
+                and isinstance(ylim, (list, tuple)) and len(ylim) == 2):
+            self.renderer.set_view(xlim, ylim)
+        self.toolbar.update()
+
+        self._sync_dataset_ui()
+        self._push_points()
+
+    def _apply_settings(self, state: dict) -> None:
+        """Restore every map, legend and point setting in *state* - all of
+        it but the datasets and the view - to the panel and the map."""
+        p = self.panel
+        defaults = self._default_state
 
         m = {**defaults["map"], **dict(state.get("map", {}))}
         legend = {**defaults["legend"], **dict(state.get("legend", {}))}
@@ -749,16 +769,6 @@ class PyMapprApp:
             renderer.set_point_edge(*p.point_edge())
         finally:
             self._busy(False)
-
-        view = dict(state.get("view", {}))
-        xlim, ylim = view.get("xlim"), view.get("ylim")
-        if (isinstance(xlim, (list, tuple)) and len(xlim) == 2
-                and isinstance(ylim, (list, tuple)) and len(ylim) == 2):
-            self.renderer.set_view(xlim, ylim)
-        self.toolbar.update()
-
-        self._sync_dataset_ui()
-        self._push_points()
 
     # ----------------------------------------------------------------- data
 
@@ -1296,6 +1306,106 @@ class PyMapprApp:
         self.set_status("Applied the publication style. Export with "
                         "File \N{RIGHTWARDS ARROW} Save map as "
                         f"({PUBLICATION_DPI} DPI, 17 cm wide).")
+
+    # -------------------------------------------------------------- presets
+
+    def _refresh_presets(self, selected: str | None = None) -> None:
+        self._presets = dict(presets.list_presets())
+        self.panel.set_preset_names([PUBLICATION_PRESET] + list(self._presets),
+                                    selected or PUBLICATION_PRESET)
+
+    def _framing(self) -> tuple:
+        """What decides where the map's coordinates lie: a view saved under
+        one of these is meaningless under another."""
+        p = self.panel
+        return (p.projection_var.get(), p.proj_lon0_var.get(),
+                p.proj_lat0_var.get(), p.orientation_var.get())
+
+    def on_apply_preset(self) -> None:
+        name = self.panel.preset_var.get()
+        if name == PUBLICATION_PRESET:
+            self.on_publication_style()
+            return
+        path = self._presets.get(name)
+        try:
+            if path is None:
+                raise OSError(f"No preset named {name!r}.")
+            _name, settings = presets.load_preset(path)
+        except (OSError, ValueError) as exc:
+            messagebox.showerror("Apply preset", str(exc), parent=self.root)
+            self._refresh_presets()
+            return
+        skipped = []
+        for entry in self.entries:
+            skipped += [f"{what} is not a column in {entry.name}"
+                        for what in presets.apply_dataset_style(
+                            entry, dict(settings.get("dataset") or {}))]
+        framing, view = self._framing(), self.renderer.get_view()
+        self._apply_settings(settings)
+        # The zoom belongs to the project, so it stays on this project's
+        # data - unless the preset reprojected the map, which moves it.
+        if self._framing() == framing:
+            self.renderer.set_view(*view)
+            self.toolbar.update()
+        else:
+            self._zoom_to_data()
+        self._sync_dataset_ui()
+        self._push_points()
+        status = (f"Applied the preset \N{LEFT DOUBLE QUOTATION MARK}{name}"
+                  "\N{RIGHT DOUBLE QUOTATION MARK}.")
+        if skipped:
+            status += " Not applied: " + "; ".join(skipped) + "."
+        self.set_status(status)
+
+    def on_save_preset(self) -> None:
+        current = self.panel.preset_var.get()
+        name = simpledialog.askstring(
+            "Save preset", "Preset name:",
+            initialvalue="" if current == PUBLICATION_PRESET else current,
+            parent=self.root)
+        if not name or not name.strip():
+            return
+        name = name.strip()
+        if name == PUBLICATION_PRESET:
+            messagebox.showinfo(
+                "Save preset", "That name belongs to the built-in "
+                "publication preset. Choose another.", parent=self.root)
+            return
+        path = presets.preset_path(name)
+        if path.exists() and not messagebox.askyesno(
+                "Save preset",
+                f"A preset named \N{LEFT DOUBLE QUOTATION MARK}{name}"
+                f"\N{RIGHT DOUBLE QUOTATION MARK} already exists. "
+                "Overwrite it?", parent=self.root):
+            return
+        try:
+            presets.save_preset(path, name, presets.settings_from_state(
+                self._collect_state(), self._active_entry()))
+        except OSError as exc:
+            messagebox.showerror("Save preset", str(exc), parent=self.root)
+            return
+        self._refresh_presets(name)
+        self.set_status(f"Saved the preset \N{LEFT DOUBLE QUOTATION MARK}"
+                        f"{name}\N{RIGHT DOUBLE QUOTATION MARK}. Apply it "
+                        "in any project from the Data tab.")
+
+    def on_delete_preset(self) -> None:
+        name = self.panel.preset_var.get()
+        path = self._presets.get(name)
+        if path is None:
+            messagebox.showinfo("Delete preset", "The built-in publication "
+                                "preset cannot be deleted.", parent=self.root)
+            return
+        if not messagebox.askyesno(
+                "Delete preset",
+                f"Delete the preset \N{LEFT DOUBLE QUOTATION MARK}{name}"
+                "\N{RIGHT DOUBLE QUOTATION MARK}?", parent=self.root):
+            return
+        try:
+            presets.delete_preset(path)
+        except OSError as exc:
+            messagebox.showerror("Delete preset", str(exc), parent=self.root)
+        self._refresh_presets()
 
     def on_legend_options(self) -> None:
         """Any legend setting changed. Rebuilding is one legend build, so

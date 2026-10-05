@@ -60,7 +60,9 @@ python -m pymappr
 - Legend position, columns, marker scale and spacing, with bold, italic or
   underline for the labels and title. Customize legend renames, hides,
   reorders and restyles individual rows.
-- One-click publication style (see [below](#publication-ready-figures)).
+- Presets save every setting except your data and zoom, to apply to any
+  other project in one click. A built-in Publication preset sets up a
+  journal figure (see [below](#publication-ready-figures)).
 
 ![European orchids grouped by genus](docs/images/orchids_europe.png)
 
@@ -109,19 +111,21 @@ renders, are in [`docs/images/`](docs/images).
 1. **Data tab > Combine columns...** joins Genus and Species into one name
    column and groups by it, so each legend line reads *Eleusis chapadensis*.
    The source file is left as it is.
-2. **Map tab > Apply publication style** sets the map up for Zootaxa,
+2. **Data tab > Presets**, choose **Publication (Zootaxa / Phytotaxa)** and
+   click **Apply**. It sets the map up for Zootaxa,
    Phytotaxa and similar journals: black & white points with black outlines
    and varied shapes, a plain boxed legend with italic names sorted A-Z,
    shaded by genus and without a heading (unless you typed one), holotypes
    as open symbols when a Type status column names them, and export at
    600 DPI and 17 cm wide. Datasets with no Color by are colored by the
    parent name column, and a legend order you set by hand is kept. Rows you
-   restyled with Customize legend keep their styling.
+   restyled with Customize legend keep their styling. Adjust anything
+   else, then **Save current as...** to keep it as your own preset.
 3. **File > Save map as...** and pick TIFF or PDF. A 600-DPI black & white
    TIFF comes out greyscale and LZW-compressed, well under the 2 MB at which
    Zootaxa asks for JPEG instead.
 
-![The app after Combine columns and Apply publication style](docs/images/app_publication.png)
+![The app after Combine columns and the Publication preset](docs/images/app_publication.png)
 
 ![Beetle localities in the publication style: black and white markers and one italic "Genus species" per legend line](docs/images/publication_style.png)
 
