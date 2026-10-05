@@ -16,7 +16,9 @@ from types import SimpleNamespace
 import matplotlib
 import pytest
 
+from pymappr import app as app_module
 from pymappr.app import PyMapprApp
+from pymappr.files import presets
 from pymappr.files.data_loader import combine_name_columns, load_csv
 from pymappr.files.projects import DatasetEntry
 from pymappr.ui.control_panel import ControlPanel
@@ -134,6 +136,60 @@ def test_the_built_in_preset_is_listed_first_and_selected(panel):
     assert panel.preset_var.get() == "Standard"
     panel.set_preset_names(["Standard", "Mine"], "Mine")
     assert panel.preset_var.get() == "Mine"
+
+
+def test_the_presets_section_has_no_description(panel):
+    labels = [w for w in _tab_widgets(panel, "Data")
+              if isinstance(w, ttk.Label)]
+    assert not any("A preset keeps" in str(w.cget("text")) for w in labels)
+
+
+def test_with_no_presets_left_nothing_is_selected(panel):
+    panel.set_preset_names([])
+    assert panel.preset_box.cget("values") == ""
+    assert panel.preset_var.get() == ""
+
+
+def _preset_app(panel, tmp_path, monkeypatch):
+    """A stand-in app over a real panel, saving presets under *tmp_path*."""
+    monkeypatch.setattr(presets, "config_dir", lambda: tmp_path)
+    monkeypatch.setattr(app_module.messagebox, "askyesno",
+                        lambda *args, **kwargs: True)
+    app = SimpleNamespace(panel=panel, root=None, _presets={},
+                          _built_in=True)
+    app._refresh_presets = lambda selected=None: \
+        PyMapprApp._refresh_presets(app, selected)
+    return app
+
+
+def test_the_built_in_preset_can_be_deleted(panel, tmp_path, monkeypatch):
+    app = _preset_app(panel, tmp_path, monkeypatch)
+    presets.save_preset(presets.preset_path("Mine"), "Mine", {})
+    app._refresh_presets()
+    assert panel.preset_box.cget("values") == ("Standard", "Mine")
+    PyMapprApp.on_delete_preset(app)
+    assert panel.preset_box.cget("values") == ("Mine",)
+    assert panel.preset_var.get() == "Mine"
+    # It stays deleted the next time the list is read.
+    app._refresh_presets()
+    assert panel.preset_box.cget("values") == ("Mine",)
+    assert not app._built_in
+
+
+def test_once_deleted_its_name_is_free_for_a_saved_preset(
+        panel, tmp_path, monkeypatch):
+    app = _preset_app(panel, tmp_path, monkeypatch)
+    presets.delete_built_in()
+    path = presets.preset_path("Standard")
+    presets.save_preset(path, "Standard", {})
+    app._refresh_presets()
+    assert panel.preset_box.cget("values") == ("Standard",)
+    PyMapprApp.on_delete_preset(app)
+    assert not path.exists()
+    assert panel.preset_var.get() == ""
+    # With nothing left, Delete and Apply have nothing to act on.
+    PyMapprApp.on_delete_preset(app)
+    PyMapprApp.on_apply_preset(app)
 
 
 # ------------------------------------------------------- publication style
