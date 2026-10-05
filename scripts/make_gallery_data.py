@@ -1,5 +1,5 @@
 """Generate the sample_data/gallery CSVs behind the README's publication
-gallery maps.
+gallery maps, and sample_data/asia_hornbills.csv behind its app screenshots.
 
     python scripts/make_gallery_data.py
 
@@ -22,7 +22,8 @@ from shapely.ops import unary_union
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SHAPES = REPO_ROOT / "data" / "shapes"
-OUT = REPO_ROOT / "sample_data" / "gallery"
+SAMPLES = REPO_ROOT / "sample_data"
+OUT = SAMPLES / "gallery"
 
 SEED = 20261003
 
@@ -190,6 +191,26 @@ def build() -> dict[str, list[tuple[str, str, float, float]]]:
         (-122.4, 37.8, 0.6, 1.8, 20), (-121.8, 36.4, 0.5, 1),
         (-120.5, 35.2, 0.5, 1), (-119.2, 34.4, 0.8, 0.4),
         (-117.5, 33.3, 0.8, 0.8), (-123, 39.2, 0.7, 1.5)], 28)
+
+    # Last, so adding it left the RNG sequence of every file above alone.
+    sumatra = (101.5, -1, 1.8, 3.5, -40)
+    borneo = (114, 1, 3.5, 2.8)
+    add("asia_hornbills", "Buceros", "bicornis", world_land, [
+        (75.5, 12, 0.8, 3), (94, 24, 3, 3), (100, 16, 3, 4),
+        (101.5, 6, 0.8, 1.2), sumatra], 13)
+    add("asia_hornbills", "Buceros", "rhinoceros", world_land, [
+        (102, 4, 1, 1.8), sumatra, borneo, (107, -6.9, 1.5, 0.5)], 12)
+    add("asia_hornbills", "Anthracoceros", "albirostris", world_land, [
+        (91, 26, 3, 1.2), (98, 18, 3, 5), (106, 14, 3, 5), borneo], 14)
+    add("asia_hornbills", "Anthracoceros", "malayanus", world_land, [
+        (102, 3, 1, 1.8), sumatra, (114, 0, 3.5, 2.5)], 12)
+    add("asia_hornbills", "Anthracoceros", "coronatus", world_land, [
+        (76, 13, 1.2, 4), (80.7, 7.5, 0.7, 1.1), (82, 20, 3, 2)], 12)
+    add("asia_hornbills", "Rhyticeros", "undulatus", world_land, [
+        (92, 27, 2, 0.8), (97, 19, 2, 4), (99, 12, 1.2, 3), borneo,
+        (110, -7.3, 2.5, 0.5), sumatra], 13)
+    add("asia_hornbills", "Rhyticeros", "subruficollis", world_land, [
+        (98, 14, 1, 3), (101, 6, 0.8, 1)], 9)
     return maps
 
 
@@ -206,13 +227,15 @@ def with_holotypes(rows):
 
 
 # Maps whose CSV carries a Type status column as well.
-TYPE_STATUS = {"gallery_lemurs"}
+TYPE_STATUS = {"gallery_lemurs", "asia_hornbills"}
+# Files that sit in sample_data/ itself rather than in the gallery folder.
+NOT_GALLERY = {"asia_hornbills"}
 
 
 def main() -> int:
     OUT.mkdir(parents=True, exist_ok=True)
     for name, rows in build().items():
-        path = OUT / f"{name}.csv"
+        path = (SAMPLES if name in NOT_GALLERY else OUT) / f"{name}.csv"
         header = "Genus,Species,Latitude,Longitude"
         if name in TYPE_STATUS:
             rows = with_holotypes(rows)

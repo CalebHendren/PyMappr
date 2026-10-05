@@ -55,7 +55,7 @@ from pymappr.ui.save_image import (  # noqa: E402
 
 MAX_SKIPPED_SHOWN = 12
 UNTITLED = "Untitled"
-# The export DPI and print width of the "Publication style" preset, a
+# The export DPI and print width of the built-in "Standard" preset, a
 # Zootaxa / Phytotaxa figure: 600 dpi, 17 cm wide (the point and legend
 # halves are pymappr.styling.styles.PUBLICATION_POINT_EDGE and
 # pymappr.styling.legend.PUBLICATION_LEGEND).
@@ -63,7 +63,7 @@ PUBLICATION_DPI = "600"
 PUBLICATION_WIDTH = JOURNAL_PAGE_WIDTH
 # The built-in preset, listed first; it runs on_publication_style rather
 # than restoring saved values, so it adapts to the data it is applied to.
-PUBLICATION_PRESET = "Publication (Zootaxa / Phytotaxa)"
+BUILT_IN_PRESET = "Standard"
 PROJECT_FILETYPES = [("PyMappr project", "*" + PROJECT_EXTENSION),
                      ("All files", "*.*")]
 
@@ -1303,7 +1303,7 @@ class PyMapprApp:
         self.renderer.set_point_alpha(1.0)
         self.renderer.set_point_edge(*p.point_edge())
         self._push_points()
-        self.set_status("Applied the publication style. Export with "
+        self.set_status(f"Applied the {BUILT_IN_PRESET} preset. Export with "
                         "File \N{RIGHTWARDS ARROW} Save map as "
                         f"({PUBLICATION_DPI} DPI, 17 cm wide).")
 
@@ -1311,8 +1311,8 @@ class PyMapprApp:
 
     def _refresh_presets(self, selected: str | None = None) -> None:
         self._presets = dict(presets.list_presets())
-        self.panel.set_preset_names([PUBLICATION_PRESET] + list(self._presets),
-                                    selected or PUBLICATION_PRESET)
+        self.panel.set_preset_names([BUILT_IN_PRESET] + list(self._presets),
+                                    selected or BUILT_IN_PRESET)
 
     def _framing(self) -> tuple:
         """What decides where the map's coordinates lie: a view saved under
@@ -1323,7 +1323,7 @@ class PyMapprApp:
 
     def on_apply_preset(self) -> None:
         name = self.panel.preset_var.get()
-        if name == PUBLICATION_PRESET:
+        if name == BUILT_IN_PRESET:
             self.on_publication_style()
             return
         path = self._presets.get(name)
@@ -1361,15 +1361,15 @@ class PyMapprApp:
         current = self.panel.preset_var.get()
         name = simpledialog.askstring(
             "Save preset", "Preset name:",
-            initialvalue="" if current == PUBLICATION_PRESET else current,
+            initialvalue="" if current == BUILT_IN_PRESET else current,
             parent=self.root)
         if not name or not name.strip():
             return
         name = name.strip()
-        if name == PUBLICATION_PRESET:
+        if name == BUILT_IN_PRESET:
             messagebox.showinfo(
                 "Save preset", "That name belongs to the built-in "
-                "publication preset. Choose another.", parent=self.root)
+                f"{BUILT_IN_PRESET} preset. Choose another.", parent=self.root)
             return
         path = presets.preset_path(name)
         if path.exists() and not messagebox.askyesno(
@@ -1393,8 +1393,9 @@ class PyMapprApp:
         name = self.panel.preset_var.get()
         path = self._presets.get(name)
         if path is None:
-            messagebox.showinfo("Delete preset", "The built-in publication "
-                                "preset cannot be deleted.", parent=self.root)
+            messagebox.showinfo("Delete preset", "The built-in "
+                                f"{BUILT_IN_PRESET} preset cannot be "
+                                "deleted.", parent=self.root)
             return
         if not messagebox.askyesno(
                 "Delete preset",

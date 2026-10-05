@@ -43,7 +43,7 @@ DPI = 110
 SAMPLES = REPO_ROOT / "sample_data"
 
 # A tall frame around South America has no open water big enough for a
-# legend, so the portrait scenes widen it westward and start it at 60 S: the
+# legend, so the beetle figure widens it westward and starts it at 60 S: the
 # legend then sits in the lower left over empty Pacific, clear of the Chilean
 # coast, the Juan Fernandez islands and Antarctica. The extra height goes to
 # the north, where nothing is drawn over it.
@@ -74,52 +74,32 @@ def show_points(renderer: MapRenderer, entry: DatasetEntry,
 
 def readme_scenes(store: LayerStore) -> dict:
     """File name -> (renderer, crop to the map box?) for the README."""
-    beetles = sample("south_america_beetles.csv", color_by="Genus",
-                     symbol_by="Species")
+    beetles = sample("south_america_beetles.csv")
     seabirds = sample("world_seabirds.csv", group_by="Family")
     orchids = sample("europe_orchids.csv", group_by="Genus")
     scenes = {}
 
-    # Portrait orientation: beetles coloured by genus, shaped by species,
-    # framed as a tall page and cropped to it. The orientation goes first so
-    # the extent is fitted to the tall box rather than cropped into it.
-    r = new_renderer(store)
-    r.set_basemap("blue_marble")
-    r.set_layer("countries", True)
-    r.set_orientation("portrait")
-    r.set_extent(PORTRAIT_SOUTH_AMERICA)
-    show_points(r, beetles, location="lower left", fontsize=7)
-    scenes["beetles_portrait.png"] = (r, True)
-
-    # The same map in landscape, for the orientation comparison. The wide
-    # frame has Pacific to spare in the lower left; the upper right would
-    # cover West Africa.
-    r = new_renderer(store)
-    r.set_basemap("blue_marble")
-    r.set_layer("countries", True)
-    r.set_extent("South America")
-    show_points(r, beetles, location="lower left", fontsize=7)
-    scenes["beetles_landscape.png"] = (r, False)
-
-    # The publication style: Genus and Species combined into one legend
-    # line, black & white outlined markers in varied shapes, and a plain
-    # boxed legend with italic names. Shading by genus and sorting A-Z make
-    # each genus a block of rows in one shade, its shapes restarting. The
-    # figure is page-sized rather than window-sized, so the 9 pt legend
-    # takes the share of the map it would in print and fits over the
-    # Pacific.
+    # The Standard preset on the beetles: Genus and Species combined into
+    # one legend line, black & white outlined markers in varied shapes, and
+    # a plain boxed legend with italic names and no heading. Shading by genus
+    # and sorting A-Z make each genus a block of rows in one shade, its
+    # shapes restarting. The figure is page-sized rather than window-sized,
+    # so the 9 pt legend takes the share of the map it would in print and
+    # fits over the Pacific. The orientation goes first so the extent is
+    # fitted to the tall box rather than cropped into it.
     dataset, label = combine_name_columns(beetles.dataset,
                                           ["Genus", "Species"])
     r = new_renderer(store, figsize=(13, 9))
     r.set_layer("countries", True)
     r.set_orientation("portrait")
     r.set_extent(PORTRAIT_SOUTH_AMERICA)
+    r.set_graticule(10, show_labels=True)
     r.set_point_edge(*PUBLICATION_POINT_EDGE)
     show_points(r, DatasetEntry(dataset=dataset, name=beetles.name,
                                 group_by=label, color_by="Genus",
                                 vary_symbols=True),
                 BLACK_AND_WHITE, location="lower left", order="az",
-                **PUBLICATION_LEGEND)
+                show_title=False, **PUBLICATION_LEGEND)
     scenes["publication_style.png"] = (r, True)
 
     # Seabirds grouped by family on Mollweide, with a plain legend.
@@ -210,8 +190,8 @@ def readme_scenes(store: LayerStore) -> dict:
     return scenes
 
 
-# What the Publication preset sets, for the gallery maps that use it.
-PUBLICATION = dict(
+# What the Standard preset sets, for the gallery maps that use it.
+STANDARD = dict(
     palette=BLACK_AND_WHITE, combine=True, edge=PUBLICATION_POINT_EDGE,
     entry=dict(color_by="Genus", vary_symbols=True),
     legend=dict(order="az", show_title=False, **PUBLICATION_LEGEND))
@@ -291,7 +271,7 @@ def gallery_scenes(store: LayerStore) -> dict:
         "gallery_sea_turtles.png": g(
             "gallery_sea_turtles", figsize=(12, 6.6), projection="Mollweide",
             ocean="blue", bathymetry=True, grid=30, **{
-                **PUBLICATION,
+                **STANDARD,
                 "legend": dict(location="lower left", counts=True,
                                count_format="(n)",
                                show_title=False, order="az",
@@ -311,8 +291,8 @@ def gallery_scenes(store: LayerStore) -> dict:
             "gallery_kangaroos", extent=(108, 156, -46, -8), figsize=(11, 8),
             lines=("states",), fills=("deserts", "playas"), grid=10,
             scale_bar="lower right", compass=True,
-            legend=dict(location="lower left", **PUBLICATION["legend"]),
-            **{k: v for k, v in PUBLICATION.items() if k != "legend"}),
+            legend=dict(location="lower left", **STANDARD["legend"]),
+            **{k: v for k, v in STANDARD.items() if k != "legend"}),
         # Alpine A. haastii: colour relief shows the Southern Alps.
         "gallery_kiwi.png": g(
             "gallery_kiwi", extent=(165, 179.5, -48.5, -34), figsize=(10, 9),
