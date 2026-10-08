@@ -7,8 +7,9 @@
 - ``overlays``: the north arrow and the scale bar
 - ``labels``: place-name labels
 - ``points``: the user's points and the legend
+- ``inset``: the inset map in a corner, and the box linking it to the map
 - ``mouse``: panning the map, spinning the globe, and dragging the legend,
-  labels and scale bar
+  labels, scale bar and inset
 - ``blit``: the map snapshot every screen render leaves, which a drag shifts
   instead of re-rendering
 

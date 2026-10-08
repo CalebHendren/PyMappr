@@ -114,8 +114,18 @@ class CodeExportDialog(tk.Toplevel):
         except Exception:  # noqa: BLE001 - fall back to the default size
             return None
 
+    def _state(self) -> dict:
+        """The project state, plus the inset map as the renderer drew it:
+        the script redraws the inset's resolved region and projection,
+        which the stored options alone do not pin down."""
+        state = dict(self.app._collect_state())
+        inset_export = getattr(self.app.renderer, "inset_export", None)
+        if inset_export is not None:
+            state["inset_export"] = inset_export()
+        return state
+
     def _generate(self) -> str:
-        return codegen.generate_code(self.app._collect_state(),
+        return codegen.generate_code(self._state(),
                                      self.app.entries,
                                      self._language_var.get(),
                                      self.app.project_name,
@@ -180,7 +190,7 @@ class CodeExportDialog(tk.Toplevel):
         language = self._language_var.get()
         try:
             files = codegen.generate_working_directory(
-                self.app._collect_state(), self.app.entries, language,
+                self._state(), self.app.entries, language,
                 self.app.project_name, figure_size=self._figure_size())
         except Exception as exc:  # noqa: BLE001 - show any build error
             self._status.config(text=f"Could not build the project: {exc}")

@@ -32,7 +32,7 @@ from pymappr.geo.layers import LayerStore  # noqa: E402
 from pymappr.renderer import MapRenderer  # noqa: E402
 from pymappr.renderer.geometry import lon_span  # noqa: E402
 from pymappr.styling.decorations import (  # noqa: E402
-    CompassOptions, ScaleBarOptions)
+    CompassOptions, InsetOptions, ScaleBarOptions)
 from pymappr.styling.layout import (  # noqa: E402
     MapLayout, column_key, column_values, editor_rows, holotype_marking,
     layout_points, organise_publication_legend, with_default_title)
@@ -44,7 +44,8 @@ from pymappr.styling.styles import (  # noqa: E402
     apply_override, marker_load, resolve_nesting, row_key)
 from pymappr.ui.column_mapper import ColumnMapperDialog  # noqa: E402
 from pymappr.ui.combine_columns import CombineColumnsDialog  # noqa: E402
-from pymappr.ui.control_panel import ControlPanel, name_for  # noqa: E402
+from pymappr.ui.control_panel import (  # noqa: E402
+    INSET_REGION_LABELS, ControlPanel, name_for)
 from pymappr.ui.filter_bar import FilterBar  # noqa: E402
 from pymappr.ui.legend_editor import LegendEditorDialog  # noqa: E402
 from pymappr.ui.manual_entry import ManualEntryDialog  # noqa: E402
@@ -85,6 +86,9 @@ class PyMapprApp:
         self._scale_bar_corner = "lower left"
         # A dragged scale bar position restored from a project.
         self._scale_bar_anchor: tuple[float, float] | None = None
+        # The same two for the inset map.
+        self._inset_corner = InsetOptions().position
+        self._inset_anchor: tuple[float, float] | None = None
         self.active: int | None = None
         self.project_path: Path | None = None
         self.project_name: str = UNTITLED
@@ -630,6 +634,8 @@ class PyMapprApp:
                 "compass_options": p.compass_options().to_dict(),
                 "scale_bar": p.scale_bar_options(
                     self.renderer.scale_bar_anchor()).to_dict(),
+                "inset": p.inset_options(
+                    self.renderer.inset_anchor()).to_dict(),
                 "palette": p.palette_var.get(),
                 "graticule": p.graticule_var.get(),
                 "hide_grid_labels": p.hide_grid_labels_var.get(),
@@ -707,6 +713,11 @@ class PyMapprApp:
         p.set_scale_bar_options(bar)
         self._scale_bar_corner = bar.position
         self._scale_bar_anchor = bar.anchor
+        # Projects saved before insets existed have none, so show none.
+        inset = InsetOptions.from_dict(m.get("inset"))
+        p.set_inset_options(inset)
+        self._inset_corner = inset.position
+        self._inset_anchor = inset.anchor
         p.palette_var.set(m.get("palette", DEFAULT_PALETTE_NAME))
         p.graticule_var.set(m["graticule"])
         p.hide_grid_labels_var.set(m["hide_grid_labels"])
@@ -763,6 +774,7 @@ class PyMapprApp:
             renderer.set_compass(p.compass_options())
             renderer.set_scale_bar(p.scale_bar_options(
                 self._scale_bar_anchor))
+            renderer.set_inset(p.inset_options(self._inset_anchor))
             renderer.set_graticule(
                 p.graticule_interval(),
                 show_labels=not p.hide_grid_labels_var.get())
@@ -1608,6 +1620,37 @@ class PyMapprApp:
         """Send a dragged scale bar back to its chosen corner."""
         self.renderer.set_scale_bar(self.panel.scale_bar_options(None))
         self.renderer.redraw()
+
+    def on_inset(self) -> None:
+        """Any inset setting changed. As with the scale bar, a dragged
+        position survives unless the user picked a different corner."""
+        self.panel.update_inset_state()
+        anchor = self.renderer.inset_anchor()
+        if self.panel.inset_position_var.get() != self._inset_corner:
+            self._inset_corner = self.panel.inset_position_var.get()
+            anchor = None
+        self._busy(True)
+        try:
+            self.renderer.set_inset(self.panel.inset_options(anchor))
+        finally:
+            self._busy(False)
+        self.renderer.redraw()
+
+    def on_reset_inset(self) -> None:
+        """Send a dragged inset back to its chosen corner."""
+        self.renderer.set_inset(self.panel.inset_options(None))
+        self.renderer.redraw()
+
+    def on_inset_from_view(self) -> None:
+        """Make the inset show the area now on screen: zoom in on it, click,
+        and zoom back out to leave the inset as a close-up."""
+        extent, _centre = self.renderer.view_lonlat()
+        self.panel.set_inset_extent(extent)
+        self.panel.inset_region_var.set(name_for(
+            INSET_REGION_LABELS, "custom"))
+        self.on_inset()
+        self.set_status("The inset now shows this view. Zoom out to see it "
+                        "as a close-up.")
 
     def _palette(self) -> list[str]:
         """The colour palette groups are styled from."""

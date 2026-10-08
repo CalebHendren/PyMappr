@@ -52,6 +52,17 @@ def state(name: str):
     return unary_union(found.geometry)
 
 
+def counties(state_code: str, *names: str):
+    """The union of the named counties of one US state (postal code)."""
+    gdf = _read("ne_10m_admin_2_counties")
+    found = gdf[(gdf["REGION"] == state_code) & gdf["NAME"].isin(names)]
+    missing = set(names) - set(found["NAME"])
+    if missing:
+        raise SystemExit(f"counties not found in {state_code}: "
+                         f"{sorted(missing)}")
+    return unary_union(found.geometry)
+
+
 def land():
     return unary_union(_read("ne_50m_land").geometry)
 
@@ -211,6 +222,67 @@ def build() -> dict[str, list[tuple[str, str, float, float]]]:
         (110, -7.3, 2.5, 0.5), sumatra], 13)
     add("asia_hornbills", "Rhyticeros", "subruficollis", world_land, [
         (98, 14, 1, 3), (101, 6, 0.8, 1)], 9)
+
+    # The inset-map examples, after everything else for the same reason.
+    # Saline wetlands of Salt Creek and its tributaries north of Lincoln:
+    # the Salt Creek tiger beetle is known from a few miles of creek bank.
+    salt_creek = counties("NE", "Lancaster", "Saunders")
+    add("gallery_tiger_beetles", "Cicindela", "nevadica lincolniana",
+        salt_creek, [
+            (-96.69, 40.90, 0.03, 0.025), (-96.64, 40.95, 0.03, 0.025),
+            (-96.73, 40.99, 0.025, 0.02)], 16)
+    add("gallery_tiger_beetles", "Cicindela", "circumpicta", salt_creek, [
+        (-96.70, 40.88, 0.10, 0.08), (-96.60, 41.02, 0.08, 0.07),
+        (-96.78, 40.75, 0.06, 0.05)], 22)
+    add("gallery_tiger_beetles", "Cicindela", "togata", salt_creek, [
+        (-96.72, 40.86, 0.07, 0.05), (-96.68, 41.18, 0.08, 0.08),
+        (-96.55, 40.70, 0.07, 0.05)], 22)
+
+    # Great Smoky Mountains: the red-cheeked salamander and the imitator
+    # along the high crest on the state line, the slimy salamander lower
+    # down on both sides.
+    smokies = unary_union([counties("TN", "Sevier", "Blount"),
+                           counties("NC", "Swain", "Haywood")])
+    add("gallery_salamanders", "Plethodon", "jordani", smokies, [
+        (-83.45, 35.60, 0.28, 0.06, 20), (-83.15, 35.68, 0.10, 0.05)], 26)
+    add("gallery_salamanders", "Desmognathus", "imitator", smokies, [
+        (-83.40, 35.62, 0.22, 0.05, 20), (-83.10, 35.70, 0.08, 0.05)], 20)
+    add("gallery_salamanders", "Plethodon", "glutinosus", smokies, [
+        (-83.75, 35.75, 0.25, 0.12), (-83.35, 35.42, 0.25, 0.10),
+        (-82.95, 35.55, 0.15, 0.15)], 26)
+
+    # Lady beetles worldwide, with the Hawaiian records the inset zooms in
+    # on.
+    hawaii = [(-159.5, 22.05, 0.2, 0.15), (-158.0, 21.45, 0.25, 0.15),
+              (-156.3, 20.8, 0.3, 0.2), (-155.5, 19.6, 0.5, 0.5)]
+    add("gallery_lady_beetles", "Harmonia", "axyridis", world_land, [
+        (125, 38, 12, 8), (-85, 40, 12, 6), (8, 48, 8, 4),
+        (-58, -30, 6, 6), (25, -32, 4, 2)], 24)
+    add("gallery_lady_beetles", "Harmonia", "axyridis", world_land,
+        hawaii, 6)
+    add("gallery_lady_beetles", "Coccinella", "septempunctata", world_land, [
+        (20, 50, 18, 6), (75, 35, 12, 8), (-90, 42, 14, 5),
+        (110, 40, 10, 6)], 24)
+    add("gallery_lady_beetles", "Coccinella", "septempunctata", world_land,
+        hawaii, 6)
+    add("gallery_lady_beetles", "Hippodamia", "variegata", world_land, [
+        (35, 40, 15, 6), (65, 40, 10, 5), (-110, 40, 8, 6),
+        (-71, -35, 2, 5), (20, 0, 10, 15)], 22)
+    add("gallery_lady_beetles", "Hippodamia", "variegata", world_land,
+        hawaii, 6)
+
+    # Ecuador: rhinoceros beetles on the mainland, and darkling beetles of
+    # the Galapagos, a thousand kilometres out to sea.
+    ecuador = countries("Ecuador")
+    add("gallery_ecuador_beetles", "Dynastes", "hercules", ecuador, [
+        (-77.9, -1.6, 0.5, 1.6), (-78.9, 0.2, 0.4, 0.4)], 20)
+    add("gallery_ecuador_beetles", "Megasoma", "actaeon", ecuador, [
+        (-76.4, -1.0, 0.8, 1.2)], 20)
+    add("gallery_ecuador_beetles", "Stomion", "helopoides", ecuador, [
+        (-90.35, -0.65, 0.15, 0.12), (-89.45, -0.85, 0.12, 0.08),
+        (-90.75, -0.25, 0.10, 0.10)], 14)
+    add("gallery_ecuador_beetles", "Stomion", "laevigatum", ecuador, [
+        (-91.1, -0.6, 0.25, 0.45), (-91.55, -0.35, 0.12, 0.12)], 12)
     return maps
 
 

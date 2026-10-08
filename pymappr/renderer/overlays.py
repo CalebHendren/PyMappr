@@ -211,8 +211,9 @@ class OverlaysMixin:
         before = self._scale_bar_clear
         self._draw_scale_bar_artists()
         if self._scale_bar_clear != before:
-            # A legend in the bar's corner moves to keep it in view.
+            # A legend or inset in the bar's corner moves to keep it in view.
             self._update_legend()
+            self._refresh_inset()
 
     def _scale_bar_clearance(self, opts, base_y: float, stack: float,
                              units: list) -> tuple[str, float, float]:
