@@ -14,6 +14,7 @@ import pytest
 from pymappr import app as app_module
 from pymappr.app import UNTITLED, PyMapprApp
 from pymappr.files import projects
+from pymappr.handlers import project_files
 from pymappr.ui import projects_dialog
 from pymappr.ui.projects_dialog import ProjectsDialog
 
@@ -234,7 +235,7 @@ def test_opening_another_project_after_renaming_the_open_one(
     dialog = _dialog()
     dialog.renamed = {old: new}
     dialog.open_path = tmp_path / "Other.pymappr"
-    monkeypatch.setattr(app_module, "ProjectsDialog", lambda root: dialog)
+    monkeypatch.setattr(project_files, "ProjectsDialog", lambda root: dialog)
     monkeypatch.setattr(app_module.messagebox, "askyesnocancel",
                         lambda *a, **k: True)
     saved = []

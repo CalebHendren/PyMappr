@@ -275,9 +275,9 @@ def test_every_pymappr_projection_is_offered(app_js):
 
 
 def test_every_pymappr_grid_spacing_is_offered(body):
-    # control_panel.py imports Tk, so its table is read as text.
-    source = (ROOT / "pymappr" / "ui" / "control_panel.py").read_text(
-        encoding="utf-8")
+    # The control panel imports Tk, so its table is read as text.
+    tables = ROOT / "pymappr" / "ui" / "control_panel" / "tables.py"
+    source = tables.read_text(encoding="utf-8")
     # The labels hold "\N{DEGREE SIGN}", so the table ends at a brace that
     # closes a line, not at the first one.
     block = re.search(r"GRATICULE_CHOICES = \{(.*?)\}\n", source, re.S).group(1)
@@ -289,7 +289,8 @@ def test_every_pymappr_grid_spacing_is_offered(body):
 def test_publication_style_matches_pymappr(app_js):
     from pymappr.styling.legend import PUBLICATION_LEGEND, LegendOptions
 
-    source = (ROOT / "pymappr" / "app.py").read_text(encoding="utf-8")
+    source = (ROOT / "pymappr" / "handlers" / "presets.py").read_text(
+        encoding="utf-8")
     dpi = re.search(r'PUBLICATION_DPI = "(\d+)"', source).group(1)
     assert _js_value(app_js, "PUBLICATION_DPI") == float(dpi)
 
