@@ -245,9 +245,15 @@ Project layout:
 - `pymappr/styling/decorations.py` - scale bar and compass options
 - `pymappr/styling/layout.py` - what every dataset draws (shared by the app
   and code export)
-- `pymappr/export/codegen.py`, `pymappr/export/templates/` - Python/R code export
+- `pymappr/export/` - Python/R code export: `codegen.py` is the entry point,
+  `config.py` and `layers_config.py` collect the map settings,
+  `python_script.py` and `r_script.py` write the scripts, and `templates/`
+  holds the drawing code every exported script ends with
 - `pymappr/updates.py` - daily update check against the GitHub releases API
-- `pymappr/app.py`, `pymappr/ui/` - Tkinter application
+- `pymappr/app.py` - the main window, put together from the handler mixins in
+  `pymappr/handlers/` (project files, state, datasets, presets, map settings)
+- `pymappr/ui/` - Tkinter dialogs, and `ui/control_panel/` for the tabbed
+  control panel (one module per tab, plus its tables and widget builders)
 - `scripts/fetch_data.py` - downloads and prepares the bundled map data
 - `minimappr/` - MiniMappr source; `minimappr/build.py` generates `index.html`
 - `packaging/` - PyInstaller spec, Inno Setup script, Linux/Fedora/Arch packaging
