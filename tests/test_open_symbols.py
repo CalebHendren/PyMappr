@@ -17,8 +17,9 @@ from pymappr.styling.legend import LegendOptions
 from pymappr.styling.styles import (BLACK_AND_WHITE, DEFAULT_PALETTE,
                                     OPEN_SUFFIX, PointStyle, open_form)
 
-from test_codegen import (assert_r_map_saved, exec_python, make_state,
-                          r_run_state, run_exported_r, run_r, run_r_harness)
+from codegen_helpers import (assert_r_map_saved, exec_python, make_state,
+                             r_run_state, run_exported_r, run_r,
+                             run_r_harness)
 
 ROWS = [
     ["Nebulobunus alpha", "Holotype", -90.0, 15.0],
