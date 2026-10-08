@@ -101,12 +101,14 @@ class BlitMixin:
     def _pinned_overlays(self) -> list:
         """The artists anchored to the axes rather than to the map.
 
-        The scale bar, compass and legend sit at a corner in axes coordinates,
-        so they must not move with the map. Collected afresh on every call:
-        a view change replaces the scale bar's artists (its length follows the
-        view)."""
+        The scale bar, compass, inset and legend sit at a corner in axes
+        coordinates, so they must not move with the map. Collected afresh on
+        every call: a view change replaces the scale bar's artists (its
+        length follows the view)."""
         overlays = [*self._artists.get("scale_bar", []),
                     *self._artists.get("compass", [])]
+        if self._inset_ax is not None:
+            overlays.append(self._inset_ax)
         legend = self.ax.get_legend()
         if legend is not None:
             overlays.append(legend)

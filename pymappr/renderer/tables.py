@@ -113,6 +113,21 @@ Z_LABELS = 3.0
 Z_SNAPSHOT = 3.5
 Z_COMPASS = 4.0
 Z_SCALE_BAR = 4.0
+# The inset map is a child axes of the map, drawn over the compass and scale
+# bar and under the legend (5).
+Z_INSET = 4.5
+# Main-map box marking the area a zoomed inset shows: over the layers, under
+# the points.
+Z_INSET_BOX = 2.5
+
+# The inset's look. Land is a neutral grey so a black & white figure stays
+# greyscale with an inset in it; lines and points are thinner and smaller
+# than on the map, as the inset is a fraction of its size.
+INSET_LAND = "#e3e3e3"
+INSET_LINE_SCALE = 0.6
+INSET_POINT_SCALE = 0.3
+INSET_FRAME_WIDTH = 0.8
+INSET_BOX_WIDTH = 1.2
 
 # Axes margins as figure fractions. Public: the code export bakes the same
 # values into the script it writes, so an exported map keeps the app's framing.

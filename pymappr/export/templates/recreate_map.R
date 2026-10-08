@@ -30,6 +30,8 @@ MARKER_LAYER_EDGE <- 0.5             # city/airport marker outline (points)
 BASEMAP_WIDTH <- 5400                # PyMappr's basemap resample width
 # How a label with no entry in STYLE_* draws: the app's default grey dot.
 FALLBACK_STYLE <- list(fill = "#7f7f7f", shape = 21, size = 1.93)
+# The smallest marker on the inset map: the app's 3 square points.
+INSET_MIN_POINT_SIZE <- sqrt(3) / 2.845
 
 zip_is_readable <- function(zip_path) {
   listing <- tryCatch(suppressWarnings(utils::unzip(zip_path, list = TRUE)),
@@ -277,27 +279,32 @@ cap_polygon <- function(lon0, lat0, radius) {
     sf::st_union(sf::st_sfc(parts, crs = "EPSG:4326"))))
 }
 
+clip_lonlat <- function(data, cap = NULL, band = NULL) {
+  # Clip lon/lat data to a visible cap (lon0, lat0, radius) or a latitude
+  # band (min, max) before it is reprojected; neither leaves it whole.
+  # Clipped on the plane, like shapely in the app: Natural Earth polygons
+  # and the band/cap rings are not valid s2 geometry. Only for this call -
+  # the scale bar's st_distance needs s2 on lon/lat (or lwgeom without it).
+  old <- suppressMessages(sf::sf_use_s2(FALSE))
+  on.exit(suppressMessages(sf::sf_use_s2(old)))
+  if (!is.null(cap)) {
+    shape <- cap_polygon(cap[1], cap[2], cap[3])
+  } else if (!is.null(band)) {
+    shape <- sf::st_as_sfc(sf::st_bbox(
+      c(xmin = -180, ymin = band[1], xmax = 180, ymax = band[2]),
+      crs = sf::st_crs("EPSG:4326")))
+  } else {
+    return(data)
+  }
+  suppressMessages(suppressWarnings(sf::st_intersection(data, shape)))
+}
+
 to_map_crs <- function(data) {
   # Reproject into the map projection like the app: clip to the visible
   # cap / latitude band first; leave plain lon/lat data untouched.
   if (GEOGRAPHIC) return(data)
-  # Clip on the plane, like shapely in the app: Natural Earth polygons and
-  # the band/cap rings are not valid s2 geometry. Only for this call - the
-  # scale bar's st_distance needs s2 on lon/lat (or lwgeom without it).
-  old <- suppressMessages(sf::sf_use_s2(FALSE))
-  on.exit(suppressMessages(sf::sf_use_s2(old)))
-  if (!is.null(CLIP_CAP)) {
-    cap <- cap_polygon(CLIP_CAP[1], CLIP_CAP[2], CLIP_CAP[3])
-    data <- suppressMessages(suppressWarnings(
-      sf::st_intersection(data, cap)))
-  } else if (MAX_LAT < 90 || MIN_LAT > -90) {
-    band <- sf::st_as_sfc(sf::st_bbox(
-      c(xmin = -180, ymin = MIN_LAT, xmax = 180, ymax = MAX_LAT),
-      crs = sf::st_crs("EPSG:4326")))
-    data <- suppressMessages(suppressWarnings(
-      sf::st_intersection(data, band)))
-  }
-  sf::st_transform(data, MAP_CRS)
+  band <- if (MAX_LAT < 90 || MIN_LAT > -90) c(MIN_LAT, MAX_LAT) else NULL
+  sf::st_transform(clip_lonlat(data, CLIP_CAP, band), MAP_CRS)
 }
 
 project_points <- function(data, clamp = TRUE) {
@@ -358,8 +365,9 @@ wrapped <- function(data) {
   do.call(rbind, copies)
 }
 
-base_layer_geom <- function(layer) {
-  # One ggplot2 geom_sf for a configured Natural Earth layer.
+load_layer <- function(layer) {
+  # A configured Natural Earth layer in lon/lat, filtered (and dissolved
+  # into continents, or culled by zoom) like the app.
   data <- load_natural_earth(layer$name, layer$category, layer$scale,
                              layer$member)
   data <- filter_layer(data, layer$filter_column, layer$filter_values,
@@ -370,10 +378,19 @@ base_layer_geom <- function(layer) {
       sf::st_sf(geometry = sf::st_union(sf::st_geometry(part)))
     }))
   }
-  data <- zoom_filter(data, layer$min_zoom_max)
+  zoom_filter(data, layer$min_zoom_max)
+}
+
+base_layer_geom <- function(layer) {
+  # One ggplot2 geom_sf for a configured Natural Earth layer.
+  data <- load_layer(layer)
   data <- if (layer$kind == "point") project_points(data, clamp = FALSE) else
     to_map_crs(data)
-  data <- wrapped(data)
+  layer_geom(layer, wrapped(data))
+}
+
+layer_geom <- function(layer, data) {
+  # The geom_sf drawing a layer's (already projected) data in its style.
   if (layer$kind == "fill") {
     geom_sf(data = data, fill = layer$fill,
             color = if (is.null(layer$edgecolor)) NA else layer$edgecolor,
@@ -587,7 +604,7 @@ build_map <- function() {
     p <- p + base_layer_geom(layer)
   }
   if (!grid_drawn) p <- p + graticule_layers()
-  p <- p + point_layers()
+  p <- p + inset_box_layers() + point_layers()
   labelled <- !is.null(GRID_INTERVAL) && GRID_LABELS
   # The grid is drawn as a layer above, so coord_sf only labels the axes.
   datum <- if (labelled) sf::st_crs("EPSG:4326") else NA
@@ -600,13 +617,18 @@ build_map <- function() {
       scale_y_continuous(breaks = seq(-90, 90, by = GRID_INTERVAL),
                          labels = lat_label)
   }
-  p <- p + scale_bar_layers() + compass_layers()
+  p <- p + scale_bar_layers() + compass_layers() + inset_layers()
   anchor <- legend_anchor(LEGEND$location)
   # matplotlib's borderaxespad: half the legend font size off the frame.
   inset <- 0.5 * LEGEND$fontsize / 72 / FIGSIZE
   position <- anchor + sign(0.5 - anchor) * inset
-  # A legend in the scale bar's corner sits beyond the bar, not over it.
+  # A legend in the scale bar's corner sits beyond the bar, not over it;
+  # in the inset map's corner beyond the inset, which steps around the bar.
   clear <- scale_bar_clearance()
+  if (!is.null(INSET$clear) &&
+      identical(INSET$clear$corner, LEGEND$location)) {
+    clear <- INSET$clear
+  }
   if (!is.null(clear) && identical(clear$corner, LEGEND$location)) {
     position[2] <- clear$y + sign(0.5 - anchor[2]) * inset[2]
   }
@@ -903,6 +925,128 @@ compass_layers <- function() {
     annotate("text", x = label[1], y = label[2], label = "N",
              fontface = "bold", size = fontsize / 2.845,
              colour = COMPASS$color))
+}
+
+# ----------------------------------------------------------- inset map
+
+to_inset_crs <- function(data) {
+  # A lon/lat layer in the inset's CRS, clipped first like the app: to the
+  # globe's visible cap or the projection's latitude band.
+  data <- clip_lonlat(data, INSET$clip_cap, INSET$band)
+  if (INSET$geographic) data else sf::st_transform(data, INSET$crs)
+}
+
+project_inset_points <- function(data) {
+  # The user's points in the inset's CRS, like the app's inset: dropped,
+  # not clamped, outside its projection's usable band, or where a globe's
+  # far side hides them.
+  if (INSET$geographic || nrow(data) == 0) return(data)
+  xy <- sf::st_coordinates(data)
+  lon <- xy[, 1]
+  lat <- xy[, 2]
+  regional <- INSET$lon_halfspan < 180
+  if (regional) lon <- INSET$lon_0 + ((lon - INSET$lon_0 + 180) %% 360) - 180
+  inside <- lat >= INSET$min_lat & lat <= INSET$max_lat
+  if (regional) inside <- inside & abs(lon - INSET$lon_0) <= INSET$lon_halfspan
+  data <- data[inside, ]
+  if (nrow(data) == 0) return(sf::st_transform(data, INSET$crs))
+  moved <- sf::st_as_sf(data.frame(lon = lon[inside], lat = lat[inside]),
+                        coords = c("lon", "lat"), crs = "EPSG:4326")
+  data <- sf::st_set_geometry(data, sf::st_geometry(moved))
+  data <- suppressWarnings(sf::st_transform(data, INSET$crs))
+  xy <- sf::st_coordinates(data)
+  data[is.finite(xy[, 1]) & is.finite(xy[, 2]), ]
+}
+
+inset_point_layers <- function() {
+  # Every dataset's points on the inset, in their STYLE_* styles: smaller
+  # than on the map (point_scale of the marker area), with thinner
+  # outlines, and no legend of their own.
+  if (length(DATASETS) == 0) return(list())
+  points <- project_inset_points(load_all_points())
+  if (nrow(points) == 0) return(list())
+  keys <- as.character(points$key)
+  pick <- function(values, default) {
+    out <- if (is.null(values)) rep(NA, length(keys)) else unname(values[keys])
+    out[is.na(out)] <- default
+    out
+  }
+  sizes <- pick(STYLE_SIZES, FALLBACK_STYLE$size) * sqrt(INSET$point_scale)
+  list(geom_sf(data = points,
+               colour = pick(STYLE_COLORS, POINT_EDGE_COLOR),
+               fill = pick(STYLE_FILLS, FALLBACK_STYLE$fill),
+               shape = pick(STYLE_SHAPES, FALLBACK_STYLE$shape),
+               size = pmax(sizes, INSET_MIN_POINT_SIZE),
+               stroke = pick(STYLE_STROKES, POINT_STROKE) * 0.6 / STROKE_PT,
+               alpha = POINT_ALPHA))
+}
+
+inset_plot <- function() {
+  # The inset as a ggplot of its own, in its own CRS and limits: a white
+  # map in a black frame, or a globe drawn as a white disk with its horizon
+  # and no frame. The box marking the main map's view goes on top.
+  horizon <- INSET$horizon
+  line <- function(x, y, colour, width) {
+    annotate("path", x = x, y = y, colour = colour,
+             linewidth = width / LINEWIDTH_PT)
+  }
+  p <- ggplot()
+  if (!is.null(horizon)) {
+    good <- is.finite(horizon$x) & is.finite(horizon$y)
+    p <- p + annotate("polygon", x = horizon$x[good], y = horizon$y[good],
+                      fill = "white", colour = NA)
+  }
+  for (layer in INSET$layers) {
+    p <- p + layer_geom(layer, to_inset_crs(load_layer(layer)))
+  }
+  if (!is.null(horizon)) {
+    p <- p + line(horizon$x, horizon$y, "#000000", INSET$frame_width)
+  }
+  if (isTRUE(INSET$points)) p <- p + inset_point_layers()
+  box <- INSET$box
+  if (!is.null(box) && identical(box$target, "inset")) {
+    p <- p + line(box$x, box$y, box$color, box$width)
+  }
+  globe <- !is.null(horizon)
+  p + coord_sf(crs = INSET$crs, xlim = INSET$limits[1:2],
+               ylim = INSET$limits[3:4], expand = FALSE, datum = NA) +
+    theme_void() + theme(
+      panel.background = if (globe) element_blank() else
+        element_rect(fill = "white", colour = NA),
+      panel.border = if (globe) element_blank() else
+        element_rect(fill = NA, colour = "#000000",
+                     linewidth = INSET$frame_width / LINEWIDTH_PT),
+      plot.background = element_blank(),
+      legend.position = "none",
+      plot.margin = grid::unit(c(0, 0, 0, 0), "pt"))
+}
+
+inset_layers <- function() {
+  # The inset map placed on the main map at INSET$rect (panel fraction),
+  # over the compass and scale bar and under the legend.
+  if (is.null(INSET)) return(list())
+  grob <- ggplotGrob(inset_plot())
+  # Fill the rect exactly: it was sized to the inset's limits in the app,
+  # where a plain lon/lat inset has square degrees (coord_sf would shrink
+  # it by the cosine of its latitude). A plain lon/lat main map is itself
+  # narrowed that way, though, so on one a projected inset keeps its own
+  # shape inside the rect - a globe stays round - instead of being
+  # squeezed along with it.
+  grob$respect <- GEOGRAPHIC && !INSET$geographic
+  rect <- INSET$rect
+  lo <- axes_to_data(rect[1], rect[2])
+  hi <- axes_to_data(rect[1] + rect[3], rect[2] + rect[4])
+  list(annotation_custom(grob, xmin = lo[1], xmax = hi[1],
+                         ymin = lo[2], ymax = hi[2]))
+}
+
+inset_box_layers <- function() {
+  # A zoomed inset's box: the area it shows, outlined on the main map over
+  # its layers and under its points.
+  box <- if (is.null(INSET)) NULL else INSET$box
+  if (is.null(box) || !identical(box$target, "main")) return(list())
+  list(annotate("path", x = box$x, y = box$y, colour = box$color,
+                linewidth = box$width / LINEWIDTH_PT))
 }
 
 

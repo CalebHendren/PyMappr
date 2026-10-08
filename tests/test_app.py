@@ -124,6 +124,11 @@ def test_presets_come_first_on_the_data_tab(panel):
                          "Delete"]
 
 
+def test_the_inset_map_follows_the_other_corner_decorations(panel):
+    sections = _sections(panel, "Map")
+    assert sections.index("Inset map") == sections.index("Scale bar") + 1
+
+
 def test_the_map_tab_no_longer_carries_a_publication_button(panel):
     texts = [w.cget("text") for w in _tab_widgets(panel, "Map")
              if isinstance(w, ttk.Button)]

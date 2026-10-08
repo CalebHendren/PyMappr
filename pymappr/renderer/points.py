@@ -155,6 +155,8 @@ class PointsMixin:
                         edgecolors=edge, linewidths=lw,
                         alpha=self._point_alpha, label=label))
         self._update_legend()
+        self._points_version += 1
+        self._refresh_inset()
 
     def _legend_handle(self, style: PointStyle | None,
                        size: float | None = None):
@@ -205,12 +207,20 @@ class PointsMixin:
         in axes fraction (no bounds).
 
         A legend in the scale bar's corner sits beyond the bar instead of
-        on it: its frame is opaque and would hide the bar completely."""
+        on it: its frame is opaque and would hide the bar completely. In
+        the inset's corner it sits beyond the inset, which steps around the
+        bar in turn, so it is the outermost of the two."""
         if self._legend_anchor is not None:
             # borderaxespad=0 pins the lower-left corner exactly on the
             # anchor, so grabbing an auto-placed legend doesn't make it hop.
             return {"loc": "lower left", "bbox_to_anchor": self._legend_anchor,
                     "borderaxespad": 0.0}
+        inset = getattr(self, "_inset_clear", None)
+        if inset is not None and inset[0] == self._legend.location:
+            corner, frac = inset
+            x = 0.0 if corner.endswith("left") else 1.0
+            return {"loc": corner, "bbox_to_anchor": (x, frac),
+                    "bbox_transform": self.ax.transAxes}
         clear = getattr(self, "_scale_bar_clear", None)
         if clear is not None and clear[0] == self._legend.location:
             corner, frac, points = clear

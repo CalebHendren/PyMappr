@@ -445,6 +445,8 @@ class ViewMixin:
             self._refresh_labels()
             # Unlike the compass, the bar's length is a function of the view.
             self._apply_scale_bar()
+            # The inset's box marks the view, and its region may follow it.
+            self._refresh_inset()
         finally:
             self._in_limits_refresh = False
 
@@ -549,6 +551,7 @@ class ViewMixin:
         self._rebuild_points()
         self._refresh_point_layers()
         self._refresh_labels()
+        self._refresh_inset()
 
     def _offsets(self) -> tuple[float, ...]:
         # The orthographic globe is a single disk: no wrap-around copies.
@@ -619,6 +622,8 @@ class ViewMixin:
         self._axes_margins = (MARGINS_WITH_TICKS if labels_on
                               else MARGINS_PLAIN)
         self._apply_axes_position()
+        # The map box changed shape, and the inset is sized against it.
+        self._refresh_inset()
 
     def _projected_graticule(self) -> list:
         """Graticule drawn as projected polylines (curved projections)."""
@@ -725,10 +730,12 @@ class ViewMixin:
         self._detail_boost = boost
         try:
             self._sync_resolutions()
+            self._refresh_inset()
             yield
         finally:
             self._detail_boost = 0.0
             self._sync_resolutions()
+            self._refresh_inset()
 
     @contextmanager
     def basemap_detail_for(self, dpi: float):

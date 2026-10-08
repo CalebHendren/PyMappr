@@ -1,5 +1,6 @@
 """Mouse handling: panning and spinning the globe, and dragging the
-legend, labels and scale bar."""
+legend, labels, scale bar and inset (the inset's own press and drag are in
+inset.py)."""
 
 from __future__ import annotations
 
@@ -124,6 +125,10 @@ class MouseMixin:
         # A scroll zoom still waiting on its timer is applied before any
         # press acts on the view, whether it pans, spins or drags an overlay.
         self._finish_zoom()
+        # The inset sits on top of the map, so a press on it is for the
+        # inset whatever lies underneath.
+        if not self._toolbar_busy() and self._inset_press(event):
+            return
         # The globe spin takes the press even while a matplotlib toolbar tool
         # (pan/zoom) is active: matplotlib's own axes pan and rubber-band zoom
         # are switched off for the map axes on the globe (see _sync_navigation),
@@ -405,6 +410,9 @@ class MouseMixin:
         if self._scale_bar_drag is not None:
             self._drag_scale_bar(event)
             return
+        if self._inset_drag is not None:
+            self._drag_inset(event)
+            return
         if self._legend_drag is not None:
             self._drag_legend(event)
             return
@@ -449,6 +457,9 @@ class MouseMixin:
             return
         if self._scale_bar_drag is not None:
             self._scale_bar_drag = None
+            return
+        if self._inset_drag is not None:
+            self._inset_drag = None
             return
         if self._legend_drag is not None:
             self._legend_drag = None

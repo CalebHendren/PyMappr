@@ -73,6 +73,8 @@ LABEL_HALO = [patheffects.withStroke(linewidth=2.2, foreground="white",
                                      alpha=0.85)]
 Z_GRID, Z_POINTS, Z_LABELS, Z_COMPASS = 1.8, 2.6, 3.0, 4.0
 Z_SCALE_BAR = 4.0
+# The inset map sits over the compass and scale bar and under the legend.
+Z_INSET = 4.5
 BASEMAP_ARCHIVES = {
     "relief": (("50m", "raster", "NE1_50M_SR_W"), "ne1_world.jpg"),
     "relief_alt": (("50m", "raster", "NE2_50M_SR_W"), "ne2_world.jpg"),
@@ -172,43 +174,53 @@ def feature_min_zoom(gdf):
 # ------------------------------------------------------------- projection
 
 @functools.lru_cache(maxsize=None)
-def _transformer():
-    # Built once: a fine graticule alone projects hundreds of lines.
+def transformer_to(crs):
+    # Built once per CRS: a fine graticule alone projects hundreds of lines.
     from pyproj import Transformer
 
-    return Transformer.from_crs("EPSG:4326", MAP_CRS, always_xy=True)
+    return Transformer.from_crs("EPSG:4326", crs, always_xy=True)
 
 
-def proj_forward(lons, lats, clamp=True):
-    """Project lon/lat arrays into map coordinates, like the app: wrap
-    longitudes around a regional centre, clamp into the projection's
-    usable band (or, with clamp=False, NaN out what lies outside it), and
-    NaN out the globe's far hemisphere."""
+def _transformer():
+    return transformer_to(MAP_CRS)
+
+
+def forward_into(crs, proj, lons, lats, clamp=True):
+    """Project lon/lat arrays into *crs* (None = plain lon/lat), whose
+    usable area *proj* describes, like the app: wrap longitudes around a
+    regional centre, clamp into the projection's usable band (or, with
+    clamp=False, NaN out what lies outside it), and NaN out the globe's
+    far hemisphere."""
     lons = np.asarray(lons, dtype=float)
     lats = np.asarray(lats, dtype=float)
-    if MAP_CRS is None:
+    if crs is None:
         return lons, lats
-    lon_0, halfspan = PROJ["lon_0"], PROJ["lon_halfspan"]
+    lon_0, halfspan = proj["lon_0"], proj["lon_halfspan"]
     if halfspan < 180.0:
         lons = lon_0 + ((lons - lon_0 + 180.0) % 360.0) - 180.0
     if not clamp:
-        outside = (lats < PROJ["min_lat"]) | (lats > PROJ["max_lat"])
+        outside = (lats < proj["min_lat"]) | (lats > proj["max_lat"])
         if halfspan < 180.0:
             outside |= np.abs(lons - lon_0) > halfspan
         lons = np.where(outside, np.nan, lons)
         lats = np.where(outside, np.nan, lats)
     else:
-        lats = np.clip(lats, PROJ["min_lat"], PROJ["max_lat"])
+        lats = np.clip(lats, proj["min_lat"], proj["max_lat"])
         if halfspan < 180.0:
             lons = np.clip(lons, lon_0 - halfspan, lon_0 + halfspan)
-    xs, ys = _transformer().transform(lons, lats)
+    xs, ys = transformer_to(crs).transform(lons, lats)
     xs, ys = np.asarray(xs, dtype=float), np.asarray(ys, dtype=float)
-    if PROJ["hemisphere"]:
+    if proj["hemisphere"]:
         bad = ~(np.isfinite(xs) & np.isfinite(ys))
         if bad.any():
             xs = np.where(bad, np.nan, xs)
             ys = np.where(bad, np.nan, ys)
     return xs, ys
+
+
+def proj_forward(lons, lats, clamp=True):
+    """Project lon/lat arrays into map coordinates (see forward_into)."""
+    return forward_into(MAP_CRS, PROJ, lons, lats, clamp)
 
 
 def cap_polygon(lon0, lat0, radius):
@@ -377,17 +389,33 @@ def plot_wrapped(ax, gdf, zorder, **plot_kwargs):
     ax.set_ylabel("")
 
 
+def load_layer(layer):
+    """A configured Natural Earth layer in lon/lat, filtered (and dissolved
+    into continents) like the app."""
+    print(f"Layer: {layer['name']} ({layer['scale']})")
+    gdf = load_natural_earth(layer["name"], layer["category"],
+                             layer["scale"], layer.get("member"))
+    gdf = filter_layer(gdf, layer.get("filter"))
+    if layer["kind"] == "continents":
+        gdf = (gdf[["continent", "geometry"]]
+               .dissolve(by="continent").reset_index())
+    return gdf
+
+
+def layer_style(layer):
+    """The plot keywords of a fill, line or continents-outline layer."""
+    if layer["kind"] == "fill":
+        return dict(facecolor=layer["color"], edgecolor=layer["edgecolor"],
+                    linewidth=layer["width"], alpha=layer["alpha"])
+    return dict(facecolor="none", edgecolor=layer["color"],
+                linewidth=layer["width"], linestyle=layer["linestyle"])
+
+
 def add_base_layers(ax):
     """Draw every configured Natural Earth layer with the renderer's true
     draw order, colors, and styling."""
     for layer in LAYERS:
-        print(f"Layer: {layer['name']} ({layer['scale']})")
-        gdf = load_natural_earth(layer["name"], layer["category"],
-                                 layer["scale"], layer.get("member"))
-        gdf = filter_layer(gdf, layer.get("filter"))
-        if layer["kind"] == "continents":
-            gdf = (gdf[["continent", "geometry"]]
-                   .dissolve(by="continent").reset_index())
+        gdf = load_layer(layer)
         if layer["kind"] == "point":
             threshold = layer.get("min_zoom_max")
             if threshold is not None:
@@ -404,16 +432,7 @@ def add_base_layers(ax):
                        edgecolors=layer["edgecolor"], linewidths=0.5,
                        zorder=layer["z"])
             continue
-        gdf = to_map_crs(gdf)
-        if layer["kind"] == "fill":
-            plot_wrapped(ax, gdf, layer["z"], facecolor=layer["color"],
-                         edgecolor=layer["edgecolor"],
-                         linewidth=layer["width"], alpha=layer["alpha"])
-        else:  # line / continents outline
-            plot_wrapped(ax, gdf, layer["z"], facecolor="none",
-                         edgecolor=layer["color"],
-                         linewidth=layer["width"],
-                         linestyle=layer["linestyle"])
+        plot_wrapped(ax, to_map_crs(gdf), layer["z"], **layer_style(layer))
 
 
 # -------------------------------------------------------------- graticule
@@ -1042,6 +1061,103 @@ def draw_scale_bar(ax):
             SCALE_BAR_CLEAR = (opts["position"], base_y, 0.0)
 
 
+# -------------------------------------------------------------- inset map
+
+def to_inset_crs(gdf):
+    """Reproject a lon/lat layer into the inset's CRS like the app: clip it
+    to the globe's visible cap or the projection's latitude band first,
+    then keep only what is near the inset's view, so a detailed layer
+    (counties) is not drawn for the whole world."""
+    from shapely.geometry import box
+
+    if INSET["clip_cap"] is not None:
+        gdf = gdf.clip(cap_polygon(*INSET["clip_cap"]))
+    elif INSET["band"] is not None:
+        gdf = gdf.clip(box(-180, INSET["band"][0], 180, INSET["band"][1]))
+    if INSET["crs"] is not None:
+        gdf = gdf.to_crs(INSET["crs"])
+    if INSET["hemisphere"] or not len(gdf):
+        return gdf
+    x0, x1, y0, y1 = INSET["limits"]
+    mx, my = (x1 - x0) * 0.05, (y1 - y0) * 0.05
+    return gdf.cx[x0 - mx:x1 + mx, y0 - my:y1 + my]
+
+
+def draw_inset_points(iax):
+    """Every dataset's points on the inset: smaller than on the map, with
+    thinner outlines, dropped where the inset's projection cannot show
+    them."""
+    for opened in (False, True):
+        for spec in DATASETS:
+            for style, lons, lats in dataset_groups(spec, opened):
+                xs, ys = forward_into(INSET["crs"], INSET, lons, lats,
+                                      clamp=False)
+                face, edge, lw = marker_paint(style)
+                iax.scatter(xs, ys,
+                            s=max(style["size"] * INSET["point_scale"], 3.0),
+                            c=face, marker=style["marker"], edgecolors=edge,
+                            linewidths=lw * 0.6, alpha=POINT_ALPHA,
+                            zorder=Z_POINTS)
+
+
+def draw_inset(fig, ax):
+    """The inset map, like the app's: a child axes of the map at INSET's
+    rect, in its own projection, with a box marking the main map's view on
+    it - or, for a zoomed inset, the area it shows on the main map. A
+    globe reads as a disk, without a square frame. Returns the inset axes
+    (None without an inset)."""
+    if INSET is None:
+        return None
+    iax = ax.inset_axes(INSET["rect"], zorder=Z_INSET)
+    iax.set_navigate(False)
+    iax.set_autoscale_on(False)
+    iax.set_xticks([])
+    iax.set_yticks([])
+    horizon = None
+    if INSET["horizon"] is not None:
+        horizon = [np.asarray(values, dtype=float)
+                   for values in INSET["horizon"]]
+        iax.set_facecolor("none")
+        for spine in iax.spines.values():
+            spine.set_visible(False)
+        good = np.isfinite(horizon[0]) & np.isfinite(horizon[1])
+        iax.add_patch(Polygon(
+            np.column_stack([horizon[0][good], horizon[1][good]]),
+            closed=True, facecolor="white", edgecolor="none", zorder=0.05))
+    else:
+        iax.set_facecolor("white")
+        for spine in iax.spines.values():
+            spine.set_linewidth(INSET["frame_width"])
+            spine.set_edgecolor("#000000")
+    for layer in INSET["layers"]:
+        gdf = to_inset_crs(load_layer(layer))
+        if len(gdf):
+            gdf.plot(ax=iax, zorder=layer["z"], aspect=None,
+                     **layer_style(layer))
+    iax.set_xlabel("")
+    iax.set_ylabel("")
+    if horizon is not None:
+        iax.plot(horizon[0], horizon[1], color="#000000",
+                 linewidth=INSET["frame_width"], zorder=1.9)
+    if INSET["points"]:
+        draw_inset_points(iax)
+    box = INSET["box"]
+    if box is not None:
+        xs = np.asarray(box["x"], dtype=float)  # None -> NaN: a gap
+        ys = np.asarray(box["y"], dtype=float)
+        if box["target"] == "inset":
+            iax.plot(xs, ys, color=box["color"], linewidth=box["width"],
+                     zorder=3.0)
+        else:
+            # Over the map's layers, under its points.
+            ax.plot(xs, ys, color=box["color"], linewidth=box["width"],
+                    zorder=2.5)
+    x0, x1, y0, y1 = INSET["limits"]
+    iax.set_xlim(x0, x1)
+    iax.set_ylim(y0, y1)
+    return iax
+
+
 # ------------------------------------------------------------- point data
 
 def find_column(df, wanted, hints, what):
@@ -1150,16 +1266,14 @@ def open_rows(df, spec):
     return df[column].fillna("").astype(str).isin(values).to_numpy()
 
 
-def plot_dataset(ax, spec, opened=False):
-    """Scatter one dataset group by group with the app's marker styling:
-    filled markers get the POINT_EDGE outline, open markers draw
-    outline-only. With *opened*, only the open-symbol rows, each in the
-    open form of its group's style (drawn after every dataset, on top)."""
+def dataset_groups(spec, opened=False):
+    """(style, lons, lats) for each group of one dataset that has points,
+    in render order. With *opened*, only the open-symbol rows, each in the
+    open form of its group's style."""
     df = load_points(spec)
     groups = point_groups(df, spec)
     marked = open_rows(df, spec)
-    xs, ys = proj_forward(df["_lon"].to_numpy(), df["_lat"].to_numpy())
-    offsets = wrap_offsets()
+    lons, lats = df["_lon"].to_numpy(), df["_lat"].to_numpy()
     styles = spec["styles"]
     order = list(dict.fromkeys(list(styles) + sorted(set(groups))))
     for group in order:
@@ -1173,8 +1287,19 @@ def plot_dataset(ax, spec, opened=False):
             # white is outlined in black.
             style = dict(style, open=True, fill="#ffffff",
                          color=open_outline(style["color"]))
-        px = np.concatenate([xs[mask] + off for off in offsets])
-        py = np.tile(ys[mask], len(offsets))
+        yield style, lons[mask], lats[mask]
+
+
+def plot_dataset(ax, spec, opened=False):
+    """Scatter one dataset group by group with the app's marker styling:
+    filled markers get the POINT_EDGE outline, open markers draw
+    outline-only. With *opened*, only the open-symbol rows (drawn after
+    every dataset, on top)."""
+    offsets = wrap_offsets()
+    for style, lons, lats in dataset_groups(spec, opened):
+        xs, ys = proj_forward(lons, lats)
+        px = np.concatenate([xs + off for off in offsets])
+        py = np.tile(ys, len(offsets))
         face, edge, lw = marker_paint(style)
         ax.scatter(px, py, s=style["size"], c=face,
                    marker=style["marker"], zorder=Z_POINTS,
@@ -1197,7 +1322,16 @@ def legend_handle(style, size=None):
 
 def legend_placement(ax):
     """The legend's loc, lifted clear of the scale bar when they share a
-    corner: the legend frame is opaque and would hide the bar."""
+    corner: the legend frame is opaque and would hide the bar. In the inset
+    map's corner it sits beyond the inset, which steps around the bar in
+    turn."""
+    inset = INSET["clear"] if INSET is not None else None
+    if inset is not None and inset[0] == LEGEND["location"]:
+        corner, frac = inset
+        return dict(loc=corner,
+                    bbox_to_anchor=(0.0 if corner.endswith("left") else 1.0,
+                                    frac),
+                    bbox_transform=ax.transAxes)
     clear = SCALE_BAR_CLEAR
     if clear is None or clear[0] != LEGEND["location"]:
         return dict(loc=LEGEND["location"])
@@ -1370,6 +1504,7 @@ def main():
     draw_labels(ax, fig)
     draw_compass(ax)
     draw_scale_bar(ax)
+    draw_inset(fig, ax)
     ax.set_xlim(VIEW[0], VIEW[1])
     ax.set_ylim(VIEW[2], VIEW[3])
     add_legend(ax)

@@ -15,7 +15,8 @@ from pymappr.renderer.tables import (BATHYMETRY_COLORS, FILL_COLORS,
                                      MARGINS_PLAIN, MARGINS_WITH_TICKS,
                                      POINT_LAYERS, Z_BATHYMETRY, Z_LAKE_FILL,
                                      Z_OCEAN, Z_POINT_LAYERS)
-from pymappr.styling.decorations import CompassOptions, ScaleBarOptions
+from pymappr.styling.decorations import (CompassOptions, InsetOptions,
+                                         ScaleBarOptions)
 from pymappr.styling.layout import (column_key, layout_points,
                                     with_default_title)
 from pymappr.styling.legend import LegendOptions
@@ -34,6 +35,10 @@ WORLD_EXTENT = (-180.0, 180.0, -90.0, 90.0)
 
 # Default figure size (inches): the app's initial canvas.
 DEFAULT_FIGSIZE = (9.0, 6.5)
+
+# Gap between the inset map and a legend sharing its corner, in axes
+# fraction - the renderer's own (pymappr/renderer/inset.py).
+_INSET_GAP = 0.015
 
 # Grid spacing dropdown -> degrees (mirrors the control panel choices).
 _GRATICULE_DEGREES = {"1\N{DEGREE SIGN}": 1.0, "5\N{DEGREE SIGN}": 5.0,
@@ -269,6 +274,18 @@ def _view_and_zoom(state: dict, figsize: tuple[float, float],
     return box, zoom
 
 
+def _ne_layer(source: str, key: str, kind: str, z: float, zoom: float,
+              filt=None, **style) -> dict:
+    """A Natural Earth layer's config dict: the archive the app would draw
+    *source* from at *zoom*, plus its kind, zorder and style."""
+    arc_scale, category, name, member = _source_archive(source, zoom)
+    if filt is None:
+        filt = _DERIVED_SOURCES.get(source, (None, None))[1]
+    return {"key": key, "name": name, "category": category,
+            "scale": arc_scale, "member": member, "filter": filt,
+            "kind": kind, "z": z, **style}
+
+
 def _base_layers(m: dict, zoom: float) -> tuple[list[dict], list[str]]:
     """The enabled base layers as config dicts (any order - each carries
     the renderer's true zorder), plus notes about enabled features not
@@ -282,12 +299,7 @@ def _base_layers(m: dict, zoom: float) -> tuple[list[dict], list[str]]:
 
     def ne_layer(source: str, key: str, kind: str, z: float,
                  filt=None, **style) -> dict:
-        arc_scale, category, name, member = _source_archive(source, zoom)
-        if filt is None:
-            filt = _DERIVED_SOURCES.get(source, (None, None))[1]
-        return {"key": key, "name": name, "category": category,
-                "scale": arc_scale, "member": member, "filter": filt,
-                "kind": kind, "z": z, **style}
+        return _ne_layer(source, key, kind, z, zoom, filt, **style)
 
     for mode_key, z, mode in (
             ("ocean", Z_OCEAN, str(m.get("ocean", "none"))),
@@ -337,6 +349,105 @@ def _base_layers(m: dict, zoom: float) -> tuple[list[dict], list[str]]:
                                size=size, min_zoom_max=threshold))
     layers.sort(key=lambda layer: layer["z"])
     return layers, notes
+
+
+def _inset_clear(options: InsetOptions, rect) -> tuple[str, float] | None:
+    """(corner, axes-fraction y) a legend in the inset's corner keeps
+    beyond, as the renderer works it out; None once the inset was dragged
+    out of its corner."""
+    if options.anchor is not None:
+        return None
+    _x, y, _width, height = rect
+    if options.position.startswith("upper"):
+        return options.position, round(y - _INSET_GAP, 6)
+    return options.position, round(y + height + _INSET_GAP, 6)
+
+
+def _inset_config(state: dict) -> dict | None:
+    """The inset map for the script templates, or None without one.
+
+    Everything comes resolved from ``MapRenderer.inset_export()`` (passed in
+    as ``state["inset_export"]``): the region, projection, frame and box are
+    exactly what the app drew, so the script needs no state lookup. Only
+    the layers are turned into Natural Earth archives, at the inset's own
+    zoom, like the main map's.
+    """
+    data = state.get("inset_export")
+    if not isinstance(data, dict):
+        return None
+    zoom = _num(data.get("zoom"), 0.0)
+    layers = []
+    for source, kwargs in data.get("layers") or []:
+        if source not in _CATEGORY:
+            continue
+        kwargs = dict(kwargs)
+        z = _num(kwargs.get("zorder"), 1.0)
+        face = kwargs.get("facecolor", "none")
+        if face != "none":
+            layers.append(_ne_layer(
+                source, source, "fill", z, zoom, color=face,
+                edgecolor=kwargs.get("edgecolor", "none"),
+                width=_num(kwargs.get("linewidth"), 0.0), alpha=1.0))
+            continue
+        linestyle = kwargs.get("linestyle", "solid")
+        if isinstance(linestyle, list):  # a dash pattern, after JSON
+            linestyle = (linestyle[0], tuple(linestyle[1]))
+        kind = "continents" if source == "continents" else "line"
+        layers.append(_ne_layer(
+            source, source, kind, z, zoom,
+            color=kwargs.get("edgecolor", "#000000"),
+            width=_num(kwargs.get("linewidth"), 0.5), linestyle=linestyle))
+    layers.sort(key=lambda layer: layer["z"])
+
+    crs = data.get("crs")
+    hemisphere = bool(data.get("hemisphere"))
+    min_lat = _num(data.get("min_lat"), -90.0)
+    max_lat = _num(data.get("max_lat"), 90.0)
+    lon_0 = _num(data.get("lon_0"), 0.0)
+    lat_0 = _num(data.get("lat_0"), 0.0)
+    lon_halfspan = _num(data.get("lon_halfspan"), 180.0)
+    # The clip before reprojection, as LayerStore.frame_projected does it:
+    # the globe's visible cap, a regional projection's latitude band, or a
+    # world projection's symmetric band (Mercator).
+    clip_cap = band = None
+    if crs is not None:
+        if hemisphere:
+            clip_cap = (round(lon_0, 6), round(lat_0, 6),
+                        round(CAP_CLIP_RADIUS, 6))
+        elif lon_halfspan < 180.0 or min_lat != -max_lat:
+            band = (min_lat, max_lat)
+        elif max_lat < 90.0:
+            band = (-max_lat, max_lat)
+    rect = [_num(v, 0.0) for v in data.get("rect", (0.0, 0.0, 0.3, 0.3))]
+    horizon = data.get("horizon") if hemisphere else None
+    box = data.get("box")
+    if isinstance(box, dict) and box.get("target") in ("inset", "main"):
+        box = {"target": box["target"], "x": list(box.get("x") or []),
+               "y": list(box.get("y") or []),
+               "color": str(box.get("color") or "#d62728"),
+               "width": _num(box.get("width"), 1.2)}
+    else:
+        box = None
+    options = InsetOptions.from_dict(dict(state.get("map", {})).get("inset"))
+    return {
+        "projection": str(data.get("projection", "Equirectangular")),
+        "crs": crs,
+        "rect": rect,
+        "lon_0": lon_0, "lat_0": lat_0,
+        "min_lat": min_lat, "max_lat": max_lat,
+        "lon_halfspan": lon_halfspan, "hemisphere": hemisphere,
+        "clip_cap": clip_cap, "band": band,
+        "limits": [_num(v, 0.0) for v in data.get("limits", (0, 1, 0, 1))],
+        "zoom": round(zoom, 4),
+        "layers": layers,
+        "points": bool(data.get("points", True)),
+        "point_scale": _num(data.get("point_scale"), 0.3),
+        "frame_width": _num(data.get("frame_width"), 0.8),
+        "horizon": (None if not horizon else
+                    [list(horizon[0]), list(horizon[1])]),
+        "box": box,
+        "clear": _inset_clear(options, rect),
+    }
 
 
 def _label_layers(m: dict, zoom: float) -> list[dict]:
@@ -604,6 +715,8 @@ def build_config(state: dict, entries, project_name: str = "map",
                        "width": _num(edge.get("width", POINT_EDGE_WIDTH),
                                      POINT_EDGE_WIDTH)},
         "dpi": int(_num(m.get("dpi", 200), 200.0)),
+        # None without an inset map (and for states saved before insets).
+        "inset": _inset_config(state),
         "notes": notes,
     }
 
@@ -897,7 +1010,78 @@ def _py_config(config: dict) -> str:
     legend = config["legend"]
     body = ", ".join(f"{_py(k)}: {_py(v)}" for k, v in legend.items())
     lines.append(f"LEGEND = {{{body}}}")
+    lines.append("")
+    lines += _py_inset(config.get("inset"))
     return "\n".join(lines) + "\n"
+
+
+def _wrapped_items(items: list[str], indent: str, width: int = 78
+                   ) -> list[str]:
+    """*items* joined by ", " over as many lines as keep them under
+    *width*, each line starting with *indent*."""
+    lines, line = [], ""
+    for item in items:
+        candidate = f"{line}, {item}" if line else item
+        if line and len(indent) + len(candidate) + 1 > width:
+            lines.append(indent + line + ",")
+            line = item
+        else:
+            line = candidate
+    if line:
+        lines.append(indent + line)
+    return lines
+
+
+def _py_inset(inset: dict | None) -> list[str]:
+    lines = ["# The inset map, as PyMappr drew it (None = no inset): rect is "
+             "its place in the",
+             "# map's axes fraction (x, y, width, height), limits its axis "
+             "limits in its own",
+             "# CRS (None = plain lon/lat), clip_cap / band what layers are "
+             "clipped to before",
+             "# reprojecting, and box the outline linking the two maps, "
+             "drawn on the inset",
+             "# or on the main map (None in x/y breaks the line)."]
+    if inset is None:
+        return lines + ["INSET = None"]
+    lines.append("INSET = {")
+    for key in ("projection", "crs", "rect", "lon_0", "lat_0", "min_lat",
+                "max_lat", "lon_halfspan", "hemisphere", "clip_cap", "band",
+                "limits", "zoom", "points", "point_scale", "frame_width",
+                "clear"):
+        lines.append(f"    {_py(key)}: {_py(inset[key])},")
+    lines.append("    'layers': [")
+    for layer in inset["layers"]:
+        entry = _py_layer_entry(layer)
+        body = ", ".join(f"{_py(k)}: {_py(v)}" for k, v in entry.items())
+        lines.append(f"        # PyMappr inset layer: {layer['key']}")
+        lines.append(f"        {{{body}}},")
+    lines.append("    ],")
+    horizon = inset["horizon"]
+    if horizon is None:
+        lines.append("    'horizon': None,")
+    else:
+        lines.append("    # The globe's horizon (x list, y list).")
+        lines.append("    'horizon': (")
+        for values in horizon:
+            lines.append("        [")
+            lines += _wrapped_items([_py(v) for v in values], " " * 12)
+            lines.append("        ],")
+        lines.append("    ),")
+    box = inset["box"]
+    if box is None:
+        lines.append("    'box': None,")
+    else:
+        lines.append(f"    'box': {{'target': {_py(box['target'])}, "
+                     f"'color': {_py(box['color'])}, "
+                     f"'width': {_py(box['width'])},")
+        for axis in ("x", "y"):
+            lines.append(f"            {_py(axis)}: [")
+            lines += _wrapped_items([_py(v) for v in box[axis]], " " * 16)
+            lines.append("            ],")
+        lines.append("    },")
+    lines.append("}")
+    return lines
 
 
 def _python_script(config: dict) -> str:
@@ -1267,7 +1451,79 @@ def _r_config(config: dict) -> str:
     legend = config["legend"]
     pairs = [(key, _r(value)) for key, value in legend.items()]
     lines.append(f"LEGEND <- list({_r_named(pairs, '  ')})")
+    lines.append("")
+    lines += _r_inset(config.get("inset"))
     return "\n".join(lines) + "\n"
+
+
+def _r_numbers(values, indent: str) -> str:
+    """An R numeric vector, wrapped over lines; None (a point that does not
+    project) becomes NA, which breaks a drawn path there."""
+    items = ["NA_real_" if v is None else _r(float(v)) for v in values]
+    if not items:
+        return "numeric(0)"
+    return "c(\n" + "\n".join(_wrapped_items(items, indent)) + ")"
+
+
+def _r_inset(inset: dict | None) -> list[str]:
+    lines = ["# The inset map, as PyMappr drew it (NULL = no inset): rect is "
+             "its place in the",
+             "# map's panel fraction (x, y, width, height), limits its axis "
+             "limits in its own",
+             "# CRS, clip_cap / band what layers are clipped to before "
+             "reprojecting, and box",
+             "# the outline linking the two maps, drawn on the inset or on "
+             "the main map (NA",
+             "# in x/y breaks the line)."]
+    if inset is None:
+        return lines + ["INSET <- NULL"]
+
+    def vector(values) -> str:
+        if values is None:
+            return "NULL"
+        return "c(" + ", ".join(_r(v) for v in values) + ")"
+
+    clear = inset["clear"]
+    pairs = [("projection", _r(inset["projection"])),
+             ("crs", _r(inset["crs"] or "EPSG:4326")),
+             ("geographic", _r(inset["crs"] is None)),
+             ("rect", vector(inset["rect"])),
+             ("lon_0", _r(inset["lon_0"])), ("lat_0", _r(inset["lat_0"])),
+             ("min_lat", _r(inset["min_lat"])),
+             ("max_lat", _r(inset["max_lat"])),
+             ("lon_halfspan", _r(inset["lon_halfspan"])),
+             ("hemisphere", _r(inset["hemisphere"])),
+             ("clip_cap", vector(inset["clip_cap"])),
+             ("band", vector(inset["band"])),
+             ("limits", vector(inset["limits"])),
+             ("points", _r(inset["points"])),
+             ("point_scale", _r(inset["point_scale"])),
+             ("frame_width", _r(inset["frame_width"])),
+             ("clear", "NULL" if clear is None else
+              f"list(corner = {_r(clear[0])}, y = {_r(clear[1])})")]
+    layers = ",\n".join("\n".join("  " + line for line in
+                                  _r_layer(layer).splitlines())
+                        for layer in inset["layers"])
+    pairs.append(("layers", f"list(\n{layers}\n  )" if layers else "list()"))
+    horizon = inset["horizon"]
+    if horizon is None:
+        pairs.append(("horizon", "NULL"))
+    else:
+        pairs.append(("horizon",
+                      f"list(\n    x = {_r_numbers(horizon[0], '      ')},"
+                      f"\n    y = {_r_numbers(horizon[1], '      ')})"))
+    box = inset["box"]
+    if box is None:
+        pairs.append(("box", "NULL"))
+    else:
+        pairs.append(("box",
+                      f"list(\n    target = {_r(box['target'])}, "
+                      f"color = {_r(box['color'])}, "
+                      f"width = {_r(box['width'])},"
+                      f"\n    x = {_r_numbers(box['x'], '      ')},"
+                      f"\n    y = {_r_numbers(box['y'], '      ')})"))
+    lines.append(f"INSET <- list({_r_named(pairs, '  ')})")
+    return lines
 
 
 def _r_script(config: dict) -> str:

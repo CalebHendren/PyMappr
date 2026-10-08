@@ -76,6 +76,13 @@ python -m pymappr
 - A geodesically measured scale bar in kilometres, miles or both, with
   corner, segmented or plain styling, an automatic or fixed length, and
   drag-to-place. The north arrow takes the same placement controls.
+- An inset map in any corner. As a locator it shows the state, country,
+  continent or world around the map, with a box marking the area the map
+  covers. As a close-up it shows an area too small to see on the map
+  (Hawaii on a world map, say), and the box goes on the map instead. Pick
+  the inset's projection (a globe turned to face the map is one choice),
+  its layers and whether it shows your points. **Use current view** sets a
+  close-up's area: zoom in on it, click, and zoom back out.
 - Landscape or portrait framing. The New Zealand, Madagascar and Florida
   maps in the [gallery](#gallery) are portrait.
 
@@ -90,8 +97,8 @@ renders, are in [`docs/images/`](docs/images).
   size. TIFFs are LZW-compressed and greyscale when the map has no colour;
   PDF and SVG text stays editable.
 - Export it as a self-contained Python (matplotlib) or R (ggplot2) script
-  that redraws it outside PyMappr. Run the script with `--install-deps` to
-  have it install what it needs.
+  that redraws it, inset map included, outside PyMappr. Run the script with
+  `--install-deps` to have it install what it needs.
 - Projects (`.pymappr` files) save your datasets and settings, with
   autosave/restore, and export/import for sharing.
 
@@ -134,10 +141,16 @@ want to try them.
 | Lambert projection with rivers and lakes (the Congo divides chimpanzees from bonobos), and a nested genus / species key. | The Standard preset, with deserts and playas for the arid interior, state borders, a scale bar and a north arrow. |
 | **Country: New Zealand** | **Country: Madagascar** |
 | ![Apteryx mantelli, A. haastii and A. owenii in New Zealand over colour shaded relief](docs/images/gallery_kiwi.png) | ![Lemur catta, Eulemur fulvus and Propithecus verreauxi in Madagascar over ecoregions, holotypes as open symbols](docs/images/gallery_lemurs.png) |
-| Colour shaded relief showing the Southern Alps, outlined colour points, and a larger legend key. | Terrestrial ecoregions, black & white symbols, and holotypes as open symbols. |
+| Colour shaded relief showing the Southern Alps, outlined colour points, and a larger legend key. | Terrestrial ecoregions, black & white symbols, holotypes as open symbols, and a globe inset placing the island. |
 | **US state: Florida** | **US state: California** |
 | ![Alligator mississippiensis, Crocodylus acutus and Gopherus polyphemus in Florida with counties, rivers and lakes](docs/images/gallery_florida_herps.png) | ![Quercus lobata, Q. douglasii and Q. agrifolia in California over shaded relief](docs/images/gallery_california_oaks.png) |
 | County lines for county records, rivers and lakes, and a titled legend. | Shaded relief separating the valley, foothill and coast species, and a frameless legend. |
+| **US counties: Lancaster and Saunders, Nebraska** | **US counties: Great Smoky Mountains** |
+| ![Cicindela nevadica lincolniana, C. circumpicta and C. togata around Lincoln, Nebraska, with an inset map of Nebraska](docs/images/gallery_tiger_beetles.png) | ![Plethodon jordani, P. glutinosus and Desmognathus imitator in Tennessee and North Carolina counties, with an inset map of the United States](docs/images/gallery_salamanders.png) |
+| Labelled counties, and an inset of the state with its counties, the two on the map boxed. | The Standard preset across four counties on the state line, with the contiguous United States as the inset. |
+| **Worldwide, with a close-up inset** | **Country with outlying islands: Ecuador** |
+| ![Harmonia axyridis, Coccinella septempunctata and Hippodamia variegata worldwide, with an inset of the Hawaiian Islands](docs/images/gallery_lady_beetles.png) | ![Dynastes hercules and Megasoma actaeon in mainland Ecuador, with Stomion helopoides and S. laevigatum in an inset of the Galapagos](docs/images/gallery_ecuador_beetles.png) |
+| The Hawaiian records are a speck at world scale, so an inset blows them up and a box on the map shows where they are. | The Galapagos lie off the map of the mainland, so they get an inset of their own, and their records show there. |
 
 ## Why PyMappr over AI
 

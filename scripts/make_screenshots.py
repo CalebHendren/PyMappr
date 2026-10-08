@@ -30,7 +30,7 @@ from pymappr.files.projects import DatasetEntry  # noqa: E402
 from pymappr.geo.layers import LayerStore  # noqa: E402
 from pymappr.renderer import MapRenderer  # noqa: E402
 from pymappr.styling.decorations import (  # noqa: E402
-    CompassOptions, ScaleBarOptions)
+    CompassOptions, InsetOptions, ScaleBarOptions)
 from pymappr.styling.layout import (  # noqa: E402
     layout_points, with_default_title)
 from pymappr.styling.legend import (  # noqa: E402
@@ -203,14 +203,16 @@ def gallery_map(store: LayerStore, name: str, *, extent="World",
                 lines=(), fills=(), lake_fill=None,
                 palette=DEFAULT_PALETTE, combine=False, entry=None,
                 edge=None, alpha=None, legend=None, grid=10,
-                scale_bar: str | None = None, compass=False):
+                scale_bar: str | None = None, compass=False, inset=None,
+                labels=()):
     """One distribution map from the generated sample_data/gallery datasets.
 
     Every look setting is an argument, so each map picks what suits its data:
     *lines* and *fills* are layer keys, *entry* holds the DatasetEntry
     styling (color_by, symbol_by, open_by ...), *legend* the LegendOptions
-    fields (location included), *edge* a (colour, width) point outline.
-    Returns (renderer, cropped)."""
+    fields (location included), *edge* a (colour, width) point outline,
+    *inset* the InsetOptions fields of an inset map, *labels* label layer
+    keys. Returns (renderer, cropped)."""
     data = sample(f"gallery/{name}.csv")
     dataset = data.dataset
     entry = dict(entry or {})
@@ -241,6 +243,10 @@ def gallery_map(store: LayerStore, name: str, *, extent="World",
                                         fontsize=9.0))
     if compass:
         r.set_compass(CompassOptions(show=True))
+    for key in labels:
+        r.set_labels(key, True)
+    if inset:
+        r.set_inset(InsetOptions(show=True, **inset))
     if edge:
         r.set_point_edge(*edge)
     if alpha is not None:
@@ -314,7 +320,11 @@ def gallery_scenes(store: LayerStore) -> dict:
                                         "Propithecus verreauxi")}),
             legend=dict(location="lower right", label_italic=True,
                         show_title=False),
-            scale_bar="lower left"),
+            scale_bar="lower left",
+            # A globe turned to face the map, to place the island.
+            inset=dict(projection="Globe", region="World",
+                       position="upper left", size=0.32, points=False,
+                       box_color="#000000")),
         # County-level records: counties, rivers, lakes, ocean.
         "gallery_florida_herps.png": g(
             "gallery_florida_herps", extent=(-88, -79, 24, 31.5),
@@ -334,6 +344,55 @@ def gallery_scenes(store: LayerStore) -> dict:
             legend=dict(location="lower left", frame=False,
                         label_italic=True, show_title=False),
             scale_bar="upper right", compass=True),
+        # A worldwide map with a close-up: the Hawaiian records are a speck
+        # at world scale, so the inset blows them up and the box on the map
+        # shows where they are.
+        "gallery_lady_beetles.png": g(
+            "gallery_lady_beetles", figsize=(12, 6.6), projection="Robinson",
+            grid=30, palette=OKABE_ITO, combine=True,
+            legend=dict(location="lower right", label_italic=True,
+                        show_title=False),
+            inset=dict(region="custom", lon_min=-160.6, lon_max=-154.4,
+                       lat_min=18.6, lat_max=22.6, position="lower left",
+                       size=0.24, ocean="blue")),
+        # A country with outlying islands: the Galapagos are off the map of
+        # the mainland, so they get an inset of their own (no box - the two
+        # areas do not overlap), and their records show only there.
+        "gallery_ecuador_beetles.png": g(
+            "gallery_ecuador_beetles", extent=(-81.3, -75.0, -5.1, 1.6),
+            figsize=(10, 9), lines=("states", "rivers"), grid=1,
+            ocean="blue", palette=OKABE_ITO, edge=("#000000", 0.6),
+            combine=True,
+            legend=dict(location="lower left", label_italic=True,
+                        show_title=False),
+            scale_bar="lower right",
+            inset=dict(region="custom", lon_min=-92.1, lon_max=-89.1,
+                       lat_min=-1.5, lat_max=0.7, position="upper left",
+                       size=0.3, ocean="blue", land=False)),
+        # County records around Lincoln, Nebraska, with the state as the
+        # locator: its counties, and a box on the two the map shows.
+        "gallery_tiger_beetles.png": g(
+            "gallery_tiger_beetles", extent=(-97.2, -96.2, 40.45, 41.45),
+            figsize=(10, 9), lines=("states", "counties", "rivers",
+                                    "lakes_outline"),
+            lake_fill="blue", grid=0.2, palette=OKABE_ITO,
+            edge=("#000000", 0.6), combine=True,
+            legend=dict(location="upper left", label_italic=True,
+                        show_title=False),
+            scale_bar="lower left", labels=("counties",),
+            inset=dict(region="state", states=True, counties=True,
+                       points=False, position="lower right", size=0.45)),
+        # A few counties on the Tennessee - North Carolina line in the
+        # Standard look, with the contiguous United States as the locator.
+        "gallery_salamanders.png": g(
+            "gallery_salamanders", extent=(-84.25, -82.75, 35.2, 36.05),
+            figsize=(11, 7.6), lines=("states", "counties", "rivers"),
+            grid=0.25, scale_bar="lower left", labels=("counties",),
+            legend=dict(location="upper left", **STANDARD["legend"]),
+            inset=dict(region="country", states=True, points=False,
+                       position="lower right", size=0.32,
+                       box_color="#000000"),
+            **{k: v for k, v in STANDARD.items() if k != "legend"}),
     }
 
 
