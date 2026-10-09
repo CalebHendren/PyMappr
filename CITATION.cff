@@ -1,0 +1,28 @@
+cff-version: 1.2.0
+message: "Citing PyMappr is not necessary, but it is welcome. If you use it, please cite it as below."
+type: software
+title: PyMappr
+abstract: >-
+  Offline desktop application for making publication-ready species
+  distribution maps from a table of localities. A Python remake of
+  SimpleMappr.
+authors:
+  - family-names: Hendren
+    given-names: Caleb
+    affiliation: Chattanooga State Community College
+identifiers:
+  - type: doi
+    value: 10.5281/zenodo.21522496
+    description: Concept DOI for all versions of PyMappr
+doi: 10.5281/zenodo.21522496
+repository-code: "https://github.com/CalebHendren/PyMappr"
+url: "https://calebhendren.github.io/PyMappr"
+license: MIT
+keywords:
+  - biogeography
+  - distribution maps
+  - species distribution
+  - cartography
+  - taxonomy
+  - matplotlib
+  - Natural Earth
