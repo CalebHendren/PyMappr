@@ -307,18 +307,49 @@ $("#paletteSel").addEventListener("change",e=>{
   }
   render();
 });
-// One click for a journal figure: black and white points with black
-// outlines and varied shapes, and a plain boxed legend with italic names.
-// Rows restyled by hand keep their styling. Mirrors on_publication_style.
+// The column a grouping column is built on, or "": Genus under a combined
+// "Genus Species" column, since every full name starts with its genus and
+// there are fewer genera. Colouring the species by it puts each genus in one
+// shade with its shapes restarting. A column with a blank cell or one that
+// does not lead the names is not a parent; of several, the one with the most
+// distinct values wins. Mirrors layout.parent_name_column.
+function parentNameColumn(ds, groupBy){
+  if(!groupBy || !ds.columns.includes(groupBy)) return "";
+  const text=(r,c)=>String(r._attr[c]??"").trim();
+  const names=ds.rows.map(r=>text(r,groupBy)), nameCount=new Set(names).size;
+  let best="", bestCount=0;
+  for(const col of ds.columns){
+    if(col===groupBy) continue;
+    const parts=ds.rows.map(r=>text(r,col)), count=new Set(parts).size;
+    if(count>=nameCount || count<=bestCount || parts.some(v=>v==="")
+       || !parts.every((part,k)=>names[k].startsWith(part))) continue;
+    best=col; bestCount=count;
+  }
+  return best;
+}
+// One click for a journal figure, as PyMappr's built-in Standard preset:
+// black and white points with black outlines and varied shapes, a plain
+// boxed legend with italic names sorted A-Z and shaded by genus, no ocean,
+// and a 17 cm wide export at 600 DPI. Rows restyled by hand keep their
+// styling, and a manual order or a chosen Color by is kept. Mirrors
+// on_publication_style and organise_publication_legend.
 $("#btnPublication").addEventListener("click",()=>{
   opts.palette="Black & white";
   [opts.pointEdgeColor, opts.pointEdgeWidth]=PUBLICATION_POINT_EDGE;
   Object.assign(opts, PUBLICATION_LEGEND);
+  // A legend with no typed title has no heading, as a caption names the key.
+  if(!String(opts.legTitle||"").trim()) opts.legSectionTitles=false;
+  if(opts.legOrder!=="manual") opts.legOrder="az";
   // three shades alone cannot tell more than three groups apart
-  for(const ds of datasets){ ds.opacity=1; ds.varySymbols=true; }
+  for(const ds of datasets){
+    ds.opacity=1; ds.varySymbols=true;
+    if(!ds.colorBy && !ds.symbolBy) ds.colorBy=parentNameColumn(ds, ds.groupBy)||null;
+  }
+  opts.ocean="none";
   opts.exportDpi=PUBLICATION_DPI;
+  [opts.exportWidth, opts.exportUnit]=PUBLICATION_WIDTH;
   syncMapControls(); syncStylePanel(); render();
-  flashStage(`Applied the publication style. Export below at ${PUBLICATION_DPI} DPI.`);
+  flashStage(`Applied the publication style. Export below at ${PUBLICATION_WIDTH.join(" ")} wide and ${PUBLICATION_DPI} DPI.`);
 });
 $("#baseMarker").addEventListener("change",e=>{ const ds=selectedDataset(); ds.base.marker=e.target.value; render(); });
 $("#baseColor").addEventListener("input",e=>{ const ds=selectedDataset(); ds.base.color=e.target.value; render(); });

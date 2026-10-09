@@ -124,7 +124,7 @@ function storedDataset(ds){
 function saveState(){
   try{
     localStorage.setItem(STORE_KEY, JSON.stringify({
-      theme:$("#themeSelect").value, datasets:datasets.map(storedDataset), selId, nextId, opts, view, legendDrag
+      theme:$("#themeSelect").value, sizes:"pt", datasets:datasets.map(storedDataset), selId, nextId, opts, view, legendDrag
     }));
   }catch(e){
     // Private mode or over quota: keep working, but say once that a reload
@@ -180,7 +180,17 @@ function loadState(){
   if(typeof d.nextId==="number") nextId=d.nextId;
   for(const ds of datasets){ if(ds.id==null) ds.id=nextId++; nextId=Math.max(nextId, ds.id+1); }
   selId = datasets.some(ds=>ds.id===d.selId) ? d.selId : null;
-  if(d.opts && typeof d.opts==="object") Object.assign(opts, d.opts);
+  if(d.opts && typeof d.opts==="object"){
+    // A save from before sizes were points holds the legend in pixels and
+    // the old look's defaults, which every save carries whether or not they
+    // were chosen; those start over and the rest is kept.
+    const saved={...d.opts};
+    if(d.sizes!=="pt"){
+      for(const [id] of LEGEND_CONTROLS) delete saved[id];
+      delete saved.ocean;
+    }
+    Object.assign(opts, saved);
+  }
   // A setting from a build that named things differently falls back rather
   // than leaving the map without a projection or region.
   if(!PROJ_DEFS[opts.projection]) opts.projection="Equirectangular";

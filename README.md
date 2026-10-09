@@ -213,7 +213,11 @@ What it has:
   it, a continent or the world) or a close-up of a custom area, with a box
   linking it to the main map. The State/province region needs outlines
   MiniMappr does not carry.
-- The one-click publication style.
+- The one-click publication style, as PyMappr's Standard preset: black and
+  white, a plain italic legend, 17 cm wide at 600 DPI.
+- PyMappr's look: line widths, markers and text are set in points at the
+  print width, so the map on screen is the printed figure scaled down, and
+  the export comes out at that size whatever the window.
 - Export as PNG, JPEG, WebP, TIFF, PDF or SVG at the DPI you choose.
 - **Reset** in the header removes every dataset and puts all settings back to
   their defaults, after asking first.

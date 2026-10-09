@@ -72,6 +72,7 @@ function renderNow(){
   const wrap=$("#mapwrap");
   const W=wrap.clientWidth, H=wrap.clientHeight;
   sceneSize={w:W,h:H};
+  PT=printScale(W,H);
   svg.setAttribute("viewBox",`0 0 ${W} ${H}`);
   svg.setAttribute("width",W); svg.setAttribute("height",H);
 
@@ -88,11 +89,12 @@ function renderNow(){
   const useRect = silhouetteIsRect();
   const pd = currentProjDef();
   const projKey = JSON.stringify([opts.projection, opts.extent, opts.centerLon, opts.centerLat,
-    opts.orientation, W, H, view, rect]);
+    opts.orientation, W, H, view, rect, PT]);
   const sphereD = useRect ? "" : cachedPath(projKey, "sphere", ()=>path({type:"Sphere"}));
 
   // background (mat), and the clip for everything inside the map rectangle
-  setAttrs(layers.bg, {width:W, height:H, fill:opts.matColor});
+  // Past the window too, for an export margin that runs off its edge.
+  setAttrs(layers.bg, {x:-W, y:-H, width:3*W, height:3*H, fill:opts.matColor});
   setAttrs(layers.clipRect, {x:rx0, y:ry0, width:rw, height:rh});
 
   // basemap: ocean / earth silhouette, graticule, land, borders, coastline
@@ -111,7 +113,7 @@ function renderNow(){
       const step=opts.graticule, ml=pd.maxLat;
       base.appendChild(el("path",{d:cachedPath(projKey, "grat"+step,
           ()=>path(d3.geoGraticule().extentMinor([[-180,-ml],[180,ml]]).step([step,step])())),
-        fill:"none", stroke:"#9aa3ac", "stroke-width":0.5, "stroke-opacity":0.7}));
+        fill:"none", stroke:GRID_COLOR, "stroke-width":GRID_WIDTH*PT, "stroke-opacity":GRID_ALPHA}));
     }
     if(opts.showLand){
       base.appendChild(el("path",{d:cachedPath(projKey, "land", ()=>path(LAND)),
@@ -119,12 +121,11 @@ function renderNow(){
     }
     if(opts.showBorders){
       base.appendChild(el("path",{d:cachedPath(projKey, "borders", ()=>path(BORDERS)),
-        fill:"none", stroke:"#000000", "stroke-width":0.55*lw, "stroke-opacity":0.85,
-        "stroke-linejoin":"round"}));
+        fill:"none", stroke:BORDER_COLOR, "stroke-width":BORDER_WIDTH*lw*PT, "stroke-linejoin":"round"}));
     }
     if(opts.showCoast){
       base.appendChild(el("path",{d:cachedPath(projKey, "coast", ()=>path(LAND_MESH)),
-        fill:"none", stroke:"#333333", "stroke-width":0.7*lw, "stroke-linejoin":"round"}));
+        fill:"none", stroke:BORDER_COLOR, "stroke-width":BORDER_WIDTH*lw*PT, "stroke-linejoin":"round"}));
     }
   }
 
@@ -145,17 +146,17 @@ function renderNow(){
     pointXY=[];
     // Labels sit on a white halo (a stroked copy underneath, which every SVG
     // editor draws, unlike paint-order) so they read over borders and coasts.
-    const haloG=el("g",{"font-family":"sans-serif","font-size":10,fill:"#ffffff",stroke:"#ffffff",
-      "stroke-width":3,"stroke-linejoin":"round","stroke-opacity":0.85});
-    const labelsG=el("g",{"font-family":"sans-serif","font-size":10,fill:"#222"});
+    const haloG=el("g",{"font-family":MAP_FONT,"font-size":POINT_LABEL_SIZE*PT,fill:"#ffffff",stroke:"#ffffff",
+      "stroke-width":HALO_WIDTH*PT,"stroke-linejoin":"round","stroke-opacity":0.85});
+    const labelsG=el("g",{"font-family":MAP_FONT,"font-size":POINT_LABEL_SIZE*PT,fill:"#000000"});
     const onGlobe=!!pd.globe, centre=[opts.centerLon,opts.centerLat];
     for(const {ds,res} of resolved){
       const op=ds.opacity ?? 1;
       for(const grp of res.groups){
-        const st=grp.style, r_=sizePx(st.size), d=markerPath(st.marker,r_);
+        const st=grp.style, m=markerPx(st.size), r_=m/2, d=markerPath(st.marker,m);
         const g=el("g", isOpen(st.marker)
-          ? {fill:"none", stroke:st.color, "stroke-width":Math.max(1.1,r_*0.22), "stroke-opacity":op}
-          : edge ? {fill:st.color, "fill-opacity":op, stroke:edge, "stroke-width":opts.pointEdgeWidth,
+          ? {fill:"none", stroke:st.color, "stroke-width":OPEN_EDGE_WIDTH*PT, "stroke-opacity":op}
+          : edge ? {fill:st.color, "fill-opacity":op, stroke:edge, "stroke-width":opts.pointEdgeWidth*PT,
                     "stroke-opacity":op, "stroke-linejoin":"round"}
                  : {fill:st.color, "fill-opacity":op, stroke:"none"});
         for(const r of grp.rows){
@@ -168,7 +169,7 @@ function renderNow(){
           g.appendChild(el("path",{d, transform:`translate(${xy[0].toFixed(2)},${xy[1].toFixed(2)})`}));
           pointXY.push(xy);
           if(opts.labels && r.label){
-            const t=el("text",{x:(xy[0]+r_+2).toFixed(2), y:(xy[1]+3).toFixed(2)});
+            const t=el("text",{x:(xy[0]+r_+2*PT).toFixed(2), y:(xy[1]+POINT_LABEL_SIZE*0.35*PT).toFixed(2)});
             t.textContent=r.label; labelsG.appendChild(t);
             haloG.appendChild(t.cloneNode(true));
           }
@@ -228,12 +229,12 @@ function renderNow(){
   // in, a round silhouette runs past the frame, so the frame is the outline.
   const overlay=layers.overlay; clearNode(overlay);
   overlay.appendChild(useRect || isZoomed()
-    ? el("rect",{x:rx0,y:ry0,width:rw,height:rh,fill:"none",stroke:"#5a6068","stroke-width":1})
-    : el("path",{d:sphereD, fill:"none", stroke:"#5a6068","stroke-width":1}));
+    ? el("rect",{x:rx0,y:ry0,width:rw,height:rh,fill:"none",stroke:FRAME_COLOR,"stroke-width":FRAME_WIDTH*PT})
+    : el("path",{d:sphereD, fill:"none", stroke:FRAME_COLOR,"stroke-width":FRAME_WIDTH*PT}));
   if(gridLabelsShown()) drawGridLabels(overlay, proj, rect);
   if(opts.title){
-    const t=el("text",{x:(rx0+rx1)/2, y:26, "text-anchor":"middle","font-family":"sans-serif",
-      "font-size":19,"font-weight":700,fill:"#1d2127"});
+    const t=el("text",{x:(rx0+rx1)/2, y:ry0+TITLE_SIZE*1.2*PT, "text-anchor":"middle","font-family":MAP_FONT,
+      "font-size":TITLE_SIZE*PT,"font-weight":700,fill:"#000000"});
     t.textContent=opts.title; overlay.appendChild(t);
   }
   if(opts.compass) drawCompass(overlay, rect, [legendBox, insetBox]);
@@ -264,30 +265,30 @@ function formatLat(v){
 // round multiple of the spacing (every 30° on a 1° grid, say).
 const LABEL_STEPS=[1,2,5,10,15,20,30,45,60,90,180];
 function drawGridLabels(parent, proj, rect){
-  const [[x0,y0],[x1,y1]]=rect, step=opts.graticule, fs=10;
-  const g=el("g",{"font-family":"sans-serif","font-size":fs, fill:"#3d444b"});
+  const [[x0,y0],[x1,y1]]=rect, step=opts.graticule, fs=TICK_LABEL_SIZE*PT, tick=TICK_LENGTH*PT;
+  const g=el("g",{"font-family":MAP_FONT,"font-size":fs, fill:"#000000"});
   const ticks=[];
   const pxPerDeg=Math.abs(proj([1,0])[0]-proj([0,0])[0]);
   const labelStep=needPx=>LABEL_STEPS.find(s=>s%step===0 && s*pxPerDeg>=needPx) || 180;
-  const lonStep=labelStep(textWidth("180°W", fs, "sans-serif")+8);
+  const lonStep=labelStep(textWidth("180°W", fs, MAP_FONT)+3*PT);
   for(let lon=-180; lon<=180+1e-9; lon+=step){
     const x=proj([lon,0])[0];
     if(x<x0-0.5 || x>x1+0.5) continue;
-    ticks.push(`M${x.toFixed(2)},${y1}v4`);
+    ticks.push(`M${x.toFixed(2)},${y1}v${tick.toFixed(2)}`);
     if(Math.round(lon)%lonStep!==0) continue;
-    const t=el("text",{x:x.toFixed(2), y:(y1+4+fs).toFixed(2), "text-anchor":"middle"});
+    const t=el("text",{x:x.toFixed(2), y:(y1+tick+2*PT+fs*0.8).toFixed(2), "text-anchor":"middle"});
     t.textContent=formatLon(lon); g.appendChild(t);
   }
-  const latStep=labelStep(fs+4);
+  const latStep=labelStep(fs+2*PT);
   for(let lat=-90; lat<=90+1e-9; lat+=step){
     const y=proj([0,lat])[1];
     if(y<y0-0.5 || y>y1+0.5) continue;
-    ticks.push(`M${x0},${y.toFixed(2)}h-4`);
+    ticks.push(`M${x0},${y.toFixed(2)}h${(-tick).toFixed(2)}`);
     if(Math.round(lat)%latStep!==0) continue;
-    const t=el("text",{x:x0-6, y:(y+fs*0.35).toFixed(2), "text-anchor":"end"});
+    const t=el("text",{x:(x0-tick-2*PT).toFixed(2), y:(y+fs*0.35).toFixed(2), "text-anchor":"end"});
     t.textContent=formatLat(lat); g.appendChild(t);
   }
-  g.appendChild(el("path",{d:ticks.join(""), stroke:"#5a6068", "stroke-width":1, fill:"none"}));
+  g.appendChild(el("path",{d:ticks.join(""), stroke:FRAME_COLOR, "stroke-width":FRAME_WIDTH*PT, fill:"none"}));
   parent.appendChild(g);
 }
 
@@ -491,11 +492,14 @@ function textWidth(text, size, family, bold, italic){
 function drawLegend(parent, W, H, entries, attrLegends, avoid){
   const sections=legendItems(entries, attrLegends);
   if(!sections.length) return null;
-  const fs=opts.legFont, scale=opts.legScale;
-  const font=opts.legFontFamily||"sans-serif";
-  const titleFs=opts.legTitleFont||fs;
-  const pad=opts.legPad, gap=opts.legSwatchGap;
-  const rowH=fs*(1.05+opts.legRowSpacing), swW=fs*opts.legSwatchWidth*scale;
+  // Sizes are points, and the gaps fractions of the font size, as
+  // matplotlib's legend takes them (borderpad, labelspacing, handlelength,
+  // handletextpad, columnspacing).
+  const fs=opts.legFont*PT, scale=opts.legScale;
+  const font=fontStack(opts.legFontFamily);
+  const titleFs=(opts.legTitleFont||opts.legFont)*PT;
+  const pad=opts.legPad*fs, gap=opts.legSwatchGap*fs;
+  const rowH=fs*(1.05+opts.legRowSpacing), swW=fs*opts.legSwatchWidth;
   const g=el("g"); g.style.cursor="move";
 
   // A nested key's group rows head a block of children, so they take the
@@ -503,7 +507,7 @@ function drawLegend(parent, W, H, entries, attrLegends, avoid){
   // when every swatch sits in the same column.
   const indent=fs*0.3*opts.legIndent;
   const titleH=Math.max(rowH, titleFs*(1.05+opts.legRowSpacing));
-  const gapH=rowH*0.4, colGap=opts.legColSpacing;
+  const gapH=rowH*0.4, colGap=opts.legColSpacing*fs;
   const cols=Math.max(1,Math.round(opts.legCols));
   const titleW=text=>textWidth(text, titleFs, font, opts.legTitleBold, opts.legTitleItalic);
   // Across several columns, a title that names the whole legend (the typed
@@ -546,9 +550,10 @@ function drawLegend(parent, W, H, entries, attrLegends, avoid){
   // bar, which the export crop then had to keep.
   const [[fx0,fy0],[fx1,fy1]]=frameRect;
   const at=p=>{
-    const m=2, hx=p[1], vy=p[0];
+    // matplotlib's borderaxespad: half the font size in from the frame.
+    const m=0.5*fs, hx=p[1], vy=p[0];
     return [hx==="r" ? fx1-boxW-m : hx==="l" ? fx0+m : (fx0+fx1-boxW)/2,
-            vy==="t" ? fy0+m+(opts.title?30:0) : vy==="b" ? fy1-boxH-m : (fy0+fy1-boxH)/2];
+            vy==="t" ? fy0+m+titleBand() : vy==="b" ? fy1-boxH-m : (fy0+fy1-boxH)/2];
   };
   let bx,by;
   if(legendDrag){ bx=legendDrag.x*W; by=legendDrag.y*H; }
@@ -566,14 +571,14 @@ function drawLegend(parent, W, H, entries, attrLegends, avoid){
   bx=Math.max(2,Math.min(bx,W-boxW-2)); by=Math.max(2,Math.min(by,H-boxH-2));
 
   if(opts.legShadow){
-    g.appendChild(el("rect",{x:bx+3,y:by+3,width:boxW,height:boxH,rx:opts.legRadius,
+    g.appendChild(el("rect",{x:bx+2*PT,y:by+2*PT,width:boxW,height:boxH,rx:opts.legRadius*PT,
       fill:"rgba(0,0,0,0.18)"}));
   }
-  g.appendChild(el("rect",{x:bx,y:by,width:boxW,height:boxH,rx:opts.legRadius,
+  g.appendChild(el("rect",{x:bx,y:by,width:boxW,height:boxH,rx:opts.legRadius*PT,
     fill:opts.legFrameColor,
     "fill-opacity":opts.legFrame?opts.legFrameAlpha:0,
     stroke:opts.legFrame?opts.legFrameEdge:"none",
-    "stroke-width":opts.legFrameWidth}));
+    "stroke-width":opts.legFrameWidth*PT}));
   // Alignment is over the width the title heads - its column, or the whole
   // legend for a spanning title - which is as much as a hand-laid-out SVG
   // legend can honestly offer.
@@ -600,14 +605,15 @@ function drawLegend(parent, W, H, entries, attrLegends, avoid){
         const mx=cx0+dx+swW/2, my=yy+rowH/2;
         // A null style is a row that takes no swatch.
         if(item.style){
-          const r_=Math.min(sizePx(item.style.size)*scale, fs*0.8*scale);
-          const rr=Math.max(3.2, r_);
-          const p=el("path",{d:markerPath(item.style.marker,rr),
+          // The marker as drawn on the map, at least 2 pt, times the marker
+          // scale. Mirrors PointsMixin._legend_handle.
+          const m=Math.max(markerPx(item.style.size), 2*PT)*scale;
+          const p=el("path",{d:markerPath(item.style.marker,m),
             transform:`translate(${mx.toFixed(2)},${my.toFixed(2)})`});
           if(isOpen(item.style.marker)){ p.setAttribute("fill","none");
-            p.setAttribute("stroke",item.style.color); p.setAttribute("stroke-width",Math.max(1,rr*0.24)); }
+            p.setAttribute("stroke",item.style.color); p.setAttribute("stroke-width",OPEN_EDGE_WIDTH*PT); }
           else if(opts.pointEdgeWidth>0){ setAttrs(p, {fill:item.style.color, stroke:opts.pointEdgeColor,
-            "stroke-width":opts.pointEdgeWidth, "stroke-linejoin":"round"}); }
+            "stroke-width":opts.pointEdgeWidth*PT, "stroke-linejoin":"round"}); }
           else { p.setAttribute("fill",item.style.color); p.setAttribute("stroke","none"); }
           g.appendChild(p);
         }

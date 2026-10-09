@@ -8,7 +8,7 @@ const DECOR_COLOR="#1a1a1a";
 function haloText(parent, text, attrs){
   for(const halo of [true,false]){
     const t=el("text", attrs);
-    if(halo) setAttrs(t, {fill:"#ffffff", stroke:"#ffffff", "stroke-width":3,
+    if(halo) setAttrs(t, {fill:"#ffffff", stroke:"#ffffff", "stroke-width":HALO_WIDTH*PT,
       "stroke-opacity":0.85, "stroke-linejoin":"round"});
     t.textContent=text; parent.appendChild(t);
   }
@@ -20,10 +20,13 @@ function haloText(parent, text, attrs){
 // south, and that is not carried over.
 function drawCompass(parent, rect, avoid){
   const [[x0,y0],[x1,y1]]=rect;
-  const k=clamp(Number(opts.compassSize)||1, 0.5, 3);
+  // `size` scales the whole arrow; `k` is its drawing unit in pixels, 0.75 pt
+  // (one CSS pixel) at size 1. The "N" is PyMappr's 11 pt (10 pt under the
+  // triangle) and the arrow's shaft its 1.4 pt.
+  const size=clamp(Number(opts.compassSize)||1, 0.5, 3), k=0.75*size*PT;
   const triangle=opts.compassStyle==="triangle";
   const w=24*k, h=(triangle?44:56)*k;
-  const padX=Math.max(0.025*(x1-x0),12), padY=Math.max(0.025*(y1-y0),12);
+  const padX=Math.max(0.025*(x1-x0),9*PT), padY=Math.max(0.025*(y1-y0),9*PT);
   const [vertical, horizontal]=(CORNERS.includes(opts.compassPos) ? opts.compassPos : "upper right").split(" ");
   const at=side=>({x:side==="left" ? x0+padX : x1-padX-w,
                    y:vertical==="upper" ? y0+padY : y1-padY-h, w, h});
@@ -34,16 +37,16 @@ function drawCompass(parent, rect, avoid){
   }
   const cx=box.x+w/2, top=box.y;
   const g=el("g");
-  const N={x:cx, "text-anchor":"middle", "font-family":"sans-serif", "font-weight":700, fill:DECOR_COLOR};
+  const N={x:cx, "text-anchor":"middle", "font-family":MAP_FONT, "font-weight":700, fill:DECOR_COLOR};
   if(triangle){
     // a filled triangle pointing north, with the "N" under its base
     g.appendChild(el("path",{d:poly([[cx,top+2*k],[cx-9*k,top+26*k],[cx+9*k,top+26*k]]),
-      fill:DECOR_COLOR, stroke:"#ffffff", "stroke-width":0.8*k, "stroke-linejoin":"round"}));
-    haloText(g, "N", {...N, y:top+41*k, "font-size":12*k});
+      fill:DECOR_COLOR, stroke:"#ffffff", "stroke-width":0.8*size*PT, "stroke-linejoin":"round"}));
+    haloText(g, "N", {...N, y:top+41*k, "font-size":10*size*PT});
   } else {
-    haloText(g, "N", {...N, y:top+13*k, "font-size":13*k});
+    haloText(g, "N", {...N, y:top+13*k, "font-size":11*size*PT});
     g.appendChild(el("line",{x1:cx, y1:top+54*k, x2:cx, y2:top+24*k,
-      stroke:DECOR_COLOR, "stroke-width":1.6*k}));
+      stroke:DECOR_COLOR, "stroke-width":1.4*size*PT}));
     g.appendChild(el("path",{d:poly([[cx,top+17*k],[cx-4*k,top+27*k],[cx+4*k,top+27*k]]),
       fill:DECOR_COLOR}));
   }
@@ -109,7 +112,8 @@ function geodesicMetres(p, q){
 // placement and length are fractions of the frame, as in PyMappr. Frame
 // fractions here run up from the bottom, as matplotlib's axes do, so the
 // code below follows overlays.py line for line.
-const BAR_H=7, BAR_GAP=4, LABEL_GAP=4, LABEL_ROOM=20, SCALE_FONT=11;
+// In points. The label size is ScaleBarOptions.fontsize.
+const BAR_H=5, BAR_GAP=3, LABEL_GAP=3, LABEL_ROOM=14, SCALE_FONT=8, SCALE_EDGE=0.8;
 let scaleBarNote=null;   // why the bar is missing, for the status line
 
 // The scale bar: a round length measured on the row it stands on, refined
@@ -169,7 +173,7 @@ function drawScaleBar(parent, proj, rect, avoid){
   const units=opts.scaleUnits==="both" ? ["km","mi"] : [opts.scaleUnits==="mi" ? "mi" : "km"];
   const anchor=opts.scaleAnchor;
   const dragged=!!(anchor && Number.isFinite(anchor.x) && Number.isFinite(anchor.y));
-  const height=BAR_H/fh, gap=BAR_GAP/fh;
+  const height=BAR_H*PT/fh, gap=BAR_GAP*PT/fh, font=SCALE_FONT*PT, labelGap=LABEL_GAP*PT;
   const [vertical, horizontal]=(CORNERS.includes(opts.scalePos) ? opts.scalePos : "lower left").split(" ");
   // The lower pad also keeps the bar clear of the on-screen status line.
   const y=dragged ? anchor.y : vertical==="upper" ? 1-0.03 : Math.max(0.03, 24/fh);
@@ -179,7 +183,7 @@ function drawScaleBar(parent, proj, rect, avoid){
     const stack=units.length*height+(units.length-1)*gap;
     let baseY=topAnchored ? y-stack : y;
     // a second unit is labelled underneath, so lift the stack clear of it
-    if(units.length>1 && !topAnchored && !dragged) baseY+=LABEL_ROOM/fh;
+    if(units.length>1 && !topAnchored && !dragged) baseY+=LABEL_ROOM*PT/fh;
     const bars=[], last=units.length-1;
     for(const [i,unit] of units.entries()){
       const yb=baseY+(last-i)*(height+gap);
@@ -202,12 +206,12 @@ function drawScaleBar(parent, proj, rect, avoid){
     // screen box, labels included, for dodging the legend and for dragging
     let bx0=Infinity, bx1=-Infinity;
     for(const b of bars){
-      const lw=textWidth(b.label, SCALE_FONT, "sans-serif", false, false);
+      const lw=textWidth(b.label, font, MAP_FONT, false, false);
       const mid=sx(b.left+b.width/2);
       bx0=Math.min(bx0, sx(b.left), mid-lw/2); bx1=Math.max(bx1, sx(b.left+b.width), mid+lw/2);
     }
-    const top=sy(bars[0].yb+height)-LABEL_GAP-SCALE_FONT;
-    const bottom=bars.length>1 ? sy(bars[last].yb)+LABEL_GAP+SCALE_FONT : sy(bars[0].yb);
+    const top=sy(bars[0].yb+height)-labelGap-font;
+    const bottom=bars.length>1 ? sy(bars[last].yb)+labelGap+font : sy(bars[0].yb);
     return {bars, baseY, box:{x:bx0, y:top, w:bx1-bx0, h:bottom-top}};
   };
 
@@ -227,12 +231,12 @@ function drawScaleBar(parent, proj, rect, avoid){
       const left=sx(b.left+b.width*s/segments), right=sx(b.left+b.width*(s+1)/segments);
       g.appendChild(el("rect",{x:left.toFixed(2), y:top.toFixed(2), width:(right-left).toFixed(2),
         height:(bottom-top).toFixed(2), fill:s%2===0 ? DECOR_COLOR : "#ffffff",
-        stroke:DECOR_COLOR, "stroke-width":0.8}));
+        stroke:DECOR_COLOR, "stroke-width":SCALE_EDGE*PT}));
     }
     // the first unit is labelled above the stack, a second one below it
     haloText(g, b.label, {x:sx(b.left+b.width/2).toFixed(2),
-      y:(i===0 ? top-LABEL_GAP : bottom+LABEL_GAP+SCALE_FONT*0.8).toFixed(2),
-      "text-anchor":"middle", "font-family":"sans-serif", "font-size":SCALE_FONT, fill:DECOR_COLOR});
+      y:(i===0 ? top-labelGap : bottom+labelGap+font*0.8).toFixed(2),
+      "text-anchor":"middle", "font-family":MAP_FONT, "font-size":font, fill:DECOR_COLOR});
   });
   // Drag to place it anywhere; the drop point is kept as the stack's lower
   // left corner in frame fractions, as PyMappr stores it. Double-click

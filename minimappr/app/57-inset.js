@@ -283,9 +283,9 @@ function scaleBarReach(corner, fh){
   const a=opts.scaleAnchor;
   if(!opts.scaleBar || opts.scalePos!==corner || (a && Number.isFinite(a.x) && Number.isFinite(a.y))) return 0;
   const units=opts.scaleUnits==="both" ? 2 : 1;
-  const stack=units*BAR_H+(units-1)*BAR_GAP;
-  if(corner.startsWith("upper")) return 0.03*fh+stack+(units>1 ? LABEL_GAP+SCALE_FONT : 0);
-  return Math.max(0.03*fh, 24)+(units>1 ? LABEL_ROOM : 0)+stack+LABEL_GAP+SCALE_FONT;
+  const stack=(units*BAR_H+(units-1)*BAR_GAP)*PT, label=(LABEL_GAP+SCALE_FONT)*PT;
+  if(corner.startsWith("upper")) return 0.03*fh+stack+(units>1 ? label : 0);
+  return Math.max(0.03*fh, 24)+(units>1 ? LABEL_ROOM*PT : 0)+stack+label;
 }
 // The inset's screen box: in its corner, stepping beyond a scale bar there
 // and under the title, or where it was dragged. The drag is kept as the
@@ -301,7 +301,7 @@ function placeInset(w, h, rect){
   const corner=CORNERS.includes(opts.insetPos) ? opts.insetPos : "lower right";
   const [vertical, horizontal]=corner.split(" ");
   const x=horizontal==="right" ? fx1-INSET_PAD*fw-w : fx0+INSET_PAD*fw;
-  let y=vertical==="upper" ? fy0+INSET_PAD*fh+(opts.title ? 30 : 0) : fy1-INSET_PAD*fh-h;
+  let y=vertical==="upper" ? fy0+INSET_PAD*fh+titleBand() : fy1-INSET_PAD*fh-h;
   const reach=scaleBarReach(corner, fh);
   if(reach){
     if(vertical==="upper") y=Math.max(y, fy0+reach+INSET_GAP*fh);
@@ -336,7 +336,7 @@ function drawInset(resolved, mainProj, rect){
   const path=d3.geoPath(p);
 
   const key=JSON.stringify([opts.insetLand, opts.insetCountries, opts.insetOcean, opts.insetPoints,
-    opts.insetProjection, opts.projection, region, p.scale(), p.translate(), p.rotate(), box, pointsKey]);
+    opts.insetProjection, opts.projection, region, p.scale(), p.translate(), p.rotate(), box, pointsKey, PT]);
   if(key!==insetKey || !g.firstChild){
     insetKey=key;
     clearNode(g);
@@ -349,11 +349,11 @@ function drawInset(resolved, mainProj, rect){
     // Without country borders the coast is still drawn, as on the map.
     if(opts.insetCountries)
       body.appendChild(el("path",{d:path(BORDERS)||"", fill:"none", stroke:"#000000",
-        "stroke-width":Math.max(0.55*INSET_LINE_SCALE, 0.2), "stroke-opacity":0.85, "stroke-linejoin":"round"}));
-    body.appendChild(el("path",{d:path(LAND_MESH)||"", fill:"none", stroke:"#333333",
-      "stroke-width":Math.max(0.7*INSET_LINE_SCALE, 0.2), "stroke-linejoin":"round"}));
+        "stroke-width":Math.max(BORDER_WIDTH*INSET_LINE_SCALE, 0.2)*PT, "stroke-linejoin":"round"}));
+    body.appendChild(el("path",{d:path(LAND_MESH)||"", fill:"none", stroke:BORDER_COLOR,
+      "stroke-width":Math.max(BORDER_WIDTH*INSET_LINE_SCALE, 0.2)*PT, "stroke-linejoin":"round"}));
     if(opts.insetPoints) drawInsetPoints(body, resolved, p, ip, box);
-    body.appendChild(setAttrs(shape(), {fill:"none", stroke:"#000000", "stroke-width":INSET_FRAME_WIDTH}));
+    body.appendChild(setAttrs(shape(), {fill:"none", stroke:"#000000", "stroke-width":INSET_FRAME_WIDTH*PT}));
     g.appendChild(body);
     g.appendChild(el("g"));   // the box, redrawn on every render
   }
@@ -368,10 +368,10 @@ function drawInsetPoints(parent, resolved, p, ip, box){
   for(const {ds,res} of resolved){
     const op=ds.opacity ?? 1;
     for(const grp of res.groups){
-      const st=grp.style, r_=sizePx(Math.max(st.size*INSET_POINT_SCALE, 3)), d=markerPath(st.marker, r_);
+      const st=grp.style, d=markerPath(st.marker, markerPx(Math.max(st.size*INSET_POINT_SCALE, 3)));
       const g=el("g", isOpen(st.marker)
-        ? {fill:"none", stroke:st.color, "stroke-width":Math.max(0.8, r_*0.22), "stroke-opacity":op}
-        : edge ? {fill:st.color, "fill-opacity":op, stroke:edge, "stroke-width":opts.pointEdgeWidth*0.6,
+        ? {fill:"none", stroke:st.color, "stroke-width":OPEN_EDGE_WIDTH*0.6*PT, "stroke-opacity":op}
+        : edge ? {fill:st.color, "fill-opacity":op, stroke:edge, "stroke-width":opts.pointEdgeWidth*0.6*PT,
                   "stroke-opacity":op, "stroke-linejoin":"round"}
                : {fill:st.color, "fill-opacity":op, stroke:"none"});
       for(const r of grp.rows){
@@ -391,7 +391,7 @@ function drawInsetPoints(parent, resolved, p, ip, box){
 function drawInsetBox(onInset, onMain, ip, insetPath, mainProj, rect, view, region){
   if(!opts.insetBox) return;
   const target=ip.globe ? "inset" : insetBoxTarget(region, view);
-  const stroke={fill:"none", stroke:opts.insetBoxColor || "#d62728", "stroke-width":INSET_BOX_WIDTH,
+  const stroke={fill:"none", stroke:opts.insetBoxColor || "#d62728", "stroke-width":INSET_BOX_WIDTH*PT,
     "stroke-linejoin":"round"};
   if(target==="inset"){
     // The frame's outline taken back to lon/lat, split where it leaves the map.

@@ -97,7 +97,7 @@
                 <div class="row"><label class="lbl grow">Point outline</label>
                   <input type="color" id="pointEdgeColor" value="#ffffff" aria-label="Point outline colour">
                   <input type="number" id="pointEdgeWidth" min="0" max="3" step="0.1" value="0.5"
-                    style="width:64px" aria-label="Point outline width" title="Width in px (0 = none)"></div>
+                    style="width:64px" aria-label="Point outline width" title="Width in pt (0 = none)"></div>
                 <p class="hintline">The outline keeps overlapping points apart. Use a black one with
                   <b>Black &amp; white</b>, whose white points need it.</p>
               </div>
@@ -164,9 +164,9 @@
               <label class="check"><input type="checkbox" id="showCoast" checked> Coastlines</label>
               <label class="block">Ocean</label>
               <div class="seg" id="oceanSeg">
-                <button data-ocean="none">None</button>
+                <button data-ocean="none" class="on">None</button>
                 <button data-ocean="grey">Grey</button>
-                <button data-ocean="blue" class="on">Blue</button>
+                <button data-ocean="blue">Blue</button>
               </div>
               <label class="block">Graticule (grid)</label>
               <div class="seg" id="gratSeg">
@@ -317,6 +317,7 @@
               <label class="check"><input type="checkbox" id="legShow" checked> Show legend</label>
               <div class="row"><label class="lbl grow">Position</label>
                 <select id="legPos" class="grow">
+                  <option value="best">Best (covers the fewest points)</option>
                   <option value="tr">Top right</option>
                   <option value="tc">Top centre</option>
                   <option value="tl">Top left</option>
@@ -326,7 +327,6 @@
                   <option value="br">Bottom right</option>
                   <option value="bc">Bottom centre</option>
                   <option value="bl">Bottom left</option>
-                  <option value="best">Best (covers the fewest points)</option>
                 </select></div>
               <label class="block">Title <span class="muted">(blank = grouping column)</span></label>
               <input type="text" id="legTitle" placeholder="(auto)">
@@ -402,19 +402,20 @@
             <div class="body">
               <div class="row"><label class="lbl grow">Columns</label>
                 <input type="number" id="legCols" min="1" max="6" step="1" value="1" style="width:74px"></div>
+              <p class="hintline">Sizes are points on the printed map; the spacings below are
+                fractions of the font size, as in PyMappr.</p>
               <div class="row"><label class="lbl grow">Column spacing</label>
-                <input type="number" id="legColSpacing" min="0" max="80" step="2" value="16" style="width:74px"></div>
+                <input type="number" id="legColSpacing" min="0" max="10" step="0.1" value="2" style="width:74px"></div>
               <div class="row"><label class="lbl grow">Marker scale</label>
                 <input type="number" id="legScale" min="0.1" max="6" step="0.05" value="1" style="width:74px"></div>
               <div class="row"><label class="lbl grow">Swatch width</label>
-                <input type="number" id="legSwatchWidth" min="0.5" max="8" step="0.1" value="1.7" style="width:74px"
-                  title="In font sizes"></div>
+                <input type="number" id="legSwatchWidth" min="0.5" max="8" step="0.1" value="2" style="width:74px"></div>
               <div class="row"><label class="lbl grow">Row spacing</label>
                 <input type="number" id="legRowSpacing" min="0" max="3" step="0.1" value="0.5" style="width:74px"></div>
               <div class="row"><label class="lbl grow">Swatch gap</label>
-                <input type="number" id="legSwatchGap" min="0" max="40" step="1" value="8" style="width:74px"></div>
+                <input type="number" id="legSwatchGap" min="0" max="4" step="0.1" value="0.8" style="width:74px"></div>
               <div class="row"><label class="lbl grow">Inner padding</label>
-                <input type="number" id="legPad" min="0" max="40" step="1" value="9" style="width:74px"></div>
+                <input type="number" id="legPad" min="0" max="4" step="0.1" value="0.4" style="width:74px"></div>
             </div>
           </details>
 
@@ -425,13 +426,13 @@
               <div class="row"><label class="lbl grow">Fill</label>
                 <input type="color" id="legFrameColor" value="#ffffff"></div>
               <div class="row"><label class="lbl grow">Fill opacity</label>
-                <input type="number" id="legFrameAlpha" min="0" max="1" step="0.05" value="0.92" style="width:74px"></div>
+                <input type="number" id="legFrameAlpha" min="0" max="1" step="0.05" value="0.85" style="width:74px"></div>
               <div class="row"><label class="lbl grow">Border</label>
-                <input type="color" id="legFrameEdge" value="#c7ccd2"></div>
-              <div class="row"><label class="lbl grow">Border width</label>
-                <input type="number" id="legFrameWidth" min="0" max="6" step="0.5" value="1" style="width:74px"></div>
-              <div class="row"><label class="lbl grow">Corner radius</label>
-                <input type="number" id="legRadius" min="0" max="24" step="1" value="6" style="width:74px"></div>
+                <input type="color" id="legFrameEdge" value="#cccccc"></div>
+              <div class="row"><label class="lbl grow">Border width (pt)</label>
+                <input type="number" id="legFrameWidth" min="0" max="4" step="0.1" value="0.8" style="width:74px"></div>
+              <div class="row"><label class="lbl grow">Corner radius (pt)</label>
+                <input type="number" id="legRadius" min="0" max="12" step="0.2" value="1.6" style="width:74px"></div>
               <label class="check"><input type="checkbox" id="legShadow"> Drop shadow</label>
             </div>
           </details>
@@ -439,10 +440,10 @@
           <details class="sec">
             <summary>Text</summary>
             <div class="body">
-              <div class="row"><label class="lbl grow">Font size</label>
-                <input type="number" id="legFont" min="6" max="28" step="1" value="12" style="width:74px"></div>
-              <div class="row"><label class="lbl grow">Title font size</label>
-                <input type="number" id="legTitleFont" min="6" max="40" step="1" value="13" style="width:74px"></div>
+              <div class="row"><label class="lbl grow">Font size (pt)</label>
+                <input type="number" id="legFont" min="4" max="24" step="0.5" value="8" style="width:74px"></div>
+              <div class="row"><label class="lbl grow">Title font size (pt)</label>
+                <input type="number" id="legTitleFont" min="4" max="28" step="0.5" value="9" style="width:74px"></div>
               <div class="row"><label class="lbl grow">Font</label>
                 <select id="legFontFamily" class="grow">
                   <option value="sans-serif">Sans-serif</option>
@@ -451,14 +452,14 @@
                 </select></div>
               <div class="row"><label class="lbl grow">Title align</label>
                 <select id="legTitleAlign" class="grow">
-                  <option value="left">Left</option>
                   <option value="center">Centre</option>
+                  <option value="left">Left</option>
                   <option value="right">Right</option>
                 </select></div>
               <div class="row"><label class="lbl grow">Label colour</label>
-                <input type="color" id="legLabelColor" value="#22262c"></div>
+                <input type="color" id="legLabelColor" value="#000000"></div>
               <div class="row"><label class="lbl grow">Title colour</label>
-                <input type="color" id="legTitleColor" value="#1d2127"></div>
+                <input type="color" id="legTitleColor" value="#000000"></div>
               <label class="block">Label text</label>
               <div class="btnrow">
                 <label class="check"><input type="checkbox" id="legLabelBold"> Bold</label>
