@@ -1,19 +1,26 @@
 /* export (ported from ui/save_image.py) */
 // The image is the map frame and what is drawn around it - title, legend,
 // scale bar, grid labels - cropped out of the window, so a portrait map
-// loses its side bars as PyMappr's export does. Its print size is a width
-// in inches or centimetres at a DPI; the pixels follow from those.
+// loses its side bars as PyMappr's export does. Its print width is the
+// export width: the frame, the degree labels and a margin, laid out in
+// points by the print scale (PT), so the image is exactly that wide unless a
+// legend or inset was dragged out past the frame. The pixels follow from the
+// width and the DPI.
 const PUBLICATION_DPI=600;
+// A journal page, Zootaxa's and Phytotaxa's. Matches save_image.JOURNAL_PAGE_WIDTH.
+const PUBLICATION_WIDTH=[17, "cm"];
 const MAX_EXPORT_SIDE=16384, MAX_EXPORT_AREA=120e6;
 const EXPORT_TYPES={
   png:{mime:"image/png", ext:"png"}, jpeg:{mime:"image/jpeg", ext:"jpg"},
   webp:{mime:"image/webp", ext:"webp"}, tiff:{ext:"tif"}, pdf:{ext:"pdf"}, svg:{ext:"svg"},
 };
 
-// The part of the scene the export keeps, in scene pixels.
+// The part of the scene the export keeps, in scene pixels: the frame with
+// its label margins, grown to take in anything drawn past them, plus the
+// margin all round.
 function exportBox(){
-  const [[x0,y0],[x1,y1]]=frameRect;
-  let bx0=x0, by0=y0, bx1=x1, by1=y1;
+  const [[x0,y0],[x1,y1]]=frameRect, [L,B]=gridMarginsPt();
+  let bx0=x0-L*PT, by0=y0, bx1=x1, by1=y1+B*PT;
   for(const g of [layers.overlay, layers.inset, layers.legend]){
     if(!g.firstChild) continue;
     const b=g.getBBox();
@@ -21,15 +28,12 @@ function exportBox(){
     bx0=Math.min(bx0,b.x); by0=Math.min(by0,b.y);
     bx1=Math.max(bx1,b.x+b.width); by1=Math.max(by1,b.y+b.height);
   }
-  const pad=8, {w:W, h:H}=sceneSize;
-  bx0=Math.max(0,bx0-pad); by0=Math.max(0,by0-pad);
-  bx1=Math.min(W,bx1+pad); by1=Math.min(H,by1+pad);
-  return {x:bx0, y:by0, w:bx1-bx0, h:by1-by0};
+  const pad=EXPORT_MARGIN_PT*PT;
+  return {x:bx0-pad, y:by0-pad, w:bx1-bx0+2*pad, h:by1-by0+2*pad};
 }
 // Print size and pixel size of the export.
 function exportSize(box){
-  const unit=opts.exportUnit==="cm" ? 2.54 : 1;
-  const inches=Math.max(Number(opts.exportWidth)||0, 0)/unit;
+  const inches=box.w/PT/72;
   const dpi=Math.max(Number(opts.exportDpi)||0, 1);
   const px=Math.max(1, Math.round(inches*dpi));
   const py=Math.max(1, Math.round(px*box.h/box.w));

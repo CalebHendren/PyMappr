@@ -225,10 +225,13 @@ const OCEAN_COLORS = {none:null, grey:"#dcdcdc", blue:"#d4e6f4"};
 // 80-view-persist-theme-boot.js, so adding a setting is one row rather than
 // four near-identical lines in three files.
 //   bool -> checkbox, num -> number input, str -> text/select/colour
+// The defaults are legend.LegendOptions'. Sizes are points; the gaps and the
+// swatch width are fractions of the font size, as matplotlib's legend
+// measures them.
 const LEGEND_CONTROLS = [
   // what is shown at all
   ["legShow", "bool", true],
-  ["legPos", "str", "tr"],
+  ["legPos", "str", "best"],
   ["legTitle", "str", ""],
   // rows and order (these change the row text, not just its look)
   ["legHierarchy", "str", "auto"],
@@ -250,26 +253,26 @@ const LEGEND_CONTROLS = [
   // layout
   ["legCols", "num", 1],
   ["legScale", "num", 1],
-  ["legSwatchWidth", "num", 1.7],        // in font sizes
-  ["legColSpacing", "num", 16],          // px between columns
-  ["legRowSpacing", "num", 0.5],
-  ["legSwatchGap", "num", 8],
-  ["legPad", "num", 9],
+  ["legSwatchWidth", "num", 2],          // handlelength
+  ["legColSpacing", "num", 2],           // columnspacing
+  ["legRowSpacing", "num", 0.5],         // labelspacing
+  ["legSwatchGap", "num", 0.8],          // handletextpad
+  ["legPad", "num", 0.4],                // borderpad
   // frame
   ["legFrame", "bool", true],
   ["legFrameColor", "str", "#ffffff"],
-  ["legFrameAlpha", "num", 0.92],
-  ["legFrameEdge", "str", "#c7ccd2"],
-  ["legFrameWidth", "num", 1],
-  ["legRadius", "num", 6],
+  ["legFrameAlpha", "num", 0.85],
+  ["legFrameEdge", "str", "#cccccc"],
+  ["legFrameWidth", "num", 0.8],
+  ["legRadius", "num", 1.6],             // matplotlib's round box: 0.2 of 8 pt
   ["legShadow", "bool", false],
   // text
-  ["legFont", "num", 12],
-  ["legTitleFont", "num", 13],
+  ["legFont", "num", 8],
+  ["legTitleFont", "num", 9],
   ["legFontFamily", "str", "sans-serif"],
-  ["legLabelColor", "str", "#22262c"],
-  ["legTitleColor", "str", "#1d2127"],
-  ["legTitleAlign", "str", "left"],
+  ["legLabelColor", "str", "#000000"],
+  ["legTitleColor", "str", "#000000"],
+  ["legTitleAlign", "str", "center"],
   ["legLabelBold", "bool", false],
   ["legLabelItalic", "bool", false],
   ["legLabelUnderline", "bool", false],
@@ -317,11 +320,11 @@ const MAP_CONTROLS = [
 // readability - MiniMappr rebuilds the whole SVG either way.
 // The legend half of the publication style: a plain white box with a thin
 // black border, and italic entries because taxon names are set in italics.
-// Mirrors legend.PUBLICATION_LEGEND; its 9/10 pt text is a step up from
-// PyMappr's 8/9 pt defaults, and so is 13/14 px from MiniMappr's 12/13.
+// Mirrors legend.PUBLICATION_LEGEND: 9/10 pt text, a step up from the 8/9 pt
+// defaults.
 const PUBLICATION_LEGEND = {legFrame:true, legFrameColor:"#ffffff", legFrameAlpha:1,
   legFrameEdge:"#000000", legFrameWidth:0.5, legRadius:0, legShadow:false,
-  legLabelItalic:true, legFont:13, legTitleFont:14};
+  legLabelItalic:true, legFont:9, legTitleFont:10};
 const LEGEND_CONTENT_KEYS = new Set(["legHierarchy", "legOrder", "legCounts",
   "legCountFormat", "legBlankLabel", "legSectionTitles", "legTitleSeparator",
   "legDatasetPrefix", "legEmptyGroups", "legGroupSwatch"]);
@@ -329,7 +332,7 @@ const LEGEND_CONTENT_KEYS = new Set(["legHierarchy", "legOrder", "legCounts",
 const opts = {
   extent:"World", projection:"Equirectangular", centerLon:0, centerLat:0,
   orientation:"landscape", showLand:true, landColor:"#ffffff", showBorders:true,
-  showCoast:true, ocean:"blue", graticule:0, title:"", compass:false, labels:false,
+  showCoast:true, ocean:"none", graticule:0, title:"", compass:false, labels:false,
   matColor:"#ffffff", lineWidth:1, palette:"Default", scaleBar:false,
   // The outline drawn around filled markers (open markers outline in their
   // own colour). White keeps overlapping points apart; width 0 turns it off.

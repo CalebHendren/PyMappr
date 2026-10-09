@@ -29,35 +29,45 @@ const MARKER_CYCLE = ["Circle","Square","Triangle","Diamond","Star","Plus","X","
 function isOpen(marker){ return marker.endsWith(OPEN_SUFFIX); }
 function baseMarker(marker){ return isOpen(marker) ? marker.slice(0,-OPEN_SUFFIX.length) : marker; }
 
+// Shapes follow matplotlib's marker paths, which PyMappr draws with: each is
+// drawn for a marker `m` pixels across (matplotlib's markersize), centred on
+// the point, with y down as SVG has it.
 function regPoly(n,r,rot){ const p=[]; for(let i=0;i<n;i++){const a=rot+i*2*Math.PI/n;
   p.push([r*Math.cos(a), r*Math.sin(a)]);} return p; }
 function poly(pts){ return "M"+pts.map(p=>p[0].toFixed(2)+","+p[1].toFixed(2)).join("L")+"Z"; }
 function circlePath(r){ return `M${(-r).toFixed(2)},0 a${r},${r} 0 1,0 ${(2*r).toFixed(2)},0 a${r},${r} 0 1,0 ${(-2*r).toFixed(2)},0 Z`; }
-function starPts(r,ri){ const p=[]; for(let i=0;i<10;i++){const rr=(i%2)?ri:r;
+// A five-point star, inner radius as matplotlib's unit_regular_star.
+function starPts(r){ const p=[]; for(let i=0;i<10;i++){const rr=(i%2)?r*0.381966:r;
   const a=-Math.PI/2+i*Math.PI/5; p.push([rr*Math.cos(a), rr*Math.sin(a)]);} return p; }
-function plusPts(r,w){ return [[-w,-r],[w,-r],[w,-w],[r,-w],[r,w],[w,w],[w,r],[-w,r],[-w,w],[-r,w],[-r,-w],[-w,-w]]; }
-function rot45(pts){ const c=Math.SQRT1_2; return pts.map(([x,y])=>[(x-y)*c,(x+y)*c]); }
+const turn=(pts,deg)=>{ const a=deg*Math.PI/180, c=Math.cos(a), s=Math.sin(a);
+  return pts.map(([x,y])=>[x*c-y*s, x*s+y*c]); };
+// matplotlib's filled plus ("P") and filled X ("X"), in sixths and quarters.
+const PLUS_FILLED=[[-1,-3],[1,-3],[1,-1],[3,-1],[3,1],[1,1],[1,3],[-1,3],[-1,1],[-3,1],[-3,-1],[-1,-1]]
+  .map(([x,y])=>[x/6,y/6]);
+const X_FILLED=[[-1,-2],[0,-1],[1,-2],[2,-1],[1,0],[2,1],[1,2],[0,1],[-1,2],[-2,1],[-1,0],[-2,-1]]
+  .map(([x,y])=>[x/4,y/4]);
 
-function markerPath(marker,r){
-  const b = baseMarker(marker);
-  const U=-Math.PI/2;
+function markerPath(marker,m){
+  const b = baseMarker(marker), h=m/2, U=-Math.PI/2;
+  // matplotlib's triangle: apex at the top, base as wide as the marker.
+  const tri=deg=>poly(turn([[0,-h],[-h,h],[h,h]], deg));
   switch(b){
-    case "Circle": return circlePath(r);
-    case "Dot": return circlePath(r*0.5);
-    case "Square": { const s=r*0.86; return poly([[-s,-s],[s,-s],[s,s],[-s,s]]); }
-    case "Triangle": return poly(regPoly(3,r*1.1,U));
-    case "Triangle down": return poly(regPoly(3,r*1.1,Math.PI/2));
-    case "Triangle left": return poly(regPoly(3,r*1.1,Math.PI));
-    case "Triangle right": return poly(regPoly(3,r*1.1,0));
-    case "Diamond": return poly([[0,-r*1.1],[r*0.82,0],[0,r*1.1],[-r*0.82,0]]);
-    case "Thin diamond": return poly([[0,-r*1.2],[r*0.5,0],[0,r*1.2],[-r*0.5,0]]);
-    case "Star": return poly(starPts(r*1.15,r*0.5));
-    case "Plus": return poly(plusPts(r,r*0.36));
-    case "X": return poly(rot45(plusPts(r,r*0.36)));
-    case "Pentagon": return poly(regPoly(5,r*1.05,U));
-    case "Hexagon": return poly(regPoly(6,r,U));
-    case "Octagon": return poly(regPoly(8,r,Math.PI/8));
-    default: return circlePath(r);
+    case "Circle": return circlePath(h);
+    case "Dot": return circlePath(h*0.5);
+    case "Square": return poly([[-h,-h],[h,-h],[h,h],[-h,h]]);
+    case "Triangle": return tri(0);
+    case "Triangle down": return tri(180);
+    case "Triangle left": return tri(-90);
+    case "Triangle right": return tri(90);
+    case "Diamond": { const d=h*Math.SQRT2; return poly([[0,-d],[d,0],[0,d],[-d,0]]); }
+    case "Thin diamond": { const d=h*Math.SQRT2; return poly([[0,-d],[d*0.6,0],[0,d],[-d*0.6,0]]); }
+    case "Star": return poly(starPts(h));
+    case "Plus": return poly(PLUS_FILLED.map(([x,y])=>[x*m,y*m]));
+    case "X": return poly(X_FILLED.map(([x,y])=>[x*m,y*m]));
+    case "Pentagon": return poly(regPoly(5,h,U));
+    case "Hexagon": return poly(regPoly(6,h,U));
+    case "Octagon": return poly(regPoly(8,h,U+Math.PI/8));
+    default: return circlePath(h);
   }
 }
 

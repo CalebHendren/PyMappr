@@ -305,15 +305,99 @@ def test_publication_style_matches_pymappr(app_js):
         assert js[key] == PUBLICATION_LEGEND[field], field
     # Square corners: PyMappr has a switch, MiniMappr a radius.
     assert PUBLICATION_LEGEND["rounded"] is False and js["legRadius"] == 0
-    # Sizes are points there and pixels here, so what carries over is the
-    # step up from each app's own defaults.
+    # Both apps size text in points, so the sizes carry over as they are.
+    assert js["legFont"] == PUBLICATION_LEGEND["fontsize"]
+    assert js["legTitleFont"] == PUBLICATION_LEGEND["title_fontsize"]
+
+
+def test_publication_width_matches_pymappr(app_js):
+    from pymappr.ui.save_image import JOURNAL_PAGE_WIDTH
+
+    width = re.search(r'const PUBLICATION_WIDTH=\[([\d.]+), "(\w+)"\]', app_js)
+    assert width, "PUBLICATION_WIDTH not found"
+    assert JOURNAL_PAGE_WIDTH.startswith(f"{width.group(1)} {width.group(2)}")
+
+
+def test_legend_defaults_match_pymappr(controls):
+    # MiniMappr's legend starts as PyMappr's does. The spacings are font-size
+    # fractions in both, as matplotlib's legend takes them.
+    from pymappr.styling.legend import LegendOptions
+
     defaults = LegendOptions()
-    controls = dict((n, d) for n, _k, d in re.findall(
-        r'\["(\w+)",\s*"(\w+)",\s*([\d.]+)\]', app_js))
-    for field, key in (("fontsize", "legFont"),
-                       ("title_fontsize", "legTitleFont")):
-        step = PUBLICATION_LEGEND[field] - getattr(defaults, field)
-        assert js[key] - float(controls[key]) == step, field
+    table = {name: default for name, _kind, default in controls}
+    same = {"location": "legPos", "hierarchy": "legHierarchy",
+            "order": "legOrder", "counts": "legCounts",
+            "count_format": "legCountFormat", "blank_label": "legBlankLabel",
+            "section_titles": "legSectionTitles",
+            "title_separator": "legTitleSeparator",
+            "dataset_prefix": "legDatasetPrefix",
+            "empty_groups": "legEmptyGroups", "indent": "legIndent",
+            "bold_groups": "legBoldGroups", "group_spacer": "legGroupSpacer",
+            "group_swatch": "legGroupSwatch",
+            "symbol_swatch_color": "legSymbolColor", "columns": "legCols",
+            "label_spacing": "legRowSpacing",
+            "column_spacing": "legColSpacing",
+            "handle_length": "legSwatchWidth", "border_pad": "legPad",
+            "marker_scale": "legScale", "frame": "legFrame",
+            "frame_color": "legFrameColor", "frame_alpha": "legFrameAlpha",
+            "frame_edge_color": "legFrameEdge",
+            "frame_width": "legFrameWidth", "shadow": "legShadow",
+            "fontsize": "legFont", "title_fontsize": "legTitleFont",
+            "label_color": "legLabelColor", "title_color": "legTitleColor",
+            "label_bold": "legLabelBold", "label_italic": "legLabelItalic",
+            "label_underline": "legLabelUnderline",
+            "title_bold": "legTitleBold", "title_italic": "legTitleItalic",
+            "title_underline": "legTitleUnderline",
+            "title_align": "legTitleAlign"}
+    mismatched = {field: (getattr(defaults, field), table[key])
+                  for field, key in same.items()
+                  if table[key] != getattr(defaults, field)}
+    assert mismatched == {}
+    # handletextpad: PyMappr leaves it to matplotlib's 0.8 for a plain key.
+    assert table["legSwatchGap"] == defaults.pad_for(False)
+    # A rounded matplotlib box rounds its corners by 0.2 of the font size.
+    assert defaults.rounded and table["legRadius"] == 0.2 * defaults.fontsize
+
+
+def test_map_style_matches_pymappr(app_js):
+    import matplotlib
+
+    from pymappr.renderer.tables import LABEL_HALO, LINE_LAYERS
+    from pymappr.styling.decorations import CompassOptions, ScaleBarOptions
+
+    _source, color, width, _z, _style = LINE_LAYERS["countries"]
+    assert _js_value(app_js, "BORDER_COLOR") == color
+    assert _js_value(app_js, "BORDER_WIDTH") == width
+    assert _js_value(app_js, "FRAME_WIDTH") == matplotlib.rcParams["axes.linewidth"]
+    assert _js_value(app_js, "HALO_WIDTH") == LABEL_HALO[0]._gc["linewidth"]
+    assert _js_value(app_js, "SCALE_FONT") == ScaleBarOptions().fontsize
+    assert CompassOptions().size == 1.0
+    # The grid and tick settings are literals in renderer/view.py.
+    view = (ROOT / "pymappr" / "renderer" / "view.py").read_text(encoding="utf-8")
+    grid = re.search(r'self\.ax\.grid\(True, color="(#\w+)", linewidth=([\d.]+), '
+                     r'alpha=([\d.]+)\)', view)
+    assert grid, "grid style not found in view.py"
+    assert _js_value(app_js, "GRID_COLOR") == grid.group(1)
+    assert _js_value(app_js, "GRID_WIDTH") == float(grid.group(2))
+    assert _js_value(app_js, "GRID_ALPHA") == float(grid.group(3))
+    ticks = re.search(r"tick_params\(labelsize=([\d.]+), length=([\d.]+)", view)
+    assert ticks, "tick style not found in view.py"
+    assert _js_value(app_js, "TICK_LABEL_SIZE") == float(ticks.group(1))
+    assert _js_value(app_js, "TICK_LENGTH") == float(ticks.group(2))
+
+
+def test_ocean_starts_off_as_in_pymappr(body):
+    # PyMappr's layers tab starts the ocean on "none".
+    tab = (ROOT / "pymappr" / "ui" / "control_panel" / "layers_tab.py").read_text(
+        encoding="utf-8")
+    assert 'self.ocean_var = tk.StringVar(value="none")' in tab
+    on = re.search(r'<button data-ocean="(\w+)" class="on">', body)
+    assert on and on.group(1) == "none"
+
+
+def test_markers_are_sized_as_matplotlib_sizes_them(app_js):
+    # A scatter size is an area in points squared: sqrt(size) points across.
+    assert "function markerPx(size){ return Math.sqrt(" in app_js
 
 
 # ------------------------------------------------------------ inset map
