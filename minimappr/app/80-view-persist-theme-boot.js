@@ -186,6 +186,7 @@ function loadState(){
   if(!PROJ_DEFS[opts.projection]) opts.projection="Equirectangular";
   if(!CONTINENT_EXTENTS[opts.extent]) opts.extent="World";
   if(!PALETTES[opts.palette]) opts.palette="Default";
+  normalizeInsetOpts();
   const v=d.view;
   if(v && [v.k,v.x,v.y].every(n=>typeof n==="number" && isFinite(n))) view={k:v.k,x:v.x,y:v.y};
   legendDrag=d.legendDrag||null;

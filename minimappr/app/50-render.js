@@ -47,11 +47,12 @@ const layers=(()=>{
   const defs=el("defs"), cp=el("clipPath",{id:"frameClip"}), clipRect=el("rect");
   cp.appendChild(clipRect); defs.appendChild(cp);
   const content=el("g",{"clip-path":"url(#frameClip)"});
-  const base=el("g"), points=el("g");
-  content.appendChild(base); content.appendChild(points);
-  const overlay=el("g"), legend=el("g");
-  for(const n of [bg,defs,content,overlay,legend]) svg.appendChild(n);
-  return {bg, clipRect, base, points, overlay, legend};
+  // insetMainBox holds a close-up inset's box, which marks its area on the map.
+  const base=el("g"), points=el("g"), insetMainBox=el("g");
+  content.appendChild(base); content.appendChild(points); content.appendChild(insetMainBox);
+  const overlay=el("g"), inset=el("g"), legend=el("g");
+  for(const n of [bg,defs,content,overlay,inset,legend]) svg.appendChild(n);
+  return {bg, clipRect, base, points, insetMainBox, overlay, inset, legend};
 })();
 let baseKey=null, pointsKey=null;
 // Projected basemap outlines, kept until the projection or the frame changes,
@@ -216,10 +217,12 @@ function renderNow(){
     legendEntries.push({title:ds.groupBy ? prefix+ds.groupBy : (ds.name||""), rows});
   }
 
-  // legend, drawn first so the compass and scale bar can keep clear of it
+  // the inset and then the legend, drawn before the decorations: the legend
+  // keeps clear of the inset, and the compass and scale bar of both
+  const insetBox=drawInset(resolved, proj, rect);
   clearNode(layers.legend);
   const legendBox = opts.legShow && (legendEntries.length || attrLegends.length)
-    ? drawLegend(layers.legend, W, H, legendEntries, attrLegends) : null;
+    ? drawLegend(layers.legend, W, H, legendEntries, attrLegends, insetBox) : null;
 
   // frame outline (unclipped, crisp), title, compass and scale bar. Zoomed
   // in, a round silhouette runs past the frame, so the frame is the outline.
@@ -233,9 +236,9 @@ function renderNow(){
       "font-size":19,"font-weight":700,fill:"#1d2127"});
     t.textContent=opts.title; overlay.appendChild(t);
   }
-  if(opts.compass) drawCompass(overlay, rect, legendBox);
+  if(opts.compass) drawCompass(overlay, rect, [legendBox, insetBox]);
   scaleBarNote=null;
-  if(opts.scaleBar) drawScaleBar(overlay, proj, rect, legendBox);
+  if(opts.scaleBar) drawScaleBar(overlay, proj, rect, [legendBox, insetBox]);
   // A bar that silently fails to appear is worse than one that says why.
   if(scaleBarNote) stageNotes.push(scaleBarNote);
   syncControlStates();
@@ -288,8 +291,9 @@ function drawGridLabels(parent, proj, rect){
   parent.appendChild(g);
 }
 
-// Whether two {x,y,w,h} boxes overlap.
+// Whether two {x,y,w,h} boxes overlap; `b` may be a list of boxes.
 function boxesMeet(a, b){
+  if(Array.isArray(b)) return b.some(box=>boxesMeet(a, box));
   return !!(a && b) && a.x<b.x+b.w && b.x<a.x+a.w && a.y<b.y+b.h && b.y<a.y+a.h;
 }
 
@@ -483,7 +487,8 @@ function textWidth(text, size, family, bold, italic){
 }
 
 // Draws the legend and returns its box, or null when there is nothing to show.
-function drawLegend(parent, W, H, entries, attrLegends){
+// `avoid` is the inset's box, or null.
+function drawLegend(parent, W, H, entries, attrLegends, avoid){
   const sections=legendItems(entries, attrLegends);
   if(!sections.length) return null;
   const fs=opts.legFont, scale=opts.legScale;
@@ -547,8 +552,17 @@ function drawLegend(parent, W, H, entries, attrLegends){
   };
   let bx,by;
   if(legendDrag){ bx=legendDrag.x*W; by=legendDrag.y*H; }
-  else if(opts.legPos==="best") [bx,by]=at(bestLegendSpot(at, boxW, boxH));
-  else [bx,by]=at(opts.legPos);
+  else if(opts.legPos==="best") [bx,by]=at(bestLegendSpot(at, boxW, boxH, avoid));
+  else {
+    [bx,by]=at(opts.legPos);
+    // A legend over the inset steps beyond it, below a top one and above a
+    // bottom one, as PyMappr's legend clears the inset in its corner.
+    if(boxesMeet({x:bx, y:by, w:boxW, h:boxH}, avoid)){
+      const gap=INSET_GAP*(fy1-fy0);
+      if(opts.legPos[0]==="t") by=avoid.y+avoid.h+gap;
+      else if(opts.legPos[0]==="b") by=avoid.y-boxH-gap;
+    }
+  }
   bx=Math.max(2,Math.min(bx,W-boxW-2)); by=Math.max(2,Math.min(by,H-boxH-2));
 
   if(opts.legShadow){
@@ -627,13 +641,13 @@ function drawLegend(parent, W, H, entries, attrLegends){
 
 // matplotlib's loc="best", which PyMappr offers: of the nine spots, the one
 // that covers the fewest points, trying them in matplotlib's order so a tie
-// goes the same way.
+// goes the same way. A spot over the inset counts as covering everything.
 const BEST_ORDER=["tr","tl","bl","br","cr","cl","bc","tc","cc"];
-function bestLegendSpot(at, w, h){
+function bestLegendSpot(at, w, h, avoid){
   let best=BEST_ORDER[0], fewest=Infinity;
   for(const spot of BEST_ORDER){
     const [x,y]=at(spot);
-    let n=0;
+    let n=boxesMeet({x, y, w, h}, avoid) ? pointXY.length+1 : 0;
     for(const [px,py] of pointXY) if(px>=x && px<=x+w && py>=y && py<=y+h) n++;
     if(n<fewest){ fewest=n; best=spot; }
     if(!n) break;

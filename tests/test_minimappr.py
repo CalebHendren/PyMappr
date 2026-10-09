@@ -314,3 +314,80 @@ def test_publication_style_matches_pymappr(app_js):
                        ("title_fontsize", "legTitleFont")):
         step = PUBLICATION_LEGEND[field] - getattr(defaults, field)
         assert js[key] - float(controls[key]) == step, field
+
+
+# ------------------------------------------------------------ inset map
+#
+# The inset is ported from renderer/inset.py and geo/regions.py; its look,
+# its limits and its defaults are checked against them like the rest.
+
+
+def test_inset_look_matches_pymappr(app_js):
+    from pymappr.renderer import tables
+
+    for name in ("INSET_LAND", "INSET_LINE_SCALE", "INSET_POINT_SCALE",
+                 "INSET_FRAME_WIDTH", "INSET_BOX_WIDTH"):
+        assert _js_value(app_js, name) == getattr(tables, name), name
+
+
+def test_inset_layout_matches_pymappr(app_js):
+    from pymappr.geo import regions
+    from pymappr.renderer import inset
+
+    pairs = {"INSET_PAD": inset._PAD, "INSET_GAP": inset._GAP,
+             "INSET_SIZE_RANGE": list(inset._SIZE_RANGE),
+             "INSET_MAX_HEIGHT": inset._MAX_HEIGHT,
+             "INSET_GLOBE_MARGIN": inset._GLOBE_MARGIN,
+             "INSET_EDGE_POINTS": inset._EDGE_POINTS,
+             "REGION_PAD": regions._PAD, "REGION_NEARBY": regions._NEARBY,
+             "REGION_NEARBY_MIN": regions._NEARBY_MIN}
+    for name, value in pairs.items():
+        assert _js_value(app_js, name) == value, name
+
+
+def test_inset_defaults_match_pymappr(map_controls):
+    from pymappr.styling.decorations import InsetOptions
+
+    defaults = InsetOptions()
+    controls = {name: default for name, _kind, default in map_controls}
+    same = {"show": "insetShow", "position": "insetPos", "size": "insetSize",
+            "zoom_out": "insetZoomOut", "projection": "insetProjection",
+            "countries": "insetCountries", "land": "insetLand",
+            "ocean": "insetOcean", "points": "insetPoints", "box": "insetBox",
+            "box_color": "insetBoxColor"}
+    for field, key in same.items():
+        assert controls[key] == getattr(defaults, field), field
+    # PyMappr starts on "state", which needs admin-1 outlines MiniMappr does
+    # not carry; the next region down is the default here.
+    assert defaults.region == "state" and controls["insetRegion"] == "country"
+
+
+def _select_values(body: str, element_id: str) -> list[str]:
+    select = re.search(r'<select[^>]*id="%s".*?</select>' % element_id,
+                       body, re.S)
+    assert select, element_id
+    return re.findall(r'<option value="([^"]*)"', select.group(0))
+
+
+def test_inset_choices_match_pymappr(body, app_js):
+    from pymappr.geo.layers import CONTINENT_EXTENTS
+    from pymappr.styling import decorations
+
+    assert _select_values(body, "insetProjection") == decorations.INSET_PROJECTIONS
+    assert _select_values(body, "insetOcean") == decorations.INSET_OCEANS
+    assert _js_value(app_js, "INSET_PROJECTIONS") == decorations.INSET_PROJECTIONS
+    assert _js_value(app_js, "INSET_OCEANS") == decorations.INSET_OCEANS
+    assert set(_select_values(body, "insetPos")) == set(decorations.CORNERS)
+    regions = [r for r in decorations.INSET_REGIONS if r != "state"]
+    assert set(_select_values(body, "insetRegion")) == (
+        set(regions) | set(CONTINENT_EXTENTS))
+
+
+def test_continent_extents_match_pymappr(app_js):
+    # The inset's continent regions and the map's own extents both use them.
+    from pymappr.geo.layers import CONTINENT_EXTENTS
+
+    table = re.search(r"const CONTINENT_EXTENTS = \{(.*?)\};", app_js, re.S)
+    js = {name: [float(v) for v in values.split(",")] for name, values in
+          re.findall(r'"([^"]+)":\[([^\]]*)\]', table.group(1))}
+    assert js == {name: list(ext) for name, ext in CONTINENT_EXTENTS.items()}

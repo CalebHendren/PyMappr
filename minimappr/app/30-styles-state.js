@@ -290,6 +290,24 @@ const MAP_CONTROLS = [
   ["scaleLengthMode", "str", "auto"],      // auto | fixed
   ["scaleFixed", "num", 100],              // in scaleUnits, for a fixed length
   ["gridHideLabels", "bool", false],       // degree labels on Equirectangular
+  // The inset map (57-inset.js), as decorations.InsetOptions, without the
+  // State region. The custom extent stays text so it can be left blank.
+  ["insetShow", "bool", false],
+  ["insetRegion", "str", "country"],       // country | around | custom | a CONTINENT_EXTENTS name
+  ["insetZoomOut", "num", 6],              // "around": the view's span times this
+  ["insetLonMin", "str", ""],              // "custom"
+  ["insetLonMax", "str", ""],
+  ["insetLatMin", "str", ""],
+  ["insetLatMax", "str", ""],
+  ["insetProjection", "str", "same"],      // same | Equirectangular | Robinson | Globe
+  ["insetPos", "str", "lower right"],
+  ["insetSize", "num", 0.3],               // width, as a fraction of the frame
+  ["insetCountries", "bool", true],
+  ["insetLand", "bool", true],
+  ["insetOcean", "str", "none"],           // none | grey | blue
+  ["insetPoints", "bool", true],
+  ["insetBox", "bool", true],
+  ["insetBoxColor", "str", "#d62728"],
   ["exportFormat", "str", "png"],          // png | jpeg | webp | tiff | pdf | svg
   ["exportWidth", "num", 9],               // print width; PyMappr's figure is 9 in
   ["exportUnit", "str", "in"],             // in | cm
@@ -320,6 +338,9 @@ const opts = {
 for(const [id,,value] of [...LEGEND_CONTROLS, ...MAP_CONTROLS]) opts[id]=value;
 // Where the scale bar was dragged to, as frame fractions; null = its corner.
 opts.scaleAnchor=null;
+// Where the inset was dragged to, as frame fractions of its lower left
+// corner; null = its corner.
+opts.insetAnchor=null;
 let currentProjection=null;     // the d3 projection from the last render()
 let placeMode=false;            // click-to-place points onto the map
 let placeDsId=null;             // manual dataset placed points go into

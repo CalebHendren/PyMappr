@@ -404,6 +404,7 @@ for(const [id,kind,fallback] of [...LEGEND_CONTROLS, ...MAP_CONTROLS]){
     // Choosing a preset position discards any manual (dragged) placement.
     if(id==="legPos") legendDrag=null;
     if(id==="scalePos") opts.scaleAnchor=null;
+    if(id==="insetPos") opts.insetAnchor=null;
     // Switching units keeps the print size, not the number.
     if(id==="exportUnit"){
       opts.exportWidth=Number((opts.exportWidth*(opts.exportUnit==="cm" ? 2.54 : 1/2.54)).toFixed(2));
@@ -413,10 +414,27 @@ for(const [id,kind,fallback] of [...LEGEND_CONTROLS, ...MAP_CONTROLS]){
   });
 }
 $("#scaleReset").addEventListener("click",()=>{ opts.scaleAnchor=null; render(); });
+$("#insetReset").addEventListener("click",()=>{ opts.insetAnchor=null; render(); });
+// Make the inset show the area now on screen: zoom in on it, click, and zoom
+// back out to leave the inset as a close-up. Mirrors on_inset_from_view.
+const INSET_EXTENT_IDS=["insetLonMin","insetLonMax","insetLatMin","insetLatMax"];
+$("#insetFromView").addEventListener("click",()=>{
+  flushRender();
+  if(!currentProjection) return;
+  const {extent}=viewLonLat(currentProjection, frameRect);
+  INSET_EXTENT_IDS.forEach((id,i)=>{ opts[id]=String(Number(extent[i].toFixed(2))); $("#"+id).value=opts[id]; });
+  opts.insetRegion="custom"; $("#insetRegion").value="custom";
+  opts.insetShow=true; $("#insetShow").checked=true;
+  render();
+  flashStage("The inset now shows this view. Zoom out to see it as a close-up.");
+});
 // Controls that only apply in some states are greyed out in the others.
 function syncControlStates(){
   $("#scaleFixed").disabled = opts.scaleLengthMode!=="fixed";
   $("#scaleReset").disabled = !opts.scaleAnchor;
+  $("#insetZoomOut").disabled = opts.insetRegion!=="around";
+  for(const id of INSET_EXTENT_IDS) $("#"+id).disabled = opts.insetRegion!=="custom";
+  $("#insetReset").disabled = !opts.insetAnchor;
   $("#exportDpi").disabled = opts.exportFormat==="svg";
   updateExportReadout();
 }
