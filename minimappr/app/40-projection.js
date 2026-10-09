@@ -51,14 +51,19 @@ function drawRect(W,H){
   }
   return [[left,pad],[W-pad,H-bottom]];
 }
-function buildProjection(W,H){
-  const pd=currentProjDef();
-  const p=pd.make();
+// Turn a fresh projection to the map's centre, for the projections that
+// have one. The inset's "same as map" projection goes through here too.
+function orientProjection(p, pd){
   if(pd.globe || pd.azimuthal){ p.rotate([-opts.centerLon,-opts.centerLat]); }
   else if(pd.lambert){
     p.rotate([-opts.centerLon,0]);
     if(p.center) p.center([0, opts.centerLat]);
   }
+  return p;
+}
+function buildProjection(W,H){
+  const pd=currentProjDef();
+  const p=orientProjection(pd.make(), pd);
   const rect=drawRect(W,H);
   try{ p.fitExtent(rect, fitObject()); }
   catch(e){ p.fitExtent(rect, {type:"Sphere"}); }

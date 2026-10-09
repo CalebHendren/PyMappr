@@ -209,6 +209,10 @@ What it has:
   Natural Earth, Winkel Tripel, orthographic Globe, and regional and custom
   Lambert.
 - The same legend options, scale bar, compass and grid.
+- An inset map: a locator (the country at the map's centre, the area around
+  it, a continent or the world) or a close-up of a custom area, with a box
+  linking it to the main map. The State/province region needs outlines
+  MiniMappr does not carry.
 - The one-click publication style.
 - Export as PNG, JPEG, WebP, TIFF, PDF or SVG at the DPI you choose.
 - **Reset** in the header removes every dataset and puts all settings back to

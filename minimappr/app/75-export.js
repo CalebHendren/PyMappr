@@ -14,7 +14,7 @@ const EXPORT_TYPES={
 function exportBox(){
   const [[x0,y0],[x1,y1]]=frameRect;
   let bx0=x0, by0=y0, bx1=x1, by1=y1;
-  for(const g of [layers.overlay, layers.legend]){
+  for(const g of [layers.overlay, layers.inset, layers.legend]){
     if(!g.firstChild) continue;
     const b=g.getBBox();
     if(!b.width && !b.height) continue;
