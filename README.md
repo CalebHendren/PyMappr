@@ -198,7 +198,7 @@ seabirds, and orchids.
 served by GitHub Pages from [`index.html`](index.html). It covers the core
 workflow with nothing to install.
 
-![MiniMappr in the browser: the beetle sample as a black-and-white publication figure with a 10° grid, compass, scale bar and a globe locator inset](docs/images/minimappr.png)
+![MiniMappr in the browser: the beetle sample as a black-and-white publication figure with a 10° grid, scale bar and a globe locator inset, its legend over the South Atlantic](docs/images/minimappr.png)
 
 What it has:
 
