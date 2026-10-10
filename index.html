@@ -1833,7 +1833,7 @@ function renderNow(){
   setAttrs(layers.bg, {x:-W, y:-H, width:3*W, height:3*H, fill:opts.matColor});
   setAttrs(layers.clipRect, {x:rx0, y:ry0, width:rw, height:rh});
 
-  // basemap: ocean / earth silhouette, graticule, land, borders, coastline
+  // basemap: ocean / earth silhouette, land, borders, coastline, graticule
   const lw=opts.lineWidth;
   const bKey=JSON.stringify([projKey, opts.ocean, opts.graticule, opts.showLand, opts.landColor,
     opts.showBorders, opts.showCoast, lw]);
@@ -1844,13 +1844,6 @@ function renderNow(){
     base.appendChild(useRect
       ? el("rect",{x:rx0,y:ry0,width:rw,height:rh,fill:oceanFill,stroke:"none"})
       : el("path",{d:sphereD, fill:oceanFill, stroke:"none"}));
-    if(opts.graticule>0){
-      // Lines run to the projection's latitude limit, not d3's default 80.
-      const step=opts.graticule, ml=pd.maxLat;
-      base.appendChild(el("path",{d:cachedPath(projKey, "grat"+step,
-          ()=>path(d3.geoGraticule().extentMinor([[-180,-ml],[180,ml]]).step([step,step])())),
-        fill:"none", stroke:GRID_COLOR, "stroke-width":GRID_WIDTH*PT, "stroke-opacity":GRID_ALPHA}));
-    }
     if(opts.showLand){
       base.appendChild(el("path",{d:cachedPath(projKey, "land", ()=>path(LAND)),
         fill:opts.landColor, stroke:"none"}));
@@ -1862,6 +1855,14 @@ function renderNow(){
     if(opts.showCoast){
       base.appendChild(el("path",{d:cachedPath(projKey, "coast", ()=>path(LAND_MESH)),
         fill:"none", stroke:BORDER_COLOR, "stroke-width":BORDER_WIDTH*lw*PT, "stroke-linejoin":"round"}));
+    }
+    // Graticule on top of the land and lines, as PyMappr draws it (Z_GRID).
+    if(opts.graticule>0){
+      // Lines run to the projection's latitude limit, not d3's default 80.
+      const step=opts.graticule, ml=pd.maxLat;
+      base.appendChild(el("path",{d:cachedPath(projKey, "grat"+step,
+          ()=>path(d3.geoGraticule().extentMinor([[-180,-ml],[180,ml]]).step([step,step])())),
+        fill:"none", stroke:GRID_COLOR, "stroke-width":GRID_WIDTH*PT, "stroke-opacity":GRID_ALPHA}));
     }
   }
 
