@@ -1,0 +1,1380 @@
+{
+ "name": "birds-crossed",
+ "state": {
+  "datasets": [
+   {
+    "name": "asia_hornbills.csv",
+    "visible": true,
+    "source_path": "C:\\PyCharm\\PyMappr\\sample_data\\asia_hornbills.csv",
+    "columns": [
+     "name1",
+     "name2",
+     "name3",
+     "lon",
+     "lat"
+    ],
+    "name_labels": [
+     "Genus",
+     "Species",
+     "Type status"
+    ],
+    "group_by": "Genus",
+    "color_by": "Genus",
+    "symbol_by": "Type status",
+    "vary_symbols": false,
+    "open_by": "",
+    "open_values": [],
+    "styles": {},
+    "legend_overrides": {
+     "symbol\u0000Holotype": {
+      "label": "Holo",
+      "color": "#00aa00"
+     },
+     "color\u0000Buceros": {
+      "marker": "Square"
+     }
+    },
+    "manual": null,
+    "rowsFrom": "hornbills-orchids#0"
+   },
+   {
+    "name": "europe_orchids.csv",
+    "visible": true,
+    "source_path": "C:\\PyCharm\\PyMappr\\sample_data\\europe_orchids.csv",
+    "columns": [
+     "name1",
+     "name2",
+     "lon",
+     "lat"
+    ],
+    "name_labels": [
+     "Genus",
+     "Species"
+    ],
+    "group_by": "Genus",
+    "color_by": "",
+    "symbol_by": "",
+    "vary_symbols": false,
+    "open_by": "",
+    "open_values": [],
+    "styles": {},
+    "legend_overrides": {},
+    "manual": null,
+    "rowsFrom": "hornbills-orchids#1"
+   }
+  ],
+  "active": 1,
+  "map": {
+   "projection": "Equirectangular",
+   "proj_lon0": "",
+   "proj_lat0": "",
+   "basemap": "simple",
+   "continent": "World",
+   "orientation": "Landscape",
+   "compass": false,
+   "compass_options": {
+    "show": false,
+    "position": "upper right",
+    "style": "arrow",
+    "size": 1.0,
+    "color": "#1a1a1a"
+   },
+   "scale_bar": {
+    "show": false,
+    "units": "km",
+    "position": "lower left",
+    "style": "segmented",
+    "length_mode": "auto",
+    "fixed_length": null,
+    "segments": 4,
+    "width": 0.22,
+    "fontsize": 8.0,
+    "color": "#1a1a1a",
+    "draggable": false,
+    "anchor_x": null,
+    "anchor_y": null
+   },
+   "inset": {
+    "show": false,
+    "position": "lower right",
+    "size": 0.3,
+    "region": "state",
+    "zoom_out": 6.0,
+    "lon_min": null,
+    "lon_max": null,
+    "lat_min": null,
+    "lat_max": null,
+    "projection": "same",
+    "countries": true,
+    "states": false,
+    "counties": false,
+    "land": true,
+    "ocean": "none",
+    "points": true,
+    "box": true,
+    "box_color": "#d62728",
+    "draggable": false,
+    "anchor_x": null,
+    "anchor_y": null
+   },
+   "palette": "Default",
+   "graticule": "Off",
+   "hide_grid_labels": false,
+   "line_width": 1.0,
+   "dpi": "200",
+   "export_width": "As on screen",
+   "ocean": "none",
+   "lake_fill": "none",
+   "bathymetry": false,
+   "capitals_only": false,
+   "lines": {
+    "countries": true,
+    "states": false,
+    "counties": false,
+    "sovereignty": false,
+    "map_units": false,
+    "subunits": false,
+    "dependencies": false,
+    "disputed_lines": false,
+    "timezones": false,
+    "lakes_outline": false,
+    "rivers": false,
+    "wadis": false,
+    "maritime": false,
+    "eez": false,
+    "reefs": false,
+    "regions": false,
+    "roads": false
+   },
+   "fills": {
+    "disputed": false,
+    "land": false,
+    "glaciers": false,
+    "ice_shelves": false,
+    "playas": false,
+    "deserts": false,
+    "urban": false,
+    "parks": false,
+    "biodiversity": false,
+    "ecoregions": false,
+    "marine_ecoregions": false
+   },
+   "points": {
+    "cities": false,
+    "airports": false,
+    "ports": false
+   },
+   "labels": {
+    "countries": false,
+    "states": false,
+    "counties": false,
+    "cities": false,
+    "airports": false,
+    "ports": false,
+    "lakes": false,
+    "rivers": false,
+    "regions": false,
+    "timezones": false
+   }
+  },
+  "legend": {
+   "show": true,
+   "title": null,
+   "show_title": true,
+   "location": "upper left",
+   "hierarchy": "auto",
+   "order": "az",
+   "counts": true,
+   "count_format": "(n)",
+   "blank_label": "(blank)",
+   "section_titles": true,
+   "title_separator": " / ",
+   "dataset_prefix": true,
+   "empty_groups": false,
+   "indent": 3,
+   "bold_groups": true,
+   "group_spacer": true,
+   "group_swatch": "circle",
+   "symbol_swatch_color": "#555555",
+   "columns": 1,
+   "label_spacing": 0.5,
+   "column_spacing": 2.0,
+   "handle_text_pad": null,
+   "handle_length": 2.0,
+   "border_pad": 0.4,
+   "marker_scale": 1.0,
+   "frame": true,
+   "frame_color": "#ffffff",
+   "frame_alpha": 0.85,
+   "frame_edge_color": "#cccccc",
+   "frame_width": 0.8,
+   "rounded": true,
+   "shadow": false,
+   "fontsize": 8.0,
+   "title_fontsize": 9.0,
+   "font_family": "",
+   "label_color": "#000000",
+   "title_color": "#000000",
+   "label_bold": false,
+   "label_italic": false,
+   "label_underline": false,
+   "title_bold": true,
+   "title_italic": false,
+   "title_underline": false,
+   "title_align": "center",
+   "draggable": false,
+   "anchor": null
+  },
+  "point_alpha": 1.0,
+  "point_edge": {
+   "color": "#ffffff",
+   "width": 0.5
+  },
+  "view": {
+   "xlim": [
+    -25.058144,
+    135.610624
+   ],
+   "ylim": [
+    -27.95537395646258,
+    87.60955395646258
+   ]
+  }
+ },
+ "filter": null,
+ "layout": {
+  "datasets": [
+   {
+    "name": "asia_hornbills.csv",
+    "groups": [
+     {
+      "label": "Buceros",
+      "style": {
+       "color": "#d62728",
+       "marker": "Circle",
+       "size": 30.0,
+       "fill": null
+      },
+      "rows": [
+       0,
+       1,
+       2,
+       3,
+       4,
+       5,
+       7,
+       8,
+       9,
+       10,
+       11,
+       12,
+       13,
+       14,
+       15,
+       16,
+       17,
+       18,
+       20,
+       21,
+       22,
+       23,
+       24
+      ]
+     },
+     {
+      "label": "Buceros / Holotype",
+      "style": {
+       "color": "#d62728",
+       "marker": "Square",
+       "size": 30.0,
+       "fill": null
+      },
+      "rows": [
+       6,
+       19
+      ]
+     },
+     {
+      "label": "Anthracoceros",
+      "style": {
+       "color": "#1f77b4",
+       "marker": "Circle",
+       "size": 30.0,
+       "fill": null
+      },
+      "rows": [
+       25,
+       26,
+       27,
+       28,
+       29,
+       30,
+       31,
+       33,
+       34,
+       35,
+       36,
+       37,
+       38,
+       39,
+       40,
+       41,
+       42,
+       43,
+       44,
+       46,
+       47,
+       48,
+       49,
+       50,
+       51,
+       52,
+       53,
+       54,
+       55,
+       56,
+       58,
+       59,
+       60,
+       61,
+       62
+      ]
+     },
+     {
+      "label": "Anthracoceros / Holotype",
+      "style": {
+       "color": "#1f77b4",
+       "marker": "Square",
+       "size": 30.0,
+       "fill": null
+      },
+      "rows": [
+       32,
+       45,
+       57
+      ]
+     },
+     {
+      "label": "Rhyticeros",
+      "style": {
+       "color": "#2ca02c",
+       "marker": "Circle",
+       "size": 30.0,
+       "fill": null
+      },
+      "rows": [
+       63,
+       64,
+       65,
+       66,
+       67,
+       68,
+       70,
+       71,
+       72,
+       73,
+       74,
+       75,
+       76,
+       77,
+       78,
+       79,
+       81,
+       82,
+       83,
+       84
+      ]
+     },
+     {
+      "label": "Rhyticeros / Holotype",
+      "style": {
+       "color": "#2ca02c",
+       "marker": "Square",
+       "size": 30.0,
+       "fill": null
+      },
+      "rows": [
+       69,
+       80
+      ]
+     }
+    ],
+    "openGroups": [],
+    "labelMap": {},
+    "rows": [],
+    "sections": [
+     {
+      "title": "asia_hornbills.csv: Genus",
+      "rows": [
+       {
+        "label": "Anthracoceros (38)",
+        "style": {
+         "color": "#1f77b4",
+         "marker": "Circle",
+         "size": 30.0,
+         "fill": null
+        },
+        "depth": 0
+       },
+       {
+        "label": "Buceros (25)",
+        "style": {
+         "color": "#d62728",
+         "marker": "Square",
+         "size": 30.0,
+         "fill": null
+        },
+        "depth": 0
+       },
+       {
+        "label": "Rhyticeros (22)",
+        "style": {
+         "color": "#2ca02c",
+         "marker": "Circle",
+         "size": 30.0,
+         "fill": null
+        },
+        "depth": 0
+       }
+      ]
+     },
+     {
+      "title": "asia_hornbills.csv: Type status",
+      "rows": [
+       {
+        "label": "(blank) (78)",
+        "style": {
+         "color": "#555555",
+         "marker": "Circle",
+         "size": 30.0,
+         "fill": null
+        },
+        "depth": 0
+       },
+       {
+        "label": "Holo (7)",
+        "style": {
+         "color": "#00aa00",
+         "marker": "Square",
+         "size": 30.0,
+         "fill": null
+        },
+        "depth": 0
+       }
+      ]
+     }
+    ],
+    "attribute": true,
+    "paletteOffset": 0
+   },
+   {
+    "name": "europe_orchids.csv",
+    "groups": [
+     {
+      "label": "Ophrys (15)",
+      "style": {
+       "color": "#d62728",
+       "marker": "Circle",
+       "size": 30.0,
+       "fill": null
+      },
+      "rows": [
+       0,
+       1,
+       2,
+       3,
+       4,
+       5,
+       6,
+       7,
+       8,
+       9,
+       10,
+       11,
+       12,
+       13,
+       14
+      ]
+     },
+     {
+      "label": "Orchis (12)",
+      "style": {
+       "color": "#1f77b4",
+       "marker": "Circle",
+       "size": 30.0,
+       "fill": null
+      },
+      "rows": [
+       15,
+       16,
+       17,
+       18,
+       19,
+       20,
+       21,
+       22,
+       23,
+       24,
+       25,
+       26
+      ]
+     },
+     {
+      "label": "Dactylorhiza (12)",
+      "style": {
+       "color": "#2ca02c",
+       "marker": "Circle",
+       "size": 30.0,
+       "fill": null
+      },
+      "rows": [
+       27,
+       28,
+       29,
+       30,
+       31,
+       32,
+       33,
+       34,
+       35,
+       36,
+       37,
+       38
+      ]
+     },
+     {
+      "label": "Anacamptis (9)",
+      "style": {
+       "color": "#ff7f0e",
+       "marker": "Circle",
+       "size": 30.0,
+       "fill": null
+      },
+      "rows": [
+       39,
+       40,
+       41,
+       42,
+       43,
+       44,
+       45,
+       46,
+       47
+      ]
+     }
+    ],
+    "openGroups": [],
+    "labelMap": {
+     "Ophrys": "Ophrys (15)",
+     "Orchis": "Orchis (12)",
+     "Dactylorhiza": "Dactylorhiza (12)",
+     "Anacamptis": "Anacamptis (9)"
+    },
+    "rows": [
+     {
+      "label": "Anacamptis (9)",
+      "style": {
+       "color": "#ff7f0e",
+       "marker": "Circle",
+       "size": 30.0,
+       "fill": null
+      }
+     },
+     {
+      "label": "Dactylorhiza (12)",
+      "style": {
+       "color": "#2ca02c",
+       "marker": "Circle",
+       "size": 30.0,
+       "fill": null
+      }
+     },
+     {
+      "label": "Ophrys (15)",
+      "style": {
+       "color": "#d62728",
+       "marker": "Circle",
+       "size": 30.0,
+       "fill": null
+      }
+     },
+     {
+      "label": "Orchis (12)",
+      "style": {
+       "color": "#1f77b4",
+       "marker": "Circle",
+       "size": 30.0,
+       "fill": null
+      }
+     }
+    ],
+    "sections": [],
+    "attribute": false,
+    "paletteOffset": 0
+   }
+  ],
+  "sections": [
+   {
+    "title": "asia_hornbills.csv: Genus",
+    "rows": [
+     {
+      "label": "Anthracoceros (38)",
+      "style": {
+       "color": "#1f77b4",
+       "marker": "Circle",
+       "size": 30.0,
+       "fill": null
+      },
+      "depth": 0
+     },
+     {
+      "label": "Buceros (25)",
+      "style": {
+       "color": "#d62728",
+       "marker": "Square",
+       "size": 30.0,
+       "fill": null
+      },
+      "depth": 0
+     },
+     {
+      "label": "Rhyticeros (22)",
+      "style": {
+       "color": "#2ca02c",
+       "marker": "Circle",
+       "size": 30.0,
+       "fill": null
+      },
+      "depth": 0
+     }
+    ]
+   },
+   {
+    "title": "asia_hornbills.csv: Type status",
+    "rows": [
+     {
+      "label": "(blank) (78)",
+      "style": {
+       "color": "#555555",
+       "marker": "Circle",
+       "size": 30.0,
+       "fill": null
+      },
+      "depth": 0
+     },
+     {
+      "label": "Holo (7)",
+      "style": {
+       "color": "#00aa00",
+       "marker": "Square",
+       "size": 30.0,
+       "fill": null
+      },
+      "depth": 0
+     }
+    ]
+   },
+   {
+    "title": "europe_orchids.csv",
+    "rows": [
+     {
+      "label": "Anacamptis (9)",
+      "style": {
+       "color": "#ff7f0e",
+       "marker": "Circle",
+       "size": 30.0,
+       "fill": null
+      },
+      "depth": 0
+     },
+     {
+      "label": "Dactylorhiza (12)",
+      "style": {
+       "color": "#2ca02c",
+       "marker": "Circle",
+       "size": 30.0,
+       "fill": null
+      },
+      "depth": 0
+     },
+     {
+      "label": "Ophrys (15)",
+      "style": {
+       "color": "#d62728",
+       "marker": "Circle",
+       "size": 30.0,
+       "fill": null
+      },
+      "depth": 0
+     },
+     {
+      "label": "Orchis (12)",
+      "style": {
+       "color": "#1f77b4",
+       "marker": "Circle",
+       "size": 30.0,
+       "fill": null
+      },
+      "depth": 0
+     }
+    ]
+   }
+  ],
+  "rowOrder": null,
+  "openNote": null
+ },
+ "title": null,
+ "editor": [
+  {
+   "key": "group\u0000Ophrys",
+   "value": "Ophrys",
+   "style": {
+    "color": "#d62728",
+    "marker": "Circle",
+    "size": 30.0,
+    "fill": null
+   },
+   "depth": 0
+  },
+  {
+   "key": "group\u0000Orchis",
+   "value": "Orchis",
+   "style": {
+    "color": "#1f77b4",
+    "marker": "Circle",
+    "size": 30.0,
+    "fill": null
+   },
+   "depth": 0
+  },
+  {
+   "key": "group\u0000Dactylorhiza",
+   "value": "Dactylorhiza",
+   "style": {
+    "color": "#2ca02c",
+    "marker": "Circle",
+    "size": 30.0,
+    "fill": null
+   },
+   "depth": 0
+  },
+  {
+   "key": "group\u0000Anacamptis",
+   "value": "Anacamptis",
+   "style": {
+    "color": "#ff7f0e",
+    "marker": "Circle",
+    "size": 30.0,
+    "fill": null
+   },
+   "depth": 0
+  }
+ ],
+ "warning": "",
+ "status": "Ready.",
+ "legend": {
+  "title": null,
+  "entries": [
+   {
+    "text": "asia_hornbills.csv: Genus",
+    "size": 8.0,
+    "weight": "bold",
+    "style": "normal",
+    "color": "#000000",
+    "family": [
+     "sans-serif"
+    ],
+    "underline": false,
+    "handle": null
+   },
+   {
+    "text": "   Anthracoceros (38)",
+    "size": 8.0,
+    "weight": "normal",
+    "style": "normal",
+    "color": "#000000",
+    "family": [
+     "sans-serif"
+    ],
+    "underline": false,
+    "handle": {
+     "marker": "o",
+     "markersize": 6.708203932499369,
+     "face": "#1f77b4",
+     "edge": "#ffffff",
+     "edgeWidth": 0.5
+    }
+   },
+   {
+    "text": "   Buceros (25)",
+    "size": 8.0,
+    "weight": "normal",
+    "style": "normal",
+    "color": "#000000",
+    "family": [
+     "sans-serif"
+    ],
+    "underline": false,
+    "handle": {
+     "marker": "s",
+     "markersize": 6.708203932499369,
+     "face": "#d62728",
+     "edge": "#ffffff",
+     "edgeWidth": 0.5
+    }
+   },
+   {
+    "text": "   Rhyticeros (22)",
+    "size": 8.0,
+    "weight": "normal",
+    "style": "normal",
+    "color": "#000000",
+    "family": [
+     "sans-serif"
+    ],
+    "underline": false,
+    "handle": {
+     "marker": "o",
+     "markersize": 6.708203932499369,
+     "face": "#2ca02c",
+     "edge": "#ffffff",
+     "edgeWidth": 0.5
+    }
+   },
+   {
+    "text": " ",
+    "size": 8.0,
+    "weight": "bold",
+    "style": "normal",
+    "color": "#000000",
+    "family": [
+     "sans-serif"
+    ],
+    "underline": false,
+    "handle": null
+   },
+   {
+    "text": "asia_hornbills.csv: Type status",
+    "size": 8.0,
+    "weight": "bold",
+    "style": "normal",
+    "color": "#000000",
+    "family": [
+     "sans-serif"
+    ],
+    "underline": false,
+    "handle": null
+   },
+   {
+    "text": "   (blank) (78)",
+    "size": 8.0,
+    "weight": "normal",
+    "style": "normal",
+    "color": "#000000",
+    "family": [
+     "sans-serif"
+    ],
+    "underline": false,
+    "handle": {
+     "marker": "o",
+     "markersize": 6.708203932499369,
+     "face": "#555555",
+     "edge": "#ffffff",
+     "edgeWidth": 0.5
+    }
+   },
+   {
+    "text": "   Holo (7)",
+    "size": 8.0,
+    "weight": "normal",
+    "style": "normal",
+    "color": "#000000",
+    "family": [
+     "sans-serif"
+    ],
+    "underline": false,
+    "handle": {
+     "marker": "s",
+     "markersize": 6.708203932499369,
+     "face": "#00aa00",
+     "edge": "#ffffff",
+     "edgeWidth": 0.5
+    }
+   },
+   {
+    "text": " ",
+    "size": 8.0,
+    "weight": "bold",
+    "style": "normal",
+    "color": "#000000",
+    "family": [
+     "sans-serif"
+    ],
+    "underline": false,
+    "handle": null
+   },
+   {
+    "text": "europe_orchids.csv",
+    "size": 8.0,
+    "weight": "bold",
+    "style": "normal",
+    "color": "#000000",
+    "family": [
+     "sans-serif"
+    ],
+    "underline": false,
+    "handle": null
+   },
+   {
+    "text": "   Anacamptis (9)",
+    "size": 8.0,
+    "weight": "normal",
+    "style": "normal",
+    "color": "#000000",
+    "family": [
+     "sans-serif"
+    ],
+    "underline": false,
+    "handle": {
+     "marker": "o",
+     "markersize": 6.708203932499369,
+     "face": "#ff7f0e",
+     "edge": "#ffffff",
+     "edgeWidth": 0.5
+    }
+   },
+   {
+    "text": "   Dactylorhiza (12)",
+    "size": 8.0,
+    "weight": "normal",
+    "style": "normal",
+    "color": "#000000",
+    "family": [
+     "sans-serif"
+    ],
+    "underline": false,
+    "handle": {
+     "marker": "o",
+     "markersize": 6.708203932499369,
+     "face": "#2ca02c",
+     "edge": "#ffffff",
+     "edgeWidth": 0.5
+    }
+   },
+   {
+    "text": "   Ophrys (15)",
+    "size": 8.0,
+    "weight": "normal",
+    "style": "normal",
+    "color": "#000000",
+    "family": [
+     "sans-serif"
+    ],
+    "underline": false,
+    "handle": {
+     "marker": "o",
+     "markersize": 6.708203932499369,
+     "face": "#d62728",
+     "edge": "#ffffff",
+     "edgeWidth": 0.5
+    }
+   },
+   {
+    "text": "   Orchis (12)",
+    "size": 8.0,
+    "weight": "normal",
+    "style": "normal",
+    "color": "#000000",
+    "family": [
+     "sans-serif"
+    ],
+    "underline": false,
+    "handle": {
+     "marker": "o",
+     "markersize": 6.708203932499369,
+     "face": "#1f77b4",
+     "edge": "#ffffff",
+     "edgeWidth": 0.5
+    }
+   }
+  ]
+ },
+ "geometry": {
+  "axes": [
+   635.04,
+   456.768
+  ],
+  "box": [
+   4.0,
+   276.0274,
+   163.615,
+   176.7406
+  ],
+  "frame": [
+   4.0,
+   276.0274,
+   163.615,
+   176.7406
+  ],
+  "texts": [
+   [
+    26.4,
+    440.928,
+    114.48,
+    8.64
+   ],
+   [
+    26.4,
+    428.5261,
+    86.22,
+    8.4019
+   ],
+   [
+    26.4,
+    416.1242,
+    60.3,
+    8.4019
+   ],
+   [
+    26.4,
+    403.7224,
+    70.38,
+    8.4019
+   ],
+   [
+    26.4,
+    391.3205,
+    2.88,
+    8.0
+   ],
+   [
+    26.4,
+    378.6805,
+    138.015,
+    8.64
+   ],
+   [
+    26.4,
+    366.2786,
+    54.72,
+    8.4019
+   ],
+   [
+    26.4,
+    353.8768,
+    40.32,
+    8.4019
+   ],
+   [
+    26.4,
+    341.4749,
+    2.88,
+    8.0
+   ],
+   [
+    26.4,
+    328.8349,
+    87.12,
+    8.64
+   ],
+   [
+    26.4,
+    316.433,
+    69.84,
+    8.4019
+   ],
+   [
+    26.4,
+    304.0311,
+    77.625,
+    8.4019
+   ],
+   [
+    26.4,
+    291.6293,
+    56.88,
+    8.4019
+   ],
+   [
+    26.4,
+    279.2274,
+    53.1,
+    8.4019
+   ]
+  ],
+  "title": null,
+  "markers": [
+   [
+    15.2,
+    445.888
+   ],
+   [
+    15.2,
+    433.248
+   ],
+   [
+    15.2,
+    420.8461
+   ],
+   [
+    15.2,
+    408.4443
+   ],
+   [
+    15.2,
+    396.0424
+   ],
+   [
+    15.2,
+    383.6405
+   ],
+   [
+    15.2,
+    371.0005
+   ],
+   [
+    15.2,
+    358.5986
+   ],
+   [
+    15.2,
+    346.1968
+   ],
+   [
+    15.2,
+    333.7949
+   ],
+   [
+    15.2,
+    321.1549
+   ],
+   [
+    15.2,
+    308.753
+   ],
+   [
+    15.2,
+    296.3511
+   ],
+   [
+    15.2,
+    283.9493
+   ]
+  ],
+  "baselines": [
+   [
+    26.4,
+    443.088
+   ],
+   [
+    26.4,
+    430.448
+   ],
+   [
+    26.4,
+    418.0461
+   ],
+   [
+    26.4,
+    405.6443
+   ],
+   [
+    26.4,
+    393.2424
+   ],
+   [
+    26.4,
+    380.8405
+   ],
+   [
+    26.4,
+    368.2005
+   ],
+   [
+    26.4,
+    355.7986
+   ],
+   [
+    26.4,
+    343.3968
+   ],
+   [
+    26.4,
+    330.9949
+   ],
+   [
+    26.4,
+    318.3549
+   ],
+   [
+    26.4,
+    305.953
+   ],
+   [
+    26.4,
+    293.5511
+   ],
+   [
+    26.4,
+    281.1492
+   ]
+  ],
+  "titleBaseline": null,
+  "metrics": [
+   {
+    "text": "asia_hornbills.csv: Genus",
+    "size": 8.0,
+    "weight": "bold",
+    "style": "normal",
+    "w": 114.47999999999999,
+    "h": 8.64,
+    "d": 2.16,
+    "lpH": 7.92,
+    "lpD": 1.44
+   },
+   {
+    "text": "   Anthracoceros (38)",
+    "size": 8.0,
+    "weight": "normal",
+    "style": "normal",
+    "w": 86.22,
+    "h": 7.199999999999999,
+    "d": 0.72,
+    "lpH": 7.92,
+    "lpD": 1.44
+   },
+   {
+    "text": "   Buceros (25)",
+    "size": 8.0,
+    "weight": "normal",
+    "style": "normal",
+    "w": 60.3,
+    "h": 7.199999999999999,
+    "d": 0.72,
+    "lpH": 7.92,
+    "lpD": 1.44
+   },
+   {
+    "text": "   Rhyticeros (22)",
+    "size": 8.0,
+    "weight": "normal",
+    "style": "normal",
+    "w": 70.38,
+    "h": 7.92,
+    "d": 1.44,
+    "lpH": 7.92,
+    "lpD": 1.44
+   },
+   {
+    "text": " ",
+    "size": 8.0,
+    "weight": "bold",
+    "style": "normal",
+    "w": 2.88,
+    "h": 0.0,
+    "d": 0.0,
+    "lpH": 7.92,
+    "lpD": 1.44
+   },
+   {
+    "text": "asia_hornbills.csv: Type status",
+    "size": 8.0,
+    "weight": "bold",
+    "style": "normal",
+    "w": 138.015,
+    "h": 8.64,
+    "d": 2.16,
+    "lpH": 7.92,
+    "lpD": 1.44
+   },
+   {
+    "text": "   (blank) (78)",
+    "size": 8.0,
+    "weight": "normal",
+    "style": "normal",
+    "w": 54.72,
+    "h": 7.199999999999999,
+    "d": 0.72,
+    "lpH": 7.92,
+    "lpD": 1.44
+   },
+   {
+    "text": "   Holo (7)",
+    "size": 8.0,
+    "weight": "normal",
+    "style": "normal",
+    "w": 40.32,
+    "h": 7.199999999999999,
+    "d": 0.72,
+    "lpH": 7.92,
+    "lpD": 1.44
+   },
+   {
+    "text": " ",
+    "size": 8.0,
+    "weight": "bold",
+    "style": "normal",
+    "w": 2.88,
+    "h": 0.0,
+    "d": 0.0,
+    "lpH": 7.92,
+    "lpD": 1.44
+   },
+   {
+    "text": "europe_orchids.csv",
+    "size": 8.0,
+    "weight": "bold",
+    "style": "normal",
+    "w": 87.11999999999999,
+    "h": 8.64,
+    "d": 2.16,
+    "lpH": 7.92,
+    "lpD": 1.44
+   },
+   {
+    "text": "   Anacamptis (9)",
+    "size": 8.0,
+    "weight": "normal",
+    "style": "normal",
+    "w": 69.84,
+    "h": 7.92,
+    "d": 1.44,
+    "lpH": 7.92,
+    "lpD": 1.44
+   },
+   {
+    "text": "   Dactylorhiza (12)",
+    "size": 8.0,
+    "weight": "normal",
+    "style": "normal",
+    "w": 77.625,
+    "h": 7.92,
+    "d": 1.44,
+    "lpH": 7.92,
+    "lpD": 1.44
+   },
+   {
+    "text": "   Ophrys (15)",
+    "size": 8.0,
+    "weight": "normal",
+    "style": "normal",
+    "w": 56.879999999999995,
+    "h": 7.92,
+    "d": 1.44,
+    "lpH": 7.92,
+    "lpD": 1.44
+   },
+   {
+    "text": "   Orchis (12)",
+    "size": 8.0,
+    "weight": "normal",
+    "style": "normal",
+    "w": 53.1,
+    "h": 7.199999999999999,
+    "d": 0.72,
+    "lpH": 7.92,
+    "lpD": 1.44
+   }
+  ]
+ }
+}

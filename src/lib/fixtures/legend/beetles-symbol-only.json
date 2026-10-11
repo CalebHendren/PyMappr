@@ -1,0 +1,1130 @@
+{
+ "name": "beetles-symbol-only",
+ "state": {
+  "datasets": [
+   {
+    "name": "south_america_beetles.csv",
+    "visible": true,
+    "source_path": "C:\\PyCharm\\PyMappr\\sample_data\\south_america_beetles.csv",
+    "columns": [
+     "name1",
+     "name2",
+     "lon",
+     "lat"
+    ],
+    "name_labels": [
+     "Genus",
+     "Species"
+    ],
+    "group_by": "Genus",
+    "color_by": "",
+    "symbol_by": "Species",
+    "vary_symbols": true,
+    "open_by": "",
+    "open_values": [],
+    "styles": {},
+    "legend_overrides": {},
+    "manual": null,
+    "rowsFrom": "beetles-standard#0"
+   }
+  ],
+  "active": 0,
+  "map": {
+   "projection": "Equirectangular",
+   "proj_lon0": "",
+   "proj_lat0": "",
+   "basemap": "simple",
+   "continent": "World",
+   "orientation": "Landscape",
+   "compass": false,
+   "compass_options": {
+    "show": false,
+    "position": "upper right",
+    "style": "arrow",
+    "size": 1.0,
+    "color": "#1a1a1a"
+   },
+   "scale_bar": {
+    "show": false,
+    "units": "km",
+    "position": "lower left",
+    "style": "segmented",
+    "length_mode": "auto",
+    "fixed_length": null,
+    "segments": 4,
+    "width": 0.22,
+    "fontsize": 8.0,
+    "color": "#1a1a1a",
+    "draggable": false,
+    "anchor_x": null,
+    "anchor_y": null
+   },
+   "inset": {
+    "show": false,
+    "position": "lower right",
+    "size": 0.3,
+    "region": "state",
+    "zoom_out": 6.0,
+    "lon_min": null,
+    "lon_max": null,
+    "lat_min": null,
+    "lat_max": null,
+    "projection": "same",
+    "countries": true,
+    "states": false,
+    "counties": false,
+    "land": true,
+    "ocean": "none",
+    "points": true,
+    "box": true,
+    "box_color": "#d62728",
+    "draggable": false,
+    "anchor_x": null,
+    "anchor_y": null
+   },
+   "palette": "Black & white",
+   "graticule": "Off",
+   "hide_grid_labels": false,
+   "line_width": 1.0,
+   "dpi": "600",
+   "export_width": "17 cm (Zootaxa / Phytotaxa page)",
+   "ocean": "none",
+   "lake_fill": "none",
+   "bathymetry": false,
+   "capitals_only": false,
+   "lines": {
+    "countries": true,
+    "states": false,
+    "counties": false,
+    "sovereignty": false,
+    "map_units": false,
+    "subunits": false,
+    "dependencies": false,
+    "disputed_lines": false,
+    "timezones": false,
+    "lakes_outline": false,
+    "rivers": false,
+    "wadis": false,
+    "maritime": false,
+    "eez": false,
+    "reefs": false,
+    "regions": false,
+    "roads": false
+   },
+   "fills": {
+    "disputed": false,
+    "land": false,
+    "glaciers": false,
+    "ice_shelves": false,
+    "playas": false,
+    "deserts": false,
+    "urban": false,
+    "parks": false,
+    "biodiversity": false,
+    "ecoregions": false,
+    "marine_ecoregions": false
+   },
+   "points": {
+    "cities": false,
+    "airports": false,
+    "ports": false
+   },
+   "labels": {
+    "countries": false,
+    "states": false,
+    "counties": false,
+    "cities": false,
+    "airports": false,
+    "ports": false,
+    "lakes": false,
+    "rivers": false,
+    "regions": false,
+    "timezones": false
+   }
+  },
+  "legend": {
+   "show": true,
+   "title": "Species key",
+   "show_title": false,
+   "location": "center left",
+   "hierarchy": "auto",
+   "order": "az",
+   "counts": false,
+   "count_format": "(n)",
+   "blank_label": "(blank)",
+   "section_titles": true,
+   "title_separator": " / ",
+   "dataset_prefix": true,
+   "empty_groups": false,
+   "indent": 3,
+   "bold_groups": true,
+   "group_spacer": true,
+   "group_swatch": "circle",
+   "symbol_swatch_color": "#555555",
+   "columns": 1,
+   "label_spacing": 0.5,
+   "column_spacing": 2.0,
+   "handle_text_pad": null,
+   "handle_length": 2.0,
+   "border_pad": 0.4,
+   "marker_scale": 1.0,
+   "frame": true,
+   "frame_color": "#ffffff",
+   "frame_alpha": 1.0,
+   "frame_edge_color": "#000000",
+   "frame_width": 0.5,
+   "rounded": false,
+   "shadow": false,
+   "fontsize": 9.0,
+   "title_fontsize": 10.0,
+   "font_family": "",
+   "label_color": "#000000",
+   "title_color": "#000000",
+   "label_bold": false,
+   "label_italic": true,
+   "label_underline": false,
+   "title_bold": true,
+   "title_italic": false,
+   "title_underline": false,
+   "title_align": "center",
+   "draggable": false,
+   "anchor": null
+  },
+  "point_alpha": 1.0,
+  "point_edge": {
+   "color": "#000000",
+   "width": 0.6
+  },
+  "view": {
+   "xlim": [
+    -112.49683419262297,
+    -2.0863138073770315
+   ],
+   "ylim": [
+    -59.9441341,
+    19.4713241
+   ]
+  }
+ },
+ "filter": null,
+ "layout": {
+  "datasets": [
+   {
+    "name": "south_america_beetles.csv",
+    "groups": [
+     {
+      "label": "chapadensis",
+      "style": {
+       "color": "#000000",
+       "marker": "Circle",
+       "size": 30.0,
+       "fill": null
+      },
+      "rows": [
+       0,
+       7,
+       16,
+       26,
+       28,
+       31
+      ]
+     },
+     {
+      "label": "riograndensis",
+      "style": {
+       "color": "#000000",
+       "marker": "Square",
+       "size": 30.0,
+       "fill": null
+      },
+      "rows": [
+       1,
+       17,
+       27,
+       36,
+       37,
+       49
+      ]
+     },
+     {
+      "label": "santanderensis",
+      "style": {
+       "color": "#000000",
+       "marker": "Triangle",
+       "size": 30.0,
+       "fill": null
+      },
+      "rows": [
+       2,
+       10,
+       33,
+       42,
+       45
+      ]
+     },
+     {
+      "label": "ecuadoriana",
+      "style": {
+       "color": "#000000",
+       "marker": "Diamond",
+       "size": 30.0,
+       "fill": null
+      },
+      "rows": [
+       3,
+       22,
+       25,
+       32,
+       43
+      ]
+     },
+     {
+      "label": "huilaensis",
+      "style": {
+       "color": "#000000",
+       "marker": "Star",
+       "size": 30.0,
+       "fill": null
+      },
+      "rows": [
+       4,
+       29,
+       40,
+       47,
+       48
+      ]
+     },
+     {
+      "label": "paranaensis",
+      "style": {
+       "color": "#000000",
+       "marker": "Plus",
+       "size": 30.0,
+       "fill": null
+      },
+      "rows": [
+       5,
+       11,
+       14,
+       15,
+       18,
+       39
+      ]
+     },
+     {
+      "label": "orinocensis",
+      "style": {
+       "color": "#000000",
+       "marker": "X",
+       "size": 30.0,
+       "fill": null
+      },
+      "rows": [
+       6,
+       13,
+       24,
+       34,
+       35,
+       41
+      ]
+     },
+     {
+      "label": "antioquensis",
+      "style": {
+       "color": "#000000",
+       "marker": "Pentagon",
+       "size": 30.0,
+       "fill": null
+      },
+      "rows": [
+       8,
+       20,
+       21,
+       30,
+       38
+      ]
+     },
+     {
+      "label": "andina",
+      "style": {
+       "color": "#000000",
+       "marker": "Triangle down",
+       "size": 30.0,
+       "fill": null
+      },
+      "rows": [
+       9,
+       12,
+       19,
+       23,
+       44,
+       46
+      ]
+     }
+    ],
+    "openGroups": [],
+    "labelMap": {},
+    "rows": [],
+    "sections": [
+     {
+      "title": "Species",
+      "rows": [
+       {
+        "label": "andina",
+        "style": {
+         "color": "#555555",
+         "marker": "Triangle down",
+         "size": 30.0,
+         "fill": null
+        },
+        "depth": 0
+       },
+       {
+        "label": "antioquensis",
+        "style": {
+         "color": "#555555",
+         "marker": "Pentagon",
+         "size": 30.0,
+         "fill": null
+        },
+        "depth": 0
+       },
+       {
+        "label": "chapadensis",
+        "style": {
+         "color": "#555555",
+         "marker": "Circle",
+         "size": 30.0,
+         "fill": null
+        },
+        "depth": 0
+       },
+       {
+        "label": "ecuadoriana",
+        "style": {
+         "color": "#555555",
+         "marker": "Diamond",
+         "size": 30.0,
+         "fill": null
+        },
+        "depth": 0
+       },
+       {
+        "label": "huilaensis",
+        "style": {
+         "color": "#555555",
+         "marker": "Star",
+         "size": 30.0,
+         "fill": null
+        },
+        "depth": 0
+       },
+       {
+        "label": "orinocensis",
+        "style": {
+         "color": "#555555",
+         "marker": "X",
+         "size": 30.0,
+         "fill": null
+        },
+        "depth": 0
+       },
+       {
+        "label": "paranaensis",
+        "style": {
+         "color": "#555555",
+         "marker": "Plus",
+         "size": 30.0,
+         "fill": null
+        },
+        "depth": 0
+       },
+       {
+        "label": "riograndensis",
+        "style": {
+         "color": "#555555",
+         "marker": "Square",
+         "size": 30.0,
+         "fill": null
+        },
+        "depth": 0
+       },
+       {
+        "label": "santanderensis",
+        "style": {
+         "color": "#555555",
+         "marker": "Triangle",
+         "size": 30.0,
+         "fill": null
+        },
+        "depth": 0
+       }
+      ]
+     }
+    ],
+    "attribute": true,
+    "paletteOffset": 0
+   }
+  ],
+  "sections": [
+   {
+    "title": "Species",
+    "rows": [
+     {
+      "label": "andina",
+      "style": {
+       "color": "#555555",
+       "marker": "Triangle down",
+       "size": 30.0,
+       "fill": null
+      },
+      "depth": 0
+     },
+     {
+      "label": "antioquensis",
+      "style": {
+       "color": "#555555",
+       "marker": "Pentagon",
+       "size": 30.0,
+       "fill": null
+      },
+      "depth": 0
+     },
+     {
+      "label": "chapadensis",
+      "style": {
+       "color": "#555555",
+       "marker": "Circle",
+       "size": 30.0,
+       "fill": null
+      },
+      "depth": 0
+     },
+     {
+      "label": "ecuadoriana",
+      "style": {
+       "color": "#555555",
+       "marker": "Diamond",
+       "size": 30.0,
+       "fill": null
+      },
+      "depth": 0
+     },
+     {
+      "label": "huilaensis",
+      "style": {
+       "color": "#555555",
+       "marker": "Star",
+       "size": 30.0,
+       "fill": null
+      },
+      "depth": 0
+     },
+     {
+      "label": "orinocensis",
+      "style": {
+       "color": "#555555",
+       "marker": "X",
+       "size": 30.0,
+       "fill": null
+      },
+      "depth": 0
+     },
+     {
+      "label": "paranaensis",
+      "style": {
+       "color": "#555555",
+       "marker": "Plus",
+       "size": 30.0,
+       "fill": null
+      },
+      "depth": 0
+     },
+     {
+      "label": "riograndensis",
+      "style": {
+       "color": "#555555",
+       "marker": "Square",
+       "size": 30.0,
+       "fill": null
+      },
+      "depth": 0
+     },
+     {
+      "label": "santanderensis",
+      "style": {
+       "color": "#555555",
+       "marker": "Triangle",
+       "size": 30.0,
+       "fill": null
+      },
+      "depth": 0
+     }
+    ]
+   }
+  ],
+  "rowOrder": null,
+  "openNote": null
+ },
+ "title": null,
+ "editor": [
+  {
+   "key": "symbol\u0000chapadensis",
+   "value": "chapadensis",
+   "style": {
+    "color": "#555555",
+    "marker": "Circle",
+    "size": 30.0,
+    "fill": null
+   },
+   "depth": 0
+  },
+  {
+   "key": "symbol\u0000riograndensis",
+   "value": "riograndensis",
+   "style": {
+    "color": "#555555",
+    "marker": "Square",
+    "size": 30.0,
+    "fill": null
+   },
+   "depth": 0
+  },
+  {
+   "key": "symbol\u0000santanderensis",
+   "value": "santanderensis",
+   "style": {
+    "color": "#555555",
+    "marker": "Triangle",
+    "size": 30.0,
+    "fill": null
+   },
+   "depth": 0
+  },
+  {
+   "key": "symbol\u0000ecuadoriana",
+   "value": "ecuadoriana",
+   "style": {
+    "color": "#555555",
+    "marker": "Diamond",
+    "size": 30.0,
+    "fill": null
+   },
+   "depth": 0
+  },
+  {
+   "key": "symbol\u0000huilaensis",
+   "value": "huilaensis",
+   "style": {
+    "color": "#555555",
+    "marker": "Star",
+    "size": 30.0,
+    "fill": null
+   },
+   "depth": 0
+  },
+  {
+   "key": "symbol\u0000paranaensis",
+   "value": "paranaensis",
+   "style": {
+    "color": "#555555",
+    "marker": "Plus",
+    "size": 30.0,
+    "fill": null
+   },
+   "depth": 0
+  },
+  {
+   "key": "symbol\u0000orinocensis",
+   "value": "orinocensis",
+   "style": {
+    "color": "#555555",
+    "marker": "X",
+    "size": 30.0,
+    "fill": null
+   },
+   "depth": 0
+  },
+  {
+   "key": "symbol\u0000antioquensis",
+   "value": "antioquensis",
+   "style": {
+    "color": "#555555",
+    "marker": "Pentagon",
+    "size": 30.0,
+    "fill": null
+   },
+   "depth": 0
+  },
+  {
+   "key": "symbol\u0000andina",
+   "value": "andina",
+   "style": {
+    "color": "#555555",
+    "marker": "Triangle down",
+    "size": 30.0,
+    "fill": null
+   },
+   "depth": 0
+  }
+ ],
+ "warning": "south_america_beetles.csv: “Species” needs 9 shapes, more than the 6 that stay easy to tell apart. Consider a Color by column that groups them, or filtering to fewer values.",
+ "status": "south_america_beetles.csv: “Species” needs 9 shapes, more than the 6 that stay easy to tell apart. Consider a Color by column that groups them, or filtering to fewer values.",
+ "legend": {
+  "title": null,
+  "entries": [
+   {
+    "text": "Species",
+    "size": 9.0,
+    "weight": "bold",
+    "style": "normal",
+    "color": "#000000",
+    "family": [
+     "sans-serif"
+    ],
+    "underline": false,
+    "handle": null
+   },
+   {
+    "text": "   andina",
+    "size": 9.0,
+    "weight": "normal",
+    "style": "italic",
+    "color": "#000000",
+    "family": [
+     "sans-serif"
+    ],
+    "underline": false,
+    "handle": {
+     "marker": "v",
+     "markersize": 6.708203932499369,
+     "face": "#555555",
+     "edge": "#000000",
+     "edgeWidth": 0.6
+    }
+   },
+   {
+    "text": "   antioquensis",
+    "size": 9.0,
+    "weight": "normal",
+    "style": "italic",
+    "color": "#000000",
+    "family": [
+     "sans-serif"
+    ],
+    "underline": false,
+    "handle": {
+     "marker": "p",
+     "markersize": 6.708203932499369,
+     "face": "#555555",
+     "edge": "#000000",
+     "edgeWidth": 0.6
+    }
+   },
+   {
+    "text": "   chapadensis",
+    "size": 9.0,
+    "weight": "normal",
+    "style": "italic",
+    "color": "#000000",
+    "family": [
+     "sans-serif"
+    ],
+    "underline": false,
+    "handle": {
+     "marker": "o",
+     "markersize": 6.708203932499369,
+     "face": "#555555",
+     "edge": "#000000",
+     "edgeWidth": 0.6
+    }
+   },
+   {
+    "text": "   ecuadoriana",
+    "size": 9.0,
+    "weight": "normal",
+    "style": "italic",
+    "color": "#000000",
+    "family": [
+     "sans-serif"
+    ],
+    "underline": false,
+    "handle": {
+     "marker": "D",
+     "markersize": 6.708203932499369,
+     "face": "#555555",
+     "edge": "#000000",
+     "edgeWidth": 0.6
+    }
+   },
+   {
+    "text": "   huilaensis",
+    "size": 9.0,
+    "weight": "normal",
+    "style": "italic",
+    "color": "#000000",
+    "family": [
+     "sans-serif"
+    ],
+    "underline": false,
+    "handle": {
+     "marker": "*",
+     "markersize": 6.708203932499369,
+     "face": "#555555",
+     "edge": "#000000",
+     "edgeWidth": 0.6
+    }
+   },
+   {
+    "text": "   orinocensis",
+    "size": 9.0,
+    "weight": "normal",
+    "style": "italic",
+    "color": "#000000",
+    "family": [
+     "sans-serif"
+    ],
+    "underline": false,
+    "handle": {
+     "marker": "X",
+     "markersize": 6.708203932499369,
+     "face": "#555555",
+     "edge": "#000000",
+     "edgeWidth": 0.6
+    }
+   },
+   {
+    "text": "   paranaensis",
+    "size": 9.0,
+    "weight": "normal",
+    "style": "italic",
+    "color": "#000000",
+    "family": [
+     "sans-serif"
+    ],
+    "underline": false,
+    "handle": {
+     "marker": "P",
+     "markersize": 6.708203932499369,
+     "face": "#555555",
+     "edge": "#000000",
+     "edgeWidth": 0.6
+    }
+   },
+   {
+    "text": "   riograndensis",
+    "size": 9.0,
+    "weight": "normal",
+    "style": "italic",
+    "color": "#000000",
+    "family": [
+     "sans-serif"
+    ],
+    "underline": false,
+    "handle": {
+     "marker": "s",
+     "markersize": 6.708203932499369,
+     "face": "#555555",
+     "edge": "#000000",
+     "edgeWidth": 0.6
+    }
+   },
+   {
+    "text": "   santanderensis",
+    "size": 9.0,
+    "weight": "normal",
+    "style": "italic",
+    "color": "#000000",
+    "family": [
+     "sans-serif"
+    ],
+    "underline": false,
+    "handle": {
+     "marker": "^",
+     "markersize": 6.708203932499369,
+     "face": "#555555",
+     "edge": "#000000",
+     "edgeWidth": 0.6
+    }
+   }
+  ]
+ },
+ "geometry": {
+  "axes": [
+   635.04,
+   456.768
+  ],
+  "box": [
+   4.5,
+   154.4835,
+   108.72,
+   147.8011
+  ],
+  "frame": [
+   4.5,
+   154.4835,
+   108.72,
+   147.8011
+  ],
+  "texts": [
+   [
+    29.7,
+    289.3224,
+    40.32,
+    9.3621
+   ],
+   [
+    29.7,
+    274.7403,
+    40.32,
+    10.0821
+   ],
+   [
+    29.7,
+    260.1582,
+    68.4,
+    10.0821
+   ],
+   [
+    29.7,
+    245.5761,
+    66.96,
+    10.0821
+   ],
+   [
+    29.7,
+    230.994,
+    66.24,
+    10.0821
+   ],
+   [
+    29.7,
+    216.4119,
+    56.16,
+    10.0821
+   ],
+   [
+    29.7,
+    201.8298,
+    61.92,
+    10.0821
+   ],
+   [
+    29.7,
+    187.2477,
+    65.52,
+    10.0821
+   ],
+   [
+    29.7,
+    172.6656,
+    72.0,
+    10.0821
+   ],
+   [
+    29.7,
+    158.0835,
+    79.92,
+    10.0821
+   ]
+  ],
+  "title": null,
+  "markers": [
+   [
+    17.1,
+    294.6345
+   ],
+   [
+    17.1,
+    280.0524
+   ],
+   [
+    17.1,
+    265.4703
+   ],
+   [
+    17.1,
+    250.8882
+   ],
+   [
+    17.1,
+    236.3061
+   ],
+   [
+    17.1,
+    221.724
+   ],
+   [
+    17.1,
+    207.1419
+   ],
+   [
+    17.1,
+    192.5598
+   ],
+   [
+    17.1,
+    177.9777
+   ],
+   [
+    17.1,
+    163.3956
+   ]
+  ],
+  "baselines": [
+   [
+    29.7,
+    291.4845
+   ],
+   [
+    29.7,
+    276.9024
+   ],
+   [
+    29.7,
+    262.3203
+   ],
+   [
+    29.7,
+    247.7382
+   ],
+   [
+    29.7,
+    233.1561
+   ],
+   [
+    29.7,
+    218.574
+   ],
+   [
+    29.7,
+    203.9919
+   ],
+   [
+    29.7,
+    189.4098
+   ],
+   [
+    29.7,
+    174.8277
+   ],
+   [
+    29.7,
+    160.2456
+   ]
+  ],
+  "titleBaseline": null,
+  "metrics": [
+   {
+    "text": "Species",
+    "size": 9.0,
+    "weight": "bold",
+    "style": "normal",
+    "w": 40.32,
+    "h": 9.36,
+    "d": 2.16,
+    "lpH": 9.36,
+    "lpD": 2.16
+   },
+   {
+    "text": "   andina",
+    "size": 9.0,
+    "weight": "normal",
+    "style": "italic",
+    "w": 40.32,
+    "h": 7.92,
+    "d": 0.0,
+    "lpH": 10.08,
+    "lpD": 2.16
+   },
+   {
+    "text": "   antioquensis",
+    "size": 9.0,
+    "weight": "normal",
+    "style": "italic",
+    "w": 68.39999999999999,
+    "h": 10.08,
+    "d": 2.16,
+    "lpH": 10.08,
+    "lpD": 2.16
+   },
+   {
+    "text": "   chapadensis",
+    "size": 9.0,
+    "weight": "normal",
+    "style": "italic",
+    "w": 66.96,
+    "h": 10.08,
+    "d": 2.16,
+    "lpH": 10.08,
+    "lpD": 2.16
+   },
+   {
+    "text": "   ecuadoriana",
+    "size": 9.0,
+    "weight": "normal",
+    "style": "italic",
+    "w": 66.24,
+    "h": 7.92,
+    "d": 0.0,
+    "lpH": 10.08,
+    "lpD": 2.16
+   },
+   {
+    "text": "   huilaensis",
+    "size": 9.0,
+    "weight": "normal",
+    "style": "italic",
+    "w": 56.16,
+    "h": 7.92,
+    "d": 0.0,
+    "lpH": 10.08,
+    "lpD": 2.16
+   },
+   {
+    "text": "   orinocensis",
+    "size": 9.0,
+    "weight": "normal",
+    "style": "italic",
+    "w": 61.919999999999995,
+    "h": 7.92,
+    "d": 0.0,
+    "lpH": 10.08,
+    "lpD": 2.16
+   },
+   {
+    "text": "   paranaensis",
+    "size": 9.0,
+    "weight": "normal",
+    "style": "italic",
+    "w": 65.52,
+    "h": 10.08,
+    "d": 2.16,
+    "lpH": 10.08,
+    "lpD": 2.16
+   },
+   {
+    "text": "   riograndensis",
+    "size": 9.0,
+    "weight": "normal",
+    "style": "italic",
+    "w": 72.0,
+    "h": 10.08,
+    "d": 2.16,
+    "lpH": 10.08,
+    "lpD": 2.16
+   },
+   {
+    "text": "   santanderensis",
+    "size": 9.0,
+    "weight": "normal",
+    "style": "italic",
+    "w": 79.92,
+    "h": 7.92,
+    "d": 0.0,
+    "lpH": 10.08,
+    "lpD": 2.16
+   }
+  ]
+ }
+}
