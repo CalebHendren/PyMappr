@@ -136,6 +136,8 @@ class Store {
   view = $state<Rect | null>(null);
   /** Aspect (h / w) of the map box on screen. */
   boxAspect = $state(0.7);
+  /** The figure as laid out on screen (exports scale from it). */
+  screenFig = $state<import("./layout").Figure | null>(null);
   map = $state<RenderedMap | null>(null);
   inset = $state<RenderedInset | null>(null);
   scaleBar = $state<ScaleBar | null>(null);
@@ -324,6 +326,11 @@ class Store {
     const f = w / v.w;
     const [cx, cy] = at ?? [v.x + v.w / 2, v.y + v.h / 2];
     this.view = { x: cx - (cx - v.x) * f, y: cy - (cy - v.y) * f, w, h: v.h * f };
+  }
+
+  /** Lon/lat under a map point (SVG coordinates), or null off the map. */
+  cursorAt(x: number, y: number): Promise<[number, number] | null> {
+    return api.unproject($state.snapshot(this.projection), x, y).catch(() => null);
   }
 
   // ---- settings that redraw ---------------------------------------------

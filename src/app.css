@@ -76,6 +76,19 @@ body {
   .label {
     @apply text-[12px] font-medium text-muted;
   }
+  /* Panel rows: a label column and a control column. */
+  .row {
+    @apply grid grid-cols-[7.5rem_1fr] items-center gap-2;
+  }
+  .check {
+    @apply flex items-center gap-2;
+  }
+  .check input {
+    accent-color: var(--accent);
+  }
+  .hint {
+    @apply text-[12px] text-muted;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

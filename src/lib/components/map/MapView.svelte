@@ -2,14 +2,14 @@
   // The interactive map: sizes the figure to the window, asks the backend
   // for what to draw, and turns the mouse into pans, zooms, globe spins and
   // drags. Drawing itself is MapSvg's job.
-  import { untrack, type Snippet } from "svelte";
+  import { untrack } from "svelte";
   import { api, type RenderRequest } from "$lib/api";
   import { figureToMap, hasTicks, screenFigure } from "$lib/layout";
-  import { marks as buildMarks, type PointStyle } from "$lib/points";
+  import { insetMarks as buildInsetMarks, marks as buildMarks, type PointStyle } from "$lib/points";
   import { layerSettings, lonLats, store } from "$lib/store.svelte";
-  import MapSvg from "./MapSvg.svelte";
+  import Scene from "./Scene.svelte";
 
-  let { styles, legend }: { styles: (PointStyle | null)[][]; legend?: Snippet<[import("$lib/layout").Figure]> } = $props();
+  let { styles }: { styles: (PointStyle | null)[][] } = $props();
 
   let container: HTMLDivElement;
   let size = $state({ w: 900, h: 650 });
@@ -26,6 +26,10 @@
     });
     ro.observe(container);
     return () => ro.disconnect();
+  });
+
+  $effect(() => {
+    store.screenFig = fig;
   });
 
   // Keep the view's shape matched to the map box.
@@ -142,18 +146,7 @@
   });
 
   const marks = $derived(buildMarks(store.doc, styles, store.projected, store.filter));
-  const insetMarks = $derived.by(() => {
-    const inset = store.inset;
-    if (!inset) return [];
-    // The inset projects all visible points in order; reuse their styles.
-    const flat = store.doc.datasets.flatMap((ds, d) =>
-      ds.visible ? ds.rows.map((_, r) => styles[d]?.[r] ?? null) : [],
-    );
-    return inset.points.flatMap((p, i) => {
-      const s = flat[i];
-      return p && s && !s.hidden ? [{ x: p[0], y: p[1], color: s.color, marker: s.marker, size: s.size, open: s.open }] : [];
-    });
-  });
+  const insetMarks = $derived(store.inset ? buildInsetMarks(store.doc, styles, store.inset.points) : []);
 
   // ---- mouse --------------------------------------------------------------
   type Drag =
@@ -287,8 +280,9 @@
   oncontextmenu={(e) => e.preventDefault()}
 >
   {#if store.view && store.map}
-    <MapSvg
+    <Scene
       bind:svgEl={store.svgEl}
+      showLegend={store.doc.legend.show}
       {fig}
       view={store.view}
       map={store.map}
@@ -302,7 +296,6 @@
       scaleBar={store.scaleBar}
       inset={store.inset}
       {insetMarks}
-      legend={legend ? legendSnippet : undefined}
     />
   {/if}
   {#if drag?.kind === "box"}
@@ -315,7 +308,3 @@
     ></div>
   {/if}
 </div>
-
-{#snippet legendSnippet()}
-  {@render legend?.(fig)}
-{/snippet}

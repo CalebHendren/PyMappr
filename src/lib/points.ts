@@ -49,3 +49,12 @@ export function marks(
   // Open symbols draw over everything else, as in PyMappr.
   return [...out.filter((m) => !m.open), ...out.filter((m) => m.open)];
 }
+
+/** Marks for the inset, which projects every visible point in order. */
+export function insetMarks(doc: ProjectState, styles: (PointStyle | null)[][], points: ([number, number] | null)[]): Mark[] {
+  const flat = doc.datasets.flatMap((ds, d) => (ds.visible ? ds.rows.map((_, r) => styles[d]?.[r] ?? null) : []));
+  return points.flatMap((p, i) => {
+    const s = flat[i];
+    return p && s && !s.hidden ? [{ x: p[0], y: p[1], color: s.color, marker: s.marker, size: s.size, open: s.open }] : [];
+  });
+}

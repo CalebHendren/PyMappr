@@ -2,10 +2,15 @@
   // Shown for every import: which columns hold the coordinates and names.
   import { ArrowDown, ArrowUp } from "@lucide/svelte";
   import { api, type ColumnMapping, type TablePreview } from "$lib/api";
-  import { app } from "$lib/state.svelte";
+  import { store } from "$lib/store.svelte";
   import Modal from "./Modal.svelte";
 
-  let { path, initial, onClose }: { path: string; initial: TablePreview; onClose: () => void } = $props();
+  let {
+    path,
+    initial,
+    onClose,
+    onFarPoints,
+  }: { path: string; initial: TablePreview; onClose: () => void; onFarPoints: (notes: string[], skipped: string[]) => void } = $props();
 
   // svelte-ignore state_referenced_locally
   let preview = $state(initial);
@@ -61,8 +66,9 @@
     };
     loading = true;
     try {
-      await app.addDataset(path, sheet, mapping);
+      const loaded = await store.importTable(path, sheet, mapping);
       onClose();
+      if (loaded.farPoints.length || loaded.skipped.length) onFarPoints(loaded.farPoints, loaded.skipped);
     } catch (e) {
       error = String(e);
     } finally {
