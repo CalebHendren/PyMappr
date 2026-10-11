@@ -100,10 +100,19 @@ export const MARKERS: Record<string, string> = {
 
 export const MARKER_NAMES: string[] = Object.keys(MARKERS);
 
-/** The matplotlib code for a PyMappr marker name ("o" for an unknown name, as
- * PointStyle.mpl_marker does). */
+/** The same table under the name src/lib/marker-paths.ts uses. */
+export const MARKER_CODES = BASE_MARKERS;
+
+/** Whether a PyMappr marker name is an open (outline-only) variant. */
+export function isOpenMarker(name: string): boolean {
+  return name.endsWith(OPEN_SUFFIX);
+}
+
+/** The matplotlib code for a PyMappr marker name, or a code itself ("o" for
+ * anything unknown, as PointStyle.mpl_marker does). */
 export function markerCode(name: string): string {
-  return Object.hasOwn(MARKERS, name) ? MARKERS[name] : "o";
+  if (Object.hasOwn(MARKERS, name)) return MARKERS[name];
+  return Object.hasOwn(SHAPES, name) ? name : "o";
 }
 
 /** The shape for a PyMappr marker name. */
@@ -141,7 +150,7 @@ const num = (v: number) => {
 /** The SVG path of a marker `sizePt` points across, centred on (cx, cy).
  * The numbers are scaled in the path itself, so the outline can be stroked
  * at a plain width in the same units. */
-export function markerPath(name: string, sizePt: number, cx = 0, cy = 0): string {
+export function markerPathAt(name: string, sizePt: number, cx = 0, cy = 0): string {
   let out = "";
   let axis = 0;
   for (const token of tokens(markerShape(name).d)) {
@@ -154,4 +163,11 @@ export function markerPath(name: string, sizePt: number, cx = 0, cy = 0): string
     }
   }
   return out;
+}
+
+/** The outline for a matplotlib code or a PyMappr name at radius 1 (a
+ * circle 2 across, i.e. scale by half the marker size), the convention of
+ * src/lib/marker-paths.ts's `markerPath`. */
+export function markerPath(marker: string): string {
+  return markerPathAt(marker.replace(/ \(open\)$/, ""), 2);
 }

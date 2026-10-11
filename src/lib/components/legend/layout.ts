@@ -11,7 +11,7 @@ import type { LegendOptions } from "../../model";
 import type { DrawnLegend, DrawnLegendRow } from "../../legend";
 import { padFor } from "../../legend";
 import { markerPaint, type PointStyle } from "../../symbology";
-import { markerPath, markerShape } from "../../markers";
+import { markerPathAt, markerShape } from "../../markers";
 
 export type FontSpec = {
   /** Points. */
@@ -65,8 +65,8 @@ export const fontExtent: FontExtent = (font) => {
   return { ascent: (ascent / 2048) * font.size, descent: (descent / 2048) * font.size };
 };
 
-/** The extent of matplotlib's default DejaVu faces, for comparing with
- * PyMappr's own layout. */
+/** The extent of matplotlib's DejaVu faces (Sans, Serif and Sans Mono
+ * share it), which PyMappr's legend is laid out with. */
 export const dejaVuExtent: FontExtent = (font) => ({
   ascent: (1556 / 2048) * font.size,
   descent: (492 / 2048) * font.size,
@@ -81,12 +81,26 @@ export const FONT_STACKS: Record<string, string> = {
   monospace: "'Courier New', Courier, monospace",
 };
 
-export function fontStack(family: string): string {
-  return FONT_STACKS[family] ?? FONT_STACKS[""];
+/** matplotlib's own faces (DejaVu, shipped in matplotlib's mpl-data/fonts).
+ * With these loaded in the page and the exporter, and DEJAVU_FONTS passed
+ * to the legend, its geometry is PyMappr's. */
+export const DEJAVU_STACKS: Record<string, string> = {
+  "": "'DejaVu Sans', sans-serif",
+  "sans-serif": "'DejaVu Sans', sans-serif",
+  serif: "'DejaVu Serif', serif",
+  monospace: "'DejaVu Sans Mono', monospace",
+};
+
+/** The faces a legend draws with: CSS stacks per font_family and their
+ * line extent. */
+export type FontSet = { stacks: Record<string, string>; extent: FontExtent };
+
+export function fontStack(family: string, stacks: Record<string, string> = FONT_STACKS): string {
+  return stacks[family] ?? stacks[""];
 }
 
-/** A Measure backed by a canvas, using the fonts in FONT_STACKS. */
-export function canvasMeasure(): Measure {
+/** A Measure backed by a canvas, using the fonts in `stacks`. */
+export function canvasMeasure(stacks: Record<string, string> = FONT_STACKS): Measure {
   const context = document.createElement("canvas").getContext("2d");
   const cache = new Map<string, TextMetrics>();
   const SCALE = 100;
@@ -96,7 +110,7 @@ export function canvasMeasure(): Measure {
     if (hit) return hit;
     let metrics: TextMetrics = { width: 0, height: 0, descent: 0 };
     if (context && text.trim()) {
-      context.font = `${font.italic ? "italic " : ""}${font.bold ? "bold " : ""}${SCALE}px ${fontStack(font.family)}`;
+      context.font = `${font.italic ? "italic " : ""}${font.bold ? "bold " : ""}${SCALE}px ${fontStack(font.family, stacks)}`;
       const m = context.measureText(text);
       const k = font.size / SCALE;
       const inkStart = -m.actualBoundingBoxLeft;
@@ -380,7 +394,7 @@ export function legendLayout(inputs: LegendInputs): LegendLayout | null {
         const cx = handlesX + col.x + handleLength / 2;
         const cy = baseline - handleH / 2;
         const paint = markerPaint(style, edge);
-        marker = { cx, cy, size, style, d: markerPath(style.marker, size, cx, cy), ...paint, join: markerShape(style.marker).join };
+        marker = { cx, cy, size, style, d: markerPathAt(style.marker, size, cx, cy), ...paint, join: markerShape(style.marker).join };
       }
       rows.push({ text, marker });
     });
@@ -476,11 +490,17 @@ export function anchorForBox(box: Rect, boxPt: { w: number; h: number }): [numbe
 }
 
 /** The SVG font attributes for a placed text. */
-export function fontAttrs(font: FontSpec) {
+export function fontAttrs(font: FontSpec, stacks: Record<string, string> = FONT_STACKS) {
   return {
-    "font-family": fontStack(font.family),
+    "font-family": fontStack(font.family, stacks),
     "font-size": font.size,
     "font-weight": font.bold ? "bold" : "normal",
     "font-style": font.italic ? "italic" : "normal",
   };
 }
+
+/** Arial / Times New Roman / Courier New: on every Windows machine and in
+ * resvg's system fonts, so the screen and the export agree. */
+export const SYSTEM_FONTS: FontSet = { stacks: FONT_STACKS, extent: fontExtent };
+/** matplotlib's DejaVu faces: PyMappr's exact geometry, when loaded. */
+export const DEJAVU_FONTS: FontSet = { stacks: DEJAVU_STACKS, extent: dejaVuExtent };

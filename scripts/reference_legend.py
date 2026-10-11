@@ -106,6 +106,10 @@ def legend_json(app):
                 "family": list(t.get_fontfamily()),
                 "underline": id(t) in underlined}
 
+    def anchor_pt(t):
+        x, y = t.get_transform().transform(t.get_position())
+        return [round((x - ax_bbox.x0) * k, 4), round((y - ax_bbox.y0) * k, 4)]
+
     def metrics(t):
         prop = t.get_fontproperties()
         w, h, d = renderer.get_text_width_height_descent(
@@ -150,6 +154,9 @@ def legend_json(app):
         "title": (pt_box(title.get_window_extent(renderer), ax_bbox, dpi)
                   if legend["title"] else None),
         "markers": handle_boxes,
+        # Where each text's baseline starts (its anchor point).
+        "baselines": [anchor_pt(t) for t in leg.get_texts()],
+        "titleBaseline": anchor_pt(title) if legend["title"] else None,
         "metrics": [metrics(t) for t in leg.get_texts()]
         + ([metrics(title)] if legend["title"] else []),
     }
@@ -345,6 +352,22 @@ def cases():
     bw["map"]["palette"] = "Colourblind safe (Okabe-Ito)"
     yield "birds-okabe-vary", dataset(bw, 1, vary_symbols=True,
                                       group_by="Species"), None, None
+    yield "beetles-layout-serif", legend(dataset(
+        copy.deepcopy(beetles), color_by="Genus", symbol_by="Species"),
+        font_family="serif", columns=3, column_spacing=1.0,
+        label_spacing=0.2, border_pad=0.8, title="A rather long legend title",
+        show_title=True, title_align="right", fontsize=7.0,
+        title_fontsize=12.0, location="lower left", marker_scale=0.7,
+        title_italic=True, label_bold=True), None, None
+    yield "beetles-anchored", legend(copy.deepcopy(beetles), anchor=[0.3, 0.2],
+                                     draggable=True, frame=False,
+                                     border_pad=0.0, label_spacing=0.0),         None, None
+    yield "birds-mono", legend(copy.deepcopy(birds), font_family="monospace",
+                               title="Hornbills and orchids of the world",
+                               show_title=True, title_align="left",
+                               handle_length=1.0, handle_text_pad=0.2,
+                               columns=2, location="center right",
+                               counts=True), None, None
     hidden = copy.deepcopy(birds)
     hidden["datasets"][1]["visible"] = False
     yield "birds-one-hidden", legend(hidden, show_title=True), None, None

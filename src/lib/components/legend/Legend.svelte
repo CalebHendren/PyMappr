@@ -10,6 +10,8 @@
     type LegendLayout,
     type Measure,
     type Rect,
+    type FontSet,
+    SYSTEM_FONTS,
     canvasMeasure,
     fontAttrs,
     legendLayout,
@@ -25,6 +27,7 @@
     avoidPt,
     clear = null,
     measure,
+    fonts = SYSTEM_FONTS,
     fontExtent,
     onlayout,
   }: {
@@ -46,21 +49,25 @@
     clear?: LegendClearance | null;
     /** Text measurement; a canvas with the legend's fonts by default. */
     measure?: Measure;
+    /** The faces: SYSTEM_FONTS (Arial…) by default, or DEJAVU_FONTS for
+     * PyMappr's exact geometry when the DejaVu fonts are loaded. */
+    fonts?: FontSet;
+    /** Overrides `fonts.extent`. */
     fontExtent?: FontExtent;
     /** Called with the layout whenever it changes (the box is what a drag
      * handle needs; null when nothing is drawn). */
     onlayout?: (layout: LegendLayout | null) => void;
   } = $props();
 
-  let fallback: Measure | null = null;
+  let fallback: { stacks: Record<string, string>; measure: Measure } | null = null;
   const measureText: Measure = (text, font) => {
     if (measure) return measure(text, font);
-    fallback ??= canvasMeasure();
-    return fallback(text, font);
+    if (fallback?.stacks !== fonts.stacks) fallback = { stacks: fonts.stacks, measure: canvasMeasure(fonts.stacks) };
+    return fallback.measure(text, font);
   };
 
   const layout = $derived(
-    legendLayout({ legend, options, boxPt, measure: measureText, fontExtent, markerSize, pointsPt, avoidPt, clear, pointEdge }),
+    legendLayout({ legend, options, boxPt, measure: measureText, fontExtent: fontExtent ?? fonts.extent, markerSize, pointsPt, avoidPt, clear, pointEdge }),
   );
 
   $effect(() => {
@@ -92,7 +99,7 @@
     {/if}
     {#if layout.title}
       {@const t = layout.title}
-      <text x={t.x} y={t.y} fill={t.color} xml:space="preserve" style="white-space: pre" {...fontAttrs(t.font)}>{t.text}</text>
+      <text x={t.x} y={t.y} fill={t.color} xml:space="preserve" style="white-space: pre" {...fontAttrs(t.font, fonts.stacks)}>{t.text}</text>
       {#if t.underline}
         <line x1={t.underline.x1} x2={t.underline.x2} y1={t.underline.y} y2={t.underline.y} stroke={t.color} stroke-width={t.underline.width} />
       {/if}
@@ -107,7 +114,7 @@
           stroke-linejoin={row.marker.join}
         />
       {/if}
-      <text x={row.text.x} y={row.text.y} fill={row.text.color} xml:space="preserve" style="white-space: pre" {...fontAttrs(row.text.font)}
+      <text x={row.text.x} y={row.text.y} fill={row.text.color} xml:space="preserve" style="white-space: pre" {...fontAttrs(row.text.font, fonts.stacks)}
         >{row.text.text}</text
       >
       {#if row.text.underline}

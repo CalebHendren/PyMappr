@@ -1,6 +1,6 @@
 <script lang="ts">
   // One marker drawn as PyMappr draws it, for lists and pickers.
-  import { markerPath, markerShape } from "$lib/markers";
+  import { markerPathAt, markerShape } from "$lib/markers";
   import { markerPaint, pointStyle } from "$lib/symbology";
 
   let {
@@ -23,7 +23,7 @@
 
   const paint = $derived(markerPaint(pointStyle({ marker, color, fill }), edge));
   // The marker fills about three quarters of the box.
-  const d = $derived(markerPath(marker, size * 0.72, size / 2, size / 2));
+  const d = $derived(markerPathAt(marker, size * 0.72, size / 2, size / 2));
 </script>
 
 <svg width={size} height={size} viewBox="0 0 {size} {size}" aria-hidden="true">

@@ -46,17 +46,21 @@ describe("legend layout matches matplotlib", () => {
         measure: matplotlibMeasure(g.metrics),
         pointEdge: ref.state.point_edge,
       })!;
-      // Within 0.05 pt of where matplotlib put each part; with nothing on
+      // Within 0.01 pt of where matplotlib put each part; with nothing on
       // the map to avoid, "best" lands where PyMappr's did too.
       const close = (actual: number[], expected: number[]) =>
-        actual.forEach((v, i) => expect(Math.abs(v - expected[i])).toBeLessThan(0.05));
+        actual.forEach((v, i) => expect(Math.abs(v - expected[i])).toBeLessThan(0.01));
       close(up(layout.box, H), g.box);
       expect(layout.rows.length).toBe(g.texts.length);
       layout.rows.forEach((row, i) => {
         close(up(row.text.box, H), g.texts[i]);
         if (row.marker) close([row.marker.cx, H - row.marker.cy], g.markers[i]);
+        close([row.text.x, H - row.text.y], g.baselines[i]);
       });
-      if (g.title) close(up(layout.title!.box, H), g.title);
+      if (g.title) {
+        close(up(layout.title!.box, H), g.title);
+        close([layout.title!.x, H - layout.title!.y], g.titleBaseline);
+      }
       else expect(layout.title).toBeNull();
     });
   }
