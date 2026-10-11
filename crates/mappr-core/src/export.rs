@@ -34,11 +34,29 @@ pub fn pixel_width(width_cm: f64, dpi: f64) -> u32 {
     (width_cm / 2.54 * dpi).round().max(1.0) as u32
 }
 
+/// DejaVu Sans, matplotlib's default font (and so PyMappr's), compiled in so
+/// exports render map text exactly as the screen does on any machine.
+const MAP_FONTS: [&[u8]; 4] = [
+    include_bytes!("../fonts/DejaVuSans.ttf"),
+    include_bytes!("../fonts/DejaVuSans-Bold.ttf"),
+    include_bytes!("../fonts/DejaVuSans-Oblique.ttf"),
+    include_bytes!("../fonts/DejaVuSans-BoldOblique.ttf"),
+];
+
+fn load_map_fonts(db: &mut usvg::fontdb::Database) {
+    for font in MAP_FONTS {
+        db.load_font_data(font.to_vec());
+    }
+}
+
 fn options() -> &'static usvg::Options<'static> {
     static OPTIONS: OnceLock<usvg::Options<'static>> = OnceLock::new();
     OPTIONS.get_or_init(|| {
         let mut opt = usvg::Options::default();
-        opt.fontdb_mut().load_system_fonts();
+        let db = opt.fontdb_mut();
+        load_map_fonts(db);
+        db.load_system_fonts();
+        db.set_sans_serif_family("DejaVu Sans");
         opt
     })
 }
@@ -143,7 +161,11 @@ pub fn render_pdf(svg: &str) -> Result<Vec<u8>, ExportError> {
     static FONTS: OnceLock<std::sync::Arc<pdf_usvg::fontdb::Database>> = OnceLock::new();
     let fontdb = FONTS.get_or_init(|| {
         let mut db = pdf_usvg::fontdb::Database::new();
+        for font in MAP_FONTS {
+            db.load_font_data(font.to_vec());
+        }
         db.load_system_fonts();
+        db.set_sans_serif_family("DejaVu Sans");
         std::sync::Arc::new(db)
     });
     let opt = pdf_usvg::Options { fontdb: fontdb.clone(), ..Default::default() };
@@ -209,7 +231,7 @@ mod tests {
         assert_eq!(u32::from_be_bytes(png[41..45].try_into().unwrap()), 23622);
     }
 
-    const COLOUR: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 10" width="20pt" height="10pt"><rect width="10" height="10" fill="#d62728"/><text x="11" y="8" font-family="Arial" font-size="6">A</text></svg>"##;
+    const COLOUR: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 10" width="20pt" height="10pt"><rect width="10" height="10" fill="#d62728"/><text x="11" y="8" font-family="DejaVu Sans" font-size="6">A</text></svg>"##;
     const GREY: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 10" width="20" height="10"><rect width="10" height="10" fill="#808080"/></svg>"##;
 
     #[test]
@@ -238,7 +260,7 @@ mod tests {
         let svg = r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 50" width="100" height="50">
             <defs><path id="m" d="M-1 -1H1V1H-1Z"/></defs>
             <use href="#m" transform="translate(20 25) scale(10)" fill="#000000"/>
-            <text x="50" y="35" font-family="Arial, Helvetica, sans-serif" font-size="30" font-style="italic">Ab</text>
+            <text x="50" y="35" font-family="DejaVu Sans" font-size="30" font-style="italic">Ab</text>
         </svg>"##;
         let png = render_png(svg, 100, 96.0).unwrap();
         let tree = usvg::Tree::from_str(svg, options()).unwrap();

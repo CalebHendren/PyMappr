@@ -111,8 +111,9 @@ export const PORTRAIT_MAT = "#e6e6e6";
 /** PyMappr's screen figure is drawn at 100 dpi. */
 export const SCREEN_DPI = 100;
 
-/** Map fonts: Arial everywhere so the screen and rasterised exports agree. */
-export const MAP_FONT = "Arial, Helvetica, sans-serif";
+/** Map text uses matplotlib's DejaVu Sans, bundled with the app and with
+ * the export renderer, so it matches PyMappr's glyphs exactly. */
+export const MAP_FONT = "'DejaVu Sans', sans-serif";
 
 // ---- the Layers and Labels tabs ---------------------------------------------
 
