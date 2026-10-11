@@ -992,4 +992,27 @@ mod tests {
         let map = render(&basemap, &request("Equirectangular", Some(view), settings(&[], &[]))).unwrap();
         assert_eq!(map.layers[0].id, "continents");
     }
+
+    #[test]
+    fn downloaded_districts_are_drawn_and_labelled() {
+        let dir = std::env::temp_dir().join(format!("rustymappr-districts-{}", std::process::id()));
+        std::fs::create_dir_all(dir.join("districts")).unwrap();
+        let fixture = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/data/districts_fixture.geojson");
+        std::fs::copy(fixture, dir.join("districts").join("TST.geojson")).unwrap();
+        let basemap = Basemap::new(&dir);
+        let mut s = settings(&[], &[]);
+        s.labels.insert("counties".into(), true);
+        let mut req = request("Equirectangular", Some(Rect { x: -1.0, y: -11.0, w: 12.0, h: 12.0 }), s);
+        req.districts = vec!["tst".into()];
+        let map = render(&basemap, &req).unwrap();
+        let districts = map.layers.iter().find(|l| l.id == "districts").expect("districts layer");
+        assert_eq!(districts.kind, Kind::Line);
+        assert_eq!(districts.d.matches('M').count(), 2, "Alpha's shell and hole: {}", districts.d);
+        assert!(map.labels.iter().any(|l| l.layer == "districts" && l.text == "Alpha"), "{:?}", map.labels);
+        // A country with no download is reported, not fatal.
+        req.districts = vec!["KEN".into()];
+        let map = render(&basemap, &req).unwrap();
+        assert!(map.missing.iter().any(|m| m.contains("KEN")), "{:?}", map.missing);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }
