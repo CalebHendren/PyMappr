@@ -175,10 +175,10 @@ class AppState {
     this.groups.forEach((g, i) => {
       if (!all && this.groupStyles[g.id]) return;
       const old = styles[g.id];
-      // Black & white needs shapes to tell groups apart, colour cycles slower.
+      // Black & white cannot tell groups apart by colour alone: vary shapes too.
       const bw = this.palette === "bw";
       styles[g.id] = {
-        color: bw ? colors[Math.floor(i / SHAPE_ORDER.length) % colors.length] : colors[i % colors.length],
+        color: colors[i % colors.length],
         shape: this.varySymbols || bw ? SHAPE_ORDER[i % SHAPE_ORDER.length] : "circle",
         visible: old?.visible ?? true,
       };

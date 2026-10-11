@@ -121,4 +121,23 @@ mod tests {
         assert_eq!(&png[37..41], b"pHYs");
         assert_eq!(u32::from_be_bytes(png[41..45].try_into().unwrap()), 23622);
     }
+
+    #[test]
+    fn draws_use_markers_and_text() {
+        // The frontend draws markers as <use href> and the legend as <text>.
+        let svg = r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 50" width="100" height="50">
+            <defs><path id="m" d="M-1 -1H1V1H-1Z"/></defs>
+            <use href="#m" transform="translate(20 25) scale(10)" fill="#000000"/>
+            <text x="50" y="35" font-family="Arial, Helvetica, sans-serif" font-size="30" font-style="italic">Ab</text>
+        </svg>"##;
+        let png = render_png(svg, 100, 96.0).unwrap();
+        let tree = usvg::Tree::from_str(svg, options()).unwrap();
+        let mut pixmap = tiny_skia::Pixmap::new(100, 50).unwrap();
+        resvg::render(&tree, tiny_skia::Transform::default(), &mut pixmap.as_mut());
+        let alpha = |x: u32, y: u32| pixmap.pixel(x, y).unwrap().alpha();
+        assert_eq!(alpha(20, 25), 255, "the <use> marker is drawn");
+        let text_ink = (50..100).flat_map(|x| (10..45).map(move |y| (x, y))).filter(|&(x, y)| alpha(x, y) > 0).count();
+        assert!(text_ink > 50, "the legend text is drawn ({text_ink} px)");
+        assert!(png.len() > 100);
+    }
 }

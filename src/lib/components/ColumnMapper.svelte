@@ -151,8 +151,8 @@
             <tr>
               {#each preview.headers as h (h)}
                 <th class="whitespace-nowrap px-2 py-1 font-semibold" class:text-accent={h === lon || h === lat}>
-                  {h}{#if h === lon}<span class="font-normal text-muted"> (lon)</span>{:else if h === lat}<span
-                      class="font-normal text-muted"> (lat)</span
+                  {h}{#if h === lon}<span class="font-normal text-muted">{" "}(lon)</span>{:else if h === lat}<span
+                      class="font-normal text-muted">{" "}(lat)</span
                     >{/if}
                 </th>
               {/each}
