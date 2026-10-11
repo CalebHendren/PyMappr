@@ -6,4 +6,4 @@
   let { fig }: { fig: Figure } = $props();
 </script>
 
-<g data-legend="true" data-figure-width={fig.w}></g>
+<g data-legend="true" data-drag="legend" data-figure-width={fig.w}></g>

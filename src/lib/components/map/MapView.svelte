@@ -153,7 +153,8 @@
     | { kind: "pan"; x: number; y: number; vx: number; vy: number }
     | { kind: "box"; x0: number; y0: number; x1: number; y1: number }
     | { kind: "spin"; x: number; y: number; lon0: number; lat0: number }
-    | { kind: "label"; key: string; x: number; y: number; ox: number; oy: number };
+    | { kind: "label"; key: string; x: number; y: number; ox: number; oy: number }
+    | { kind: "anchor"; what: "legend" | "scalebar" | "inset"; x: number; y: number; ax: number; ay: number };
   let drag = $state<Drag | null>(null);
   let cursorBusy = false;
 
@@ -171,7 +172,10 @@
     if (!store.view) return;
     const p = local(e);
     const target = e.target as Element;
+    const dragEl = target.closest("[data-drag]");
+    const what = dragEl?.getAttribute("data-drag") as "legend" | "scalebar" | "inset" | undefined;
     if (e.button === 2) {
+      if (what) resetAnchor(what);
       const label = target.closest("[data-label]")?.getAttribute("data-label");
       if (label && store.labelOffsets[label]) {
         const { [label]: _gone, ...rest } = store.labelOffsets;
@@ -179,10 +183,21 @@
       }
       return;
     }
-    if (e.button !== 0 || !inBox(p)) return;
+    if (e.button !== 0) return;
     (e.currentTarget as Element).setPointerCapture(e.pointerId);
+    if (dragEl && what && draggable(what)) {
+      // Anchors are the lower-left corner in axes fractions, as PyMappr keeps them.
+      const r = dragEl.getBoundingClientRect();
+      const c = container.getBoundingClientRect();
+      const b = fig.box;
+      const ax = (r.left - c.left - b.x) / b.w;
+      const ay = 1 - (r.bottom - c.top - b.y) / b.h;
+      drag = { kind: "anchor", what, x: p[0], y: p[1], ax, ay };
+      return;
+    }
+    if (!inBox(p)) return;
     const label = target.closest("[data-label]")?.getAttribute("data-label");
-    if (label && store.doc.map.labels && store.allowLabelDrag) {
+    if (label && store.allowLabelDrag) {
       const [ox, oy] = store.labelOffsets[label] ?? [0, 0];
       drag = { kind: "label", key: label, x: p[0], y: p[1], ox, oy };
     } else if (globe) {
@@ -217,6 +232,10 @@
         ...store.labelOffsets,
         [d.key]: [clamp(d.ox + (p[0] - d.x) * k), clamp(d.oy + (p[1] - d.y) * k)],
       };
+    } else if (d?.kind === "anchor") {
+      const ax = d.ax + (p[0] - d.x) / fig.box.w;
+      const ay = d.ay - (p[1] - d.y) / fig.box.h;
+      setAnchor(d.what, ax, ay);
     } else if (d?.kind === "spin") {
       // About 180° per disk diameter, at most every 50 ms.
       const now = performance.now();
@@ -253,6 +272,33 @@
       const [bx, by] = figureToMap(store.view, fig.box, Math.max(d.x0, d.x1), Math.max(d.y0, d.y1));
       if (bx - ax > 0 && by - ay > 0 && Math.abs(d.x1 - d.x0) > 4) store.setView({ x: ax, y: ay, w: bx - ax, h: by - ay });
     }
+  }
+
+  function draggable(what: "legend" | "scalebar" | "inset"): boolean {
+    const m = store.doc.map;
+    return what === "legend" ? store.doc.legend.draggable : what === "scalebar" ? m.scale_bar.draggable : m.inset.draggable;
+  }
+
+  function setAnchor(what: "legend" | "scalebar" | "inset", ax: number, ay: number) {
+    const m = store.doc.map;
+    if (what === "legend") {
+      // The legend may go anywhere, even outside the map.
+      store.doc.legend.anchor = [ax, ay];
+    } else if (what === "scalebar") {
+      m.scale_bar.anchor_x = Math.min(0.99, Math.max(0.01, ax));
+      m.scale_bar.anchor_y = Math.min(0.97, Math.max(0.01, ay));
+    } else {
+      // The inset stays on the map.
+      m.inset.anchor_x = Math.min(0.99, Math.max(0, ax));
+      m.inset.anchor_y = Math.min(0.99, Math.max(0, ay));
+    }
+  }
+
+  function resetAnchor(what: "legend" | "scalebar" | "inset") {
+    const m = store.doc.map;
+    if (what === "legend") store.doc.legend.anchor = null;
+    else if (what === "scalebar") Object.assign(m.scale_bar, { anchor_x: null, anchor_y: null });
+    else Object.assign(m.inset, { anchor_x: null, anchor_y: null });
   }
 
   function onWheel(e: WheelEvent) {

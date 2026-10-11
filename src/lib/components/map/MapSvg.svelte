@@ -283,7 +283,7 @@
   {#if scaleBar && settings.scale_bar.show}
     {@const sb = settings.scale_bar}
     {@const barH = 0.011 * box.h}
-    <g font-size={sb.fontsize * pt} fill={sb.color}>
+    <g font-size={sb.fontsize * pt} fill={sb.color} data-drag="scalebar">
       {#each scaleBar.bars as bar, bi (bi)}
         {@const x0 = box.x + bar.x * box.w}
         {@const w = bar.width * box.w}
@@ -361,7 +361,7 @@
     {@const ib = insetBox}
     {@const iv = inset.view}
     {@const inGlobe = inset.projection.name.startsWith("Globe")}
-    <g data-inset="true">
+    <g data-inset="true" data-drag="inset">
       {#if inGlobe}
         <svg x={ib.x} y={ib.y} width={ib.w} height={ib.h} viewBox="{iv.x} {iv.y} {iv.w} {iv.h}" preserveAspectRatio="none">
           <path d={inset.map.outline} fill={WATER.ocean[o.ocean] ?? "#ffffff"} stroke="#000000" stroke-width={INSET.frameWidth * pt * insetK} />
