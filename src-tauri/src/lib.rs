@@ -7,6 +7,7 @@ pub mod cmd_docs;
 pub mod cmd_map;
 pub mod core;
 pub mod jobs;
+pub mod llm;
 
 use std::sync::Arc;
 
