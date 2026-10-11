@@ -1,0 +1,14 @@
+[package]
+name = "mappr-codegen"
+description = "Python and R scripts that recreate a RustyMappr map (a port of PyMappr's code export)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+indexmap = "2"
+mappr-core = { path = "../mappr-core" }
+# preserve_order: the order of a state's layer switches is the order the
+# scripts list the layers in, as in PyMappr.
+serde_json = { version = "1", features = ["preserve_order", "float_roundtrip"] }
+thiserror = "2"

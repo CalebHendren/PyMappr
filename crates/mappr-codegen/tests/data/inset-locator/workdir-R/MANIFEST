@@ -1,0 +1,6 @@
+recreate_map.R
+install.R
+inset locator.Rproj
+README.md
+.gitignore
+data/south_america_beetles.csv
