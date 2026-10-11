@@ -104,6 +104,8 @@ pub struct Projection {
     pub max_lat: f64,
     /// ± degrees of longitude around `lon_0` that are drawn (180 = world).
     pub lon_halfspan: f64,
+    /// The projected world: x0, x1, y0, y1 (y up), as PyMappr's `bounds`.
+    pub bounds: [f64; 4],
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -137,6 +139,12 @@ fn qsfn(sinp: f64) -> f64 {
 
 impl Projection {
     pub fn new(spec: &ProjectionSpec) -> Result<Self, UnknownProjection> {
+        let mut proj = Self::build(spec)?;
+        proj.bounds = proj.compute_bounds();
+        Ok(proj)
+    }
+
+    fn build(spec: &ProjectionSpec) -> Result<Self, UnknownProjection> {
         let world = |kind: Kind, max_lat: f64| Projection {
             kind,
             name: spec.name.clone(),
@@ -145,6 +153,7 @@ impl Projection {
             min_lat: -max_lat,
             max_lat,
             lon_halfspan: 180.0,
+            bounds: [0.0; 4],
         };
         Ok(match spec.name.as_str() {
             "Equirectangular" => world(Kind::Equirectangular, 90.0),
@@ -154,8 +163,7 @@ impl Projection {
             "Natural Earth" => world(Kind::NaturalEarth, 90.0),
             "Winkel Tripel" => world(Kind::WinkelTripel, 90.0),
             GLOBE => {
-                let lon_0 = spec.lon_0.unwrap_or(0.0);
-                let lat_0 = spec.lat_0.unwrap_or(0.0).clamp(-90.0, 90.0);
+                let (lon_0, lat_0) = normalize_origin(spec.lon_0, spec.lat_0, (0.0, 0.0));
                 let p0 = lat_0.to_radians();
                 Projection {
                     kind: Kind::Orthographic {
@@ -169,6 +177,7 @@ impl Projection {
                     min_lat: -90.0,
                     max_lat: 90.0,
                     lon_halfspan: 180.0,
+                    bounds: [0.0; 4],
                 }
             }
             other => {
@@ -176,9 +185,9 @@ impl Projection {
                     .iter()
                     .find(|d| d.name == other)
                     .ok_or_else(|| UnknownProjection(other.to_string()))?;
-                let lon_0 = spec.lon_0.unwrap_or(d.lon_0);
+                let (lon_0, lat_0) = normalize_origin(spec.lon_0, spec.lat_0, (d.lon_0, d.lat_0));
                 // The ellipsoidal LAEA is singular exactly at a pole.
-                let lat_0 = spec.lat_0.unwrap_or(d.lat_0).clamp(-89.999, 89.999);
+                let lat_0 = lat_0.clamp(-89.999, 89.999);
                 let kind = if d.conic { lcc(d, lat_0) } else { laea(lat_0) };
                 Projection {
                     kind,
@@ -188,6 +197,7 @@ impl Projection {
                     min_lat: d.lat_min,
                     max_lat: d.lat_max,
                     lon_halfspan: d.lon_halfspan,
+                    bounds: [0.0; 4],
                 }
             }
         })
@@ -260,46 +270,198 @@ impl Projection {
         Some((A * x, A * y))
     }
 
-    /// Longitude/latitude of a projected point, by Newton iteration on
-    /// `forward` (good enough for a cursor read-out).
-    pub fn inverse(&self, x: f64, y: f64) -> Option<(f64, f64)> {
-        if self.kind == Kind::Equirectangular {
-            return ((-180.0..=180.0).contains(&x) && (-90.0..=90.0).contains(&y)).then_some((x, y));
+    /// Cache key: the name plus the origin, which custom origins change.
+    pub fn key(&self) -> String {
+        format!("{}|{}|{}", self.name, self.lon_0, self.lat_0)
+    }
+
+    /// Width of the projected world (PyMappr's `world_width`).
+    pub fn world_width(&self) -> f64 {
+        self.bounds[1] - self.bounds[0]
+    }
+
+    /// Plain longitude/latitude degrees (PyMappr's `is_geographic`).
+    pub fn is_geographic(&self) -> bool {
+        self.kind == Kind::Equirectangular
+    }
+
+    /// PyMappr's `forward(clamp=True)`: latitudes are pulled into the drawn
+    /// band and, on a regional map, longitudes onto its edge, so nothing
+    /// goes missing. `None` only on the far side of the globe.
+    pub fn forward_clamped(&self, lon: f64, lat: f64) -> Option<(f64, f64)> {
+        if !(lon.is_finite() && lat.is_finite()) {
+            return None;
         }
-        let scale = A;
-        let mut best: Option<(f64, f64, f64)> = None;
-        for start in [(0.0, self.lat_0), (0.0, 0.0), (60.0, 45.0), (-60.0, -45.0)] {
-            let (mut lam, mut lat) = start;
-            for _ in 0..40 {
-                let lon = lam + self.lon_0;
-                let Some((fx, fy)) = self.forward(lon, lat) else { break };
-                let (ex, ey) = (fx - x, fy - y);
-                let err = ex.hypot(ey);
-                if best.is_none_or(|b| err < b.2) {
-                    best = Some((wrap_lon(lon), lat, err));
+        let lat = lat.clamp(self.min_lat, self.max_lat);
+        let lon = if self.lon_halfspan < 180.0 {
+            self.lon_0 + self.relative_lon(lon).clamp(-self.lon_halfspan, self.lon_halfspan)
+        } else {
+            lon
+        };
+        self.forward(lon, lat)
+    }
+
+    /// PyMappr's `forward(clamp=False)`: `None` outside the drawn band or
+    /// region, and on the far side of the globe.
+    pub fn forward_unclamped(&self, lon: f64, lat: f64) -> Option<(f64, f64)> {
+        if !(lon.is_finite() && lat.is_finite()) || lat < self.min_lat || lat > self.max_lat {
+            return None;
+        }
+        if self.lon_halfspan < 180.0 && self.relative_lon(lon).abs() > self.lon_halfspan {
+            return None;
+        }
+        self.forward(lon, lat)
+    }
+
+    /// Longitude/latitude of a projected point inside the drawn part of
+    /// the world, for the cursor read-out.
+    pub fn inverse(&self, x: f64, y: f64) -> Option<(f64, f64)> {
+        let (lon, lat) = self.inverse_raw(x, y)?;
+        self.in_domain(lon, lat).then_some((lon, lat))
+    }
+
+    /// Longitude/latitude of a projected point as PROJ's inverse gives it:
+    /// regional (Lambert) maps are not limited to their region, as pyproj
+    /// knows of none. `None` off the projection's own domain (outside a
+    /// world outline, beyond the globe's horizon).
+    pub fn inverse_raw(&self, x: f64, y: f64) -> Option<(f64, f64)> {
+        self.inverse_seeded(x, y, None)
+    }
+
+    /// [`Self::inverse_raw`], with the iterative projections started from
+    /// `seed` (lon, lat in degrees): a neighbouring pixel's answer, when
+    /// warping an image.
+    pub fn inverse_seeded(&self, x: f64, y: f64, seed: Option<(f64, f64)>) -> Option<(f64, f64)> {
+        if !(x.is_finite() && y.is_finite()) {
+            return None;
+        }
+        let world = |lam: f64, phi: f64| {
+            (lam.abs() <= PI + 1e-9 && phi.abs() <= FRAC_PI_2 + 1e-9)
+                .then(|| (lam.to_degrees().clamp(-180.0, 180.0), phi.to_degrees().clamp(-90.0, 90.0)))
+        };
+        let (xn, yn) = (x / A, y / A);
+        match self.kind {
+            Kind::Equirectangular => {
+                ((-180.0..=180.0).contains(&x) && (-90.0..=90.0).contains(&y)).then_some((x, y))
+            }
+            Kind::Mercator => world(xn, phi2((-yn).exp())),
+            Kind::Robinson => {
+                let (lam, phi) = robinson_inverse(xn, yn)?;
+                world(lam, phi)
+            }
+            Kind::Mollweide => {
+                let s = yn / std::f64::consts::SQRT_2;
+                if s.abs() > 1.0 + 1e-12 {
+                    return None;
                 }
-                if err < 1e-3 {
-                    break;
+                let theta = s.clamp(-1.0, 1.0).asin();
+                let cos_t = theta.cos();
+                let lam = if cos_t < 1e-12 { 0.0 } else { xn / (2.0 * std::f64::consts::SQRT_2 / PI * cos_t) };
+                let phi = ((2.0 * theta + (2.0 * theta).sin()) / PI).clamp(-1.0, 1.0).asin();
+                world(lam, phi)
+            }
+            Kind::NaturalEarth => {
+                let (lam, phi) = natural_earth_inverse(xn, yn)?;
+                world(lam, phi)
+            }
+            Kind::WinkelTripel => {
+                let seed = seed.map(|(lon, lat)| (lon.to_radians(), lat.to_radians()));
+                let starts = [(xn, yn), (xn * 0.75, yn * 0.9), (0.0, 0.0)];
+                let (lam, phi) = newton_inverse(winkel_tripel, xn, yn, seed, &starts)?;
+                world(lam, phi)
+            }
+            Kind::Orthographic { sin0, cos0, nu0 } => {
+                // The spherical inverse, then Newton on the ellipsoidal
+                // forward to take out the flattening.
+                // The ellipsoidal disk is slightly off centre on a tilted
+                // globe, so allow a little past the unit circle.
+                let rho = xn.hypot(yn);
+                if rho > 1.01 {
+                    return None;
                 }
-                let h = 1e-6;
-                let (Some((ax, ay)), Some((bx, by))) =
-                    (self.forward(lon + h, lat), self.forward(lon, lat + h))
-                else {
-                    break;
+                let c = rho.min(1.0).asin();
+                let (sinc, cosc) = c.sin_cos();
+                let sphere = if rho < 1e-15 {
+                    (0.0, self.lat_0.to_radians())
+                } else {
+                    (
+                        (xn * sinc).atan2(rho * cosc * cos0 - yn * sinc * sin0),
+                        (cosc * sin0 + yn * sinc * cos0 / rho).clamp(-1.0, 1.0).asin(),
+                    )
                 };
-                let (j11, j21, j12, j22) = ((ax - fx) / h, (ay - fy) / h, (bx - fx) / h, (by - fy) / h);
-                let det = j11 * j22 - j12 * j21;
-                if det.abs() < 1e-12 {
-                    break;
+                let seed = seed.map(|(lon, lat)| (wrap_lon(lon - self.lon_0).to_radians(), lat.to_radians()));
+                let f = |lam: f64, phi: f64| ortho_ellipsoidal(sin0, cos0, nu0, lam, phi);
+                let (lam, phi) = newton_inverse(f, xn, yn, seed, &[sphere])?;
+                let (sinp, cosp) = phi.sin_cos();
+                if sin0 * sinp + cos0 * cosp * lam.cos() < -1e-9 || phi.abs() > FRAC_PI_2 + 1e-9 {
+                    return None;
                 }
-                let dl = (j22 * ex - j12 * ey) / det;
-                let dp = (-j21 * ex + j11 * ey) / det;
-                lam = (lam - dl.clamp(-30.0, 30.0)).clamp(-180.0, 180.0);
-                lat = (lat - dp.clamp(-30.0, 30.0)).clamp(-89.9999, 89.9999);
+                Some((wrap_lon(self.lon_0 + lam.to_degrees()), phi.to_degrees().clamp(-90.0, 90.0)))
+            }
+            Kind::Lcc { n, af, rho0 } => {
+                let (mut px, mut py) = (x, rho0 - y);
+                let mut rho = px.hypot(py);
+                if rho == 0.0 {
+                    return Some((self.lon_0, if n > 0.0 { 90.0 } else { -90.0 }));
+                }
+                if n < 0.0 {
+                    rho = -rho;
+                    px = -px;
+                    py = -py;
+                }
+                let phi = phi2((rho / af).powf(1.0 / n));
+                let lam = px.atan2(py) / n;
+                Some((wrap_lon(self.lon_0 + lam.to_degrees()), phi.to_degrees()))
+            }
+            Kind::Laea { sinb1, cosb1, rq, d, .. } => {
+                let (mut px, py) = (x / d, y * d);
+                let rho = px.hypot(py);
+                if rho < 1e-10 {
+                    return Some((self.lon_0, self.lat_0));
+                }
+                let arg = 0.5 * rho / rq;
+                if arg > 1.0 {
+                    return None;
+                }
+                let sce = 2.0 * arg.asin();
+                let (s, c) = sce.sin_cos();
+                px *= s;
+                let ab = c * sinb1 + py * s * cosb1 / rho;
+                let yy = rho * cosb1 * c - py * sinb1 * s;
+                let lam = px.atan2(yy);
+                let phi = authalic_to_geodetic(ab.clamp(-1.0, 1.0).asin());
+                Some((wrap_lon(self.lon_0 + lam.to_degrees()), phi.to_degrees()))
             }
         }
-        let (lon, lat, err) = best?;
-        (err < scale * 1e-6 && self.in_domain(lon, lat)).then_some((lon, lat))
+    }
+
+    /// PyMappr's `bounds`: the projected box of the drawn region, from 60
+    /// points along each edge (the horizon ring on the globe).
+    fn compute_bounds(&self) -> [f64; 4] {
+        if self.kind == Kind::Equirectangular {
+            return [-180.0, 180.0, -90.0, 90.0];
+        }
+        let mut pts = Vec::new();
+        if self.is_globe() {
+            pts.extend(cap_ring(self.lon_0, self.lat_0, HORIZON_RADIUS, 361));
+        } else {
+            let (l0, l1) = (self.lon_0 - self.lon_halfspan, self.lon_0 + self.lon_halfspan);
+            let (p0, p1) = (self.min_lat, self.max_lat);
+            let n = 60;
+            for i in 0..n {
+                let t = i as f64 / (n - 1) as f64;
+                let lon = l0 + (l1 - l0) * t;
+                let lat = p0 + (p1 - p0) * t;
+                pts.extend([[lon, p0], [lon, p1], [l0, lat], [l1, lat]]);
+            }
+        }
+        let mut b = [f64::MAX, f64::MIN, f64::MAX, f64::MIN];
+        for [lon, lat] in pts {
+            if let Some((x, y)) = self.forward(lon, lat) {
+                b = [b[0].min(x), b[1].max(x), b[2].min(y), b[3].max(y)];
+            }
+        }
+        b
     }
 
     /// Whether a point falls in the part of the world this projection draws.
@@ -447,6 +609,191 @@ fn winkel_tripel(lam: f64, phi: f64) -> (f64, f64) {
     ((x + lam * cosphi1) * 0.5, (y + phi) * 0.5)
 }
 
+/// PyMappr's `normalize_origin`, with missing or non-finite values taking
+/// the preset's default.
+fn normalize_origin(lon: Option<f64>, lat: Option<f64>, default: (f64, f64)) -> (f64, f64) {
+    let lon = lon.filter(|v| v.is_finite()).unwrap_or(default.0);
+    let lat = lat.filter(|v| v.is_finite()).unwrap_or(default.1);
+    let lon = if (-180.0..=180.0).contains(&lon) { lon } else { (lon + 180.0).rem_euclid(360.0) - 180.0 };
+    (lon, lat.clamp(-90.0, 90.0))
+}
+
+/// The ring `radius` great-circle degrees from (lon_0, lat_0), traced by
+/// azimuth (PyMappr's `_cap_ring`). Longitudes stay within 180° of lon_0.
+pub fn cap_ring(lon_0: f64, lat_0: f64, radius: f64, n: usize) -> Vec<[f64; 2]> {
+    let phi0 = lat_0.to_radians();
+    let r = radius.to_radians();
+    (0..n)
+        .map(|i| {
+            let az = 2.0 * PI * i as f64 / (n - 1) as f64;
+            let lat = (phi0.sin() * r.cos() + phi0.cos() * r.sin() * az.cos()).clamp(-1.0, 1.0).asin();
+            let dlon = (az.sin() * r.sin() * phi0.cos()).atan2(r.cos() - phi0.sin() * lat.sin());
+            [lon_0 + dlon.to_degrees(), lat.to_degrees()]
+        })
+        .collect()
+}
+
+/// Latitude from Snyder's t (PROJ's `pj_phi2`).
+fn phi2(ts: f64) -> f64 {
+    let e = ES.sqrt();
+    let mut phi = FRAC_PI_2 - 2.0 * ts.atan();
+    for _ in 0..15 {
+        let con = e * phi.sin();
+        let dphi = FRAC_PI_2 - 2.0 * (ts * ((1.0 - con) / (1.0 + con)).powf(0.5 * e)).atan() - phi;
+        phi += dphi;
+        if dphi.abs() < 1e-12 {
+            break;
+        }
+    }
+    phi
+}
+
+/// Geodetic latitude from authalic latitude (PROJ's `pj_authlat` series).
+fn authalic_to_geodetic(beta: f64) -> f64 {
+    const P00: f64 = 1.0 / 3.0;
+    const P01: f64 = 31.0 / 180.0;
+    const P02: f64 = 517.0 / 5040.0;
+    const P10: f64 = 23.0 / 360.0;
+    const P11: f64 = 251.0 / 3780.0;
+    const P20: f64 = 761.0 / 45360.0;
+    let (es, es2) = (ES, ES * ES);
+    let es3 = es2 * ES;
+    let apa = [es * P00 + es2 * P01 + es3 * P02, es2 * P10 + es3 * P11, es3 * P20];
+    let t = beta + beta;
+    beta + apa[0] * t.sin() + apa[1] * (t + t).sin() + apa[2] * (t + t + t).sin()
+}
+
+/// The ellipsoidal orthographic forward in units of the semi-major axis.
+fn ortho_ellipsoidal(sin0: f64, cos0: f64, nu0: f64, lam: f64, phi: f64) -> (f64, f64) {
+    let (sinp, cosp) = phi.sin_cos();
+    let (sinl, cosl) = lam.sin_cos();
+    let nu = 1.0 / (1.0 - ES * sinp * sinp).sqrt();
+    (nu * cosp * sinl, nu * (sinp * cos0 - cosp * sin0 * cosl) + ES * (nu0 * sin0 - nu * sinp) * cos0)
+}
+
+/// Solve `f(λ, φ) = (x, y)` by Newton's method from `seed`, else from each
+/// of `starts` in turn. Radians; units of the semi-major axis.
+fn newton_inverse(
+    f: impl Fn(f64, f64) -> (f64, f64),
+    x: f64,
+    y: f64,
+    seed: Option<(f64, f64)>,
+    starts: &[(f64, f64)],
+) -> Option<(f64, f64)> {
+    let solve = |(mut lam, mut phi): (f64, f64)| -> Option<(f64, f64)> {
+        for _ in 0..30 {
+            let (fx, fy) = f(lam, phi);
+            let (ex, ey) = (fx - x, fy - y);
+            if ex.abs() < 1e-11 && ey.abs() < 1e-11 {
+                return Some((lam, phi));
+            }
+            let h = 1e-7;
+            let (ax, ay) = f(lam + h, phi);
+            let (bx, by) = f(lam, phi + h);
+            let (j11, j21, j12, j22) = ((ax - fx) / h, (ay - fy) / h, (bx - fx) / h, (by - fy) / h);
+            let det = j11 * j22 - j12 * j21;
+            if det.abs() < 1e-14 {
+                break;
+            }
+            lam -= ((j22 * ex - j12 * ey) / det).clamp(-0.5, 0.5);
+            phi = (phi - ((-j21 * ex + j11 * ey) / det).clamp(-0.5, 0.5)).clamp(-FRAC_PI_2, FRAC_PI_2);
+        }
+        let (fx, fy) = f(lam, phi);
+        ((fx - x).abs() < 1e-9 && (fy - y).abs() < 1e-9).then_some((lam, phi))
+    };
+    seed.and_then(solve).or_else(|| starts.iter().find_map(|&s| solve(s)))
+}
+
+/// PROJ's Robinson inverse: the latitude from the y table by Newton, then
+/// the longitude directly. Units of the semi-major axis.
+fn robinson_inverse(x: f64, y: f64) -> Option<(f64, f64)> {
+    const FXC: f64 = 0.8487;
+    const FYC: f64 = 1.3523;
+    const NODES: usize = 18;
+    let v = |c: [f64; 4], z: f64| c[0] + z * (c[1] + z * (c[2] + z * c[3]));
+    let dv = |c: [f64; 4], z: f64| c[1] + z * (c[2] + c[2] + z * 3.0 * c[3]);
+    let mut lam = x / FXC;
+    let mut phi = (y / FYC).abs();
+    if phi >= 1.0 {
+        if phi > 1.000001 {
+            return None;
+        }
+        phi = FRAC_PI_2.copysign(y);
+        lam /= ROBIN_X[NODES][0];
+        return Some((lam, phi));
+    }
+    let mut i = ((phi * NODES as f64).floor() as usize).min(NODES - 1);
+    loop {
+        if ROBIN_Y[i][0] > phi {
+            if i == 0 {
+                break;
+            }
+            i -= 1;
+        } else if ROBIN_Y[i + 1][0] <= phi {
+            i += 1;
+            if i >= NODES {
+                return None;
+            }
+        } else {
+            break;
+        }
+    }
+    let t_row = ROBIN_Y[i];
+    let mut t = 5.0 * (phi - t_row[0]) / (ROBIN_Y[i + 1][0] - t_row[0]);
+    for _ in 0..100 {
+        let t1 = (v(t_row, t) - phi) / dv(t_row, t);
+        t -= t1;
+        if t1.abs() < 1e-8 {
+            break;
+        }
+    }
+    let mut lat = (5.0 * i as f64 + t).to_radians();
+    if y < 0.0 {
+        lat = -lat;
+    }
+    lam /= v(ROBIN_X[i], t);
+    Some((lam, lat))
+}
+
+/// PROJ's Natural Earth inverse: Newton on the y polynomial.
+fn natural_earth_inverse(x: f64, y: f64) -> Option<(f64, f64)> {
+    const A0: f64 = 0.8707;
+    const A1: f64 = -0.131979;
+    const A2: f64 = -0.013791;
+    const A3: f64 = 0.003971;
+    const A4: f64 = -0.001529;
+    const B0: f64 = 1.007226;
+    const B1: f64 = 0.015085;
+    const B2: f64 = -0.044475;
+    const B3: f64 = 0.028874;
+    const B4: f64 = -0.005916;
+    const C0: f64 = B0;
+    const C1: f64 = 3.0 * B1;
+    const C2: f64 = 7.0 * B2;
+    const C3: f64 = 9.0 * B3;
+    const C4: f64 = 11.0 * B4;
+    let max_y = 0.8707 * 0.52 * PI;
+    if y.abs() > max_y + 1e-12 {
+        return None;
+    }
+    let y = y.clamp(-max_y, max_y);
+    let mut yc = y;
+    for _ in 0..100 {
+        let y2 = yc * yc;
+        let y4 = y2 * y2;
+        let f = yc * (B0 + y2 * (B1 + y4 * (B2 + B3 * y2 + B4 * y4))) - y;
+        let fder = C0 + y2 * (C1 + y4 * (C2 + C3 * y2 + C4 * y4));
+        let tol = f / fder;
+        yc -= tol;
+        if tol.abs() < 1e-11 {
+            break;
+        }
+    }
+    let y2 = yc * yc;
+    let lam = x / (A0 + y2 * (A1 + y2 * (A2 + y2 * y2 * y2 * (A3 + y2 * A4))));
+    Some((lam, yc))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -491,6 +838,85 @@ mod tests {
             let (lon2, lat2) = p.inverse(x, y).unwrap_or_else(|| panic!("{name}"));
             assert!((lon - lon2).abs() < 1e-5 && (lat - lat2).abs() < 1e-5, "{name}: {lon2},{lat2}");
         }
+    }
+
+    /// Every projection's analytic inverse undoes its forward across the
+    /// drawn region, to well under a metre.
+    #[test]
+    fn analytic_inverse_round_trips_on_a_grid() {
+        for name in projection_names() {
+            for origin in [None, Some((-178.0, -17.0)), Some((47.0, 62.0))] {
+                let spec = ProjectionSpec { name: name.into(), lon_0: origin.map(|o| o.0), lat_0: origin.map(|o| o.1) };
+                let p = Projection::new(&spec).unwrap();
+                let mut checked = 0;
+                for i in 0..=24 {
+                    for j in 0..=24 {
+                        let rel = -p.lon_halfspan * 0.98 + 2.0 * p.lon_halfspan * 0.98 * i as f64 / 24.0;
+                        let lat = p.min_lat + (p.max_lat - p.min_lat) * (0.01 + 0.98 * j as f64 / 24.0);
+                        let lon = wrap_lon(p.lon_0 + rel);
+                        if p.is_globe() && p.cap_distance(lon, lat) > 89.0 {
+                            continue;
+                        }
+                        let Some((x, y)) = p.forward(lon, lat) else { continue };
+                        let (lon2, lat2) = p.inverse_raw(x, y).unwrap_or_else(|| panic!("{name} {spec:?}: ({lon}, {lat})"));
+                        let (x2, y2) = p.forward(lon2, lat2).unwrap();
+                        let tol = if p.is_geographic() { 1e-9 } else { 0.01 };
+                        assert!(
+                            (x - x2).abs() < tol && (y - y2).abs() < tol,
+                            "{name} {spec:?}: ({lon}, {lat}) -> ({lon2}, {lat2}) off by ({}, {})",
+                            x - x2,
+                            y - y2
+                        );
+                        assert!((lat - lat2).abs() < 1e-6, "{name}: lat {lat} vs {lat2}");
+                        checked += 1;
+                    }
+                }
+                assert!(checked > 200, "{name}: only {checked}");
+            }
+        }
+    }
+
+    #[test]
+    fn inverse_is_none_off_the_world() {
+        let robin = proj("Robinson");
+        let (x, y) = robin.forward(180.0, 60.0).unwrap();
+        assert!(robin.inverse_raw(x * 1.1, y).is_none());
+        let globe = proj(GLOBE);
+        assert!(globe.inverse_raw(A * 1.01, 0.0).is_none());
+        let moll = proj("Mollweide");
+        assert!(moll.inverse_raw(0.0, A * 1.5).is_none());
+        // A Lambert map inverts outside its region, as pyproj does.
+        let lcc = proj("Lambert: N. America");
+        let (x, y) = lcc.forward(0.0, 30.0).unwrap();
+        let (lon, lat) = lcc.inverse_raw(x, y).unwrap();
+        assert!((lon - 0.0).abs() < 1e-6 && (lat - 30.0).abs() < 1e-6);
+        assert!(lcc.inverse(x, y).is_none());
+    }
+
+    #[test]
+    fn seeded_winkel_inverse_matches_unseeded() {
+        let p = proj("Winkel Tripel");
+        let (x, y) = p.forward(150.0, -70.0).unwrap();
+        let a = p.inverse_raw(x, y).unwrap();
+        let b = p.inverse_seeded(x, y, Some((149.0, -69.5))).unwrap();
+        assert!((a.0 - b.0).abs() < 1e-8 && (a.1 - b.1).abs() < 1e-8);
+    }
+
+    #[test]
+    fn bounds_match_pymappr() {
+        // pyproj via PyMappr's _bounds_from_grid.
+        for (name, want) in [
+            ("Robinson", [-17003189.700318325, 17003189.700318325, -8625154.6651, 8625154.6651]),
+            ("Mollweide", [-18036151.73622525, 18036151.73622525, -9020047.847897757, 9020047.847897757]),
+            ("Lambert: N. America", [-9125450.01792427, 9125450.01792427, -3633845.6166622792, 6140801.925019262]),
+            (GLOBE, [-6378127.2855442865, 6378127.2855442865, -6356742.567109314, 6356742.567109314]),
+        ] {
+            let got = proj(name).bounds;
+            for k in 0..4 {
+                assert!((got[k] - want[k]).abs() < 1.0, "{name}: {got:?}");
+            }
+        }
+        assert_eq!(proj("Equirectangular").bounds, [-180.0, 180.0, -90.0, 90.0]);
     }
 
     #[test]
