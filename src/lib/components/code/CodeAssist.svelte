@@ -1,6 +1,7 @@
 <script lang="ts">
   // Check the exported script with a model on OpenRouter (the user's own
   // key), then review the suggested changes as a diff before taking them.
+  import { onDestroy } from "svelte";
   import { KeyRound, RefreshCw, Eye, Send, TriangleAlert } from "@lucide/svelte";
   import { api, confirmDialog, openUrl } from "$lib/api";
   import {
@@ -95,8 +96,8 @@
     })();
   });
 
-  // Stop polling if the dialog closes mid-request.
-  $effect(() => () => {
+  // Stop the request if the dialog closes mid-way.
+  onDestroy(() => {
     if (jobId !== null) void api.jobCancel(jobId);
   });
 
@@ -259,7 +260,7 @@
               bind:value={keyDraft}
               onkeydown={(e) => e.key === "Enter" && keyDraft.trim() && saveKey()}
             />
-            <button class="btn-primary" onclick={saveKey} disabled={!keyDraft.trim()}>Save key</button>
+            <button class="btn-primary shrink-0 whitespace-nowrap" onclick={saveKey} disabled={!keyDraft.trim()}>Save key</button>
             {#if key.set}<button class="btn" onclick={() => (editingKey = false)}>Keep current</button>{/if}
           </div>
           <p class="text-muted">
