@@ -565,6 +565,12 @@ fn restore_data_round_trips() {
             assert_eq!(back.code, full, "{language:?} {mode:?}");
         }
     }
+    // Stripping a full script gives the generated partial one.
+    for mode in [InlineData::Placeholder, InlineData::Head(2)] {
+        let full = generate_code(&s, Language::R, InlineData::Embedded, &opts("x")).unwrap().code;
+        let partial = generate_code(&s, Language::R, mode, &opts("x")).unwrap().code;
+        assert_eq!(mappr_codegen::strip_data(&full, &s, Language::R, mode, "\n").code, partial);
+    }
     // Edited elsewhere, quotes changed: still found.
     let partial = generate_code(&s, Language::Python, InlineData::Placeholder, &opts("x")).unwrap().code;
     let edited = partial.replace("'__RUSTYMAPPR_DATA_1__'", "\"\"\"__RUSTYMAPPR_DATA_1__\"\"\"").replace("'__RUSTYMAPPR_DATA_0__'", "");

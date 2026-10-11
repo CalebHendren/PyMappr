@@ -20,6 +20,8 @@ pub struct JobStatus {
     pub error: Option<String>,
     /// Set when the job asks to stop.
     pub cancelled: bool,
+    /// What a finished job produced, for jobs that produce something.
+    pub result: Option<serde_json::Value>,
 }
 
 #[derive(Default)]
@@ -48,6 +50,16 @@ impl Jobs {
             s.done = true;
             s.error = error;
             s.progress = Some(1.0);
+        }
+    }
+
+    /// Finish successfully with a result the UI reads from `job_status`.
+    pub fn finish_with(&self, id: u64, result: serde_json::Value) {
+        if let Some(s) = self.table.lock().unwrap().get_mut(&id) {
+            s.done = true;
+            s.error = None;
+            s.progress = Some(1.0);
+            s.result = Some(result);
         }
     }
 

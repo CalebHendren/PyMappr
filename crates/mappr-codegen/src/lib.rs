@@ -129,32 +129,64 @@ fn literal(language: Language, text: &str) -> String {
     }
 }
 
-/// Put the real point data back into a script generated with
-/// [`InlineData::Placeholder`] or [`InlineData::Head`] (and perhaps edited
-/// since): each dataset's placeholder literal - in any quotes - or its
-/// sample literal is replaced by the full embedded data.
-pub fn restore_data(script: &str, state: &Value, language: Language, data: InlineData, csv_newline: &str) -> Restored {
+/// The literal a script carries for one dataset's data in *mode*.
+fn data_literal(entry: &data::Entry, index: usize, language: Language, mode: InlineData, newline: &str) -> String {
+    match mode {
+        InlineData::Embedded => literal(language, &entry.csv(newline, None)),
+        InlineData::Head(n) => literal(language, &entry.csv(newline, Some(n))),
+        InlineData::Placeholder => literal(language, &placeholder(index)),
+    }
+}
+
+/// Where to look for that literal: a placeholder in any quotes a reviser
+/// may have used, triple quotes before the single ones they contain.
+fn data_candidates(entry: &data::Entry, index: usize, language: Language, mode: InlineData, newline: &str) -> Vec<String> {
+    match mode {
+        InlineData::Placeholder => {
+            let token = placeholder(index);
+            ["\"\"\"", "'''", "\"", "'"].iter().map(|q| format!("{q}{token}{q}")).collect()
+        }
+        other => vec![data_literal(entry, index, language, other, newline)],
+    }
+}
+
+/// Swap each dataset's data literal in *script* from one form to another
+/// (see [`restore_data`] and [`strip_data`]). *csv_newline* must be the one
+/// the script was generated with.
+pub fn swap_data(script: &str, state: &Value, language: Language, from: InlineData, to: InlineData, csv_newline: &str) -> Restored {
     let entries = data::entries(state);
     let drawn: Vec<&data::Entry> = entries.iter().filter(|e| e.visible && !e.is_empty()).collect();
     let mut code = script.to_string();
     let (mut restored, mut missing) = (Vec::new(), Vec::new());
     for (index, entry) in drawn.iter().enumerate() {
-        let full = literal(language, &entry.csv(csv_newline, None));
-        let candidates: Vec<String> = match data {
-            InlineData::Embedded => continue,
-            InlineData::Placeholder => {
-                let token = placeholder(index);
-                ["\"\"\"", "'''", "\"", "'"].iter().map(|q| format!("{q}{token}{q}")).collect()
-            }
-            InlineData::Head(n) => vec![literal(language, &entry.csv(csv_newline, Some(n)))],
-        };
+        if from == to {
+            restored.push(index);
+            continue;
+        }
+        let replacement = data_literal(entry, index, language, to, csv_newline);
+        let candidates = data_candidates(entry, index, language, from, csv_newline);
         match candidates.iter().find(|c| code.contains(c.as_str())) {
             Some(found) => {
-                code = code.replace(found.as_str(), &full);
+                code = code.replace(found.as_str(), &replacement);
                 restored.push(index);
             }
             None => missing.push(index),
         }
     }
     Restored { code, restored, missing }
+}
+
+/// Put the real point data back into a script generated with
+/// [`InlineData::Placeholder`] or [`InlineData::Head`] (and perhaps edited
+/// since): each dataset's placeholder literal - in any quotes - or its
+/// sample literal is replaced by the full embedded data.
+pub fn restore_data(script: &str, state: &Value, language: Language, data: InlineData, csv_newline: &str) -> Restored {
+    swap_data(script, state, language, data, InlineData::Embedded, csv_newline)
+}
+
+/// The reverse of [`restore_data`]: a script with its data embedded (as
+/// generated, or revised since) with the data replaced by placeholders or
+/// a sample, for sending somewhere.
+pub fn strip_data(script: &str, state: &Value, language: Language, data: InlineData, csv_newline: &str) -> Restored {
+    swap_data(script, state, language, InlineData::Embedded, data, csv_newline)
 }
