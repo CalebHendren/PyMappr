@@ -139,7 +139,7 @@ impl Entry {
             return None;
         }
         // dict(zip(labels, keys)): a repeated label maps to its last key.
-        self.name_labels.iter().zip(self.name_keys()).filter(|(l, _)| *l == label).map(|(_, k)| k).last()
+        self.name_labels.iter().zip(self.name_keys()).filter(|(l, _)| *l == label).map(|(_, k)| k).next_back()
     }
 
     pub fn column_index(&self, key: &str) -> Option<usize> {
@@ -217,8 +217,8 @@ fn csv_field(field: &str, only_field: bool) -> String {
 /// `_overrides_from_dict`, migrating a project saved before overrides.
 fn overrides_from(data: &Map<String, Value>) -> IndexMap<String, Override> {
     let mut overrides: IndexMap<String, Override> = IndexMap::new();
-    if !data.contains_key("legend_overrides") {
-        if let Some(Value::Object(styles)) = data.get("styles") {
+    if !data.contains_key("legend_overrides")
+        && let Some(Value::Object(styles)) = data.get("styles") {
             for (label, raw) in styles {
                 let Some(raw) = raw.as_object() else { continue };
                 let size = match raw.get("size") {
@@ -233,7 +233,6 @@ fn overrides_from(data: &Map<String, Value>) -> IndexMap<String, Override> {
                 overrides.insert(format!("group\0{label}"), o);
             }
         }
-    }
     if let Some(Value::Object(stored)) = data.get("legend_overrides") {
         for (key, raw) in stored {
             let Some(raw) = raw.as_object() else { continue };

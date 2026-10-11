@@ -304,7 +304,7 @@ pub fn r_linetype(linestyle: &Lit) -> &'static str {
         _ => None,
     };
     match (offset, dashes.as_deref()) {
-        (Some(o), Some([a, b])) if o == 0.0 => match (*a, *b) {
+        (Some(0.0), Some([a, b])) => match (*a, *b) {
             (1.0, 2.0) => "dotted",
             (3.0, 2.0) | (3.0, 3.0) | (4.0, 2.0) => "dashed",
             (5.0, 3.0) | (6.0, 3.0) => "longdash",

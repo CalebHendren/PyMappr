@@ -31,7 +31,10 @@ pub struct ProjInfo {
 
 /// The Lambert presets' parameters: (lcc?, default lon_0, lat_0, lat_1,
 /// lat_2, lon half-span, lat min, lat max), as in PyMappr.
-fn lambert_def(name: &str) -> Option<(bool, f64, f64, f64, f64, f64, f64, f64)> {
+/// (lcc?, lon_0, lat_0, lat_1, lat_2, lon half-span, lat min, lat max).
+type LambertDef = (bool, f64, f64, f64, f64, f64, f64, f64);
+
+fn lambert_def(name: &str) -> Option<LambertDef> {
     Some(match name {
         "Lambert: N. America" => (true, -96.0, 40.0, 20.0, 60.0, 90.0, 7.0, 84.0),
         "Lambert: Europe" => (true, 10.0, 52.0, 35.0, 65.0, 55.0, 30.0, 72.0),

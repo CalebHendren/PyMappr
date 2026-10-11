@@ -220,16 +220,13 @@ fn str_or(m: &serde_json::Map<String, Value>, key: &str, default: &str) -> Strin
 
 fn view_and_zoom(state: &Value, projection: &ProjInfo, figsize: (f64, f64), margins: [f64; 4], continent: &str) -> ([f64; 4], f64) {
     let mut view_box = None;
-    if let Some(view) = state.get("view").and_then(Value::as_object) {
-        if let (Some(Value::Array(x)), Some(Value::Array(y))) = (view.get("xlim"), view.get("ylim"))
+    if let Some(view) = state.get("view").and_then(Value::as_object)
+        && let (Some(Value::Array(x)), Some(Value::Array(y))) = (view.get("xlim"), view.get("ylim"))
             && x.len() == 2
             && y.len() == 2
-        {
-            if let (Some(x0), Some(x1), Some(y0), Some(y1)) = (py_float(&x[0]), py_float(&x[1]), py_float(&y[0]), py_float(&y[1])) {
+            && let (Some(x0), Some(x1), Some(y0), Some(y1)) = (py_float(&x[0]), py_float(&x[1]), py_float(&y[0]), py_float(&y[1])) {
                 view_box = Some([x0, x1, y0, y1]);
             }
-        }
-    }
     let view_box = view_box.unwrap_or_else(|| {
         let t = tables();
         let extent = t.continent_extents.get(continent).copied().unwrap_or([-180.0, 180.0, -90.0, 90.0]);
