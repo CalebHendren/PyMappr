@@ -8,6 +8,7 @@ pub mod cmd_map;
 pub mod core;
 pub mod downloader;
 pub mod jobs;
+pub mod llm;
 
 use std::sync::Arc;
 

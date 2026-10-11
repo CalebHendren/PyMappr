@@ -1,0 +1,235 @@
+{
+ "state": {
+  "datasets": [
+   {
+    "name": "tri\"cky'name\\.csv",
+    "visible": true,
+    "source_path": "C:\\Field\\Notes\nrm -rf /",
+    "columns": [
+     "name1",
+     "name2",
+     "lon",
+     "lat"
+    ],
+    "name_labels": [
+     "Na'me",
+     "Tab\tbed"
+    ],
+    "rows": [
+     [
+      "O'Brien \"Jr\"",
+      "back\\slash",
+      1.0,
+      2.0
+     ],
+     [
+      "caf\u00e9 \u2013 \u00fc",
+      "line\nbreak",
+      3.0,
+      4.0
+     ],
+     [
+      "nul\u0000here",
+      "a,b",
+      5.5,
+      -6.5
+     ],
+     [
+      "\u00a0nbsp",
+      "",
+      7.0,
+      8.0
+     ]
+    ],
+    "group_by": "Na'me",
+    "color_by": "",
+    "symbol_by": "",
+    "vary_symbols": false,
+    "open_by": "",
+    "open_values": [],
+    "styles": {},
+    "legend_overrides": {},
+    "manual": null
+   }
+  ],
+  "active": 0,
+  "map": {
+   "projection": "Equirectangular",
+   "proj_lon0": "",
+   "proj_lat0": "",
+   "basemap": "simple",
+   "continent": "World",
+   "orientation": "Landscape",
+   "compass": false,
+   "compass_options": {
+    "show": false,
+    "position": "upper right",
+    "style": "arrow",
+    "size": 1.0,
+    "color": "#1a1a1a"
+   },
+   "scale_bar": {
+    "show": false,
+    "units": "km",
+    "position": "lower left",
+    "style": "segmented",
+    "length_mode": "auto",
+    "fixed_length": null,
+    "segments": 4,
+    "width": 0.22,
+    "fontsize": 8.0,
+    "color": "#1a1a1a",
+    "draggable": false,
+    "anchor_x": null,
+    "anchor_y": null
+   },
+   "inset": {
+    "show": false,
+    "position": "lower right",
+    "size": 0.3,
+    "region": "state",
+    "zoom_out": 6.0,
+    "lon_min": null,
+    "lon_max": null,
+    "lat_min": null,
+    "lat_max": null,
+    "projection": "same",
+    "countries": true,
+    "states": false,
+    "counties": false,
+    "land": true,
+    "ocean": "none",
+    "points": true,
+    "box": true,
+    "box_color": "#d62728",
+    "draggable": false,
+    "anchor_x": null,
+    "anchor_y": null
+   },
+   "palette": "Black & white",
+   "graticule": "Off",
+   "hide_grid_labels": false,
+   "line_width": 1.0,
+   "dpi": "600",
+   "export_width": "17 cm (Zootaxa / Phytotaxa page)",
+   "ocean": "none",
+   "lake_fill": "none",
+   "bathymetry": false,
+   "capitals_only": false,
+   "lines": {
+    "countries": true,
+    "states": false,
+    "counties": false,
+    "sovereignty": false,
+    "map_units": false,
+    "subunits": false,
+    "dependencies": false,
+    "disputed_lines": false,
+    "timezones": false,
+    "lakes_outline": false,
+    "rivers": false,
+    "wadis": false,
+    "maritime": false,
+    "eez": false,
+    "reefs": false,
+    "regions": false,
+    "roads": false
+   },
+   "fills": {
+    "disputed": false,
+    "land": false,
+    "glaciers": false,
+    "ice_shelves": false,
+    "playas": false,
+    "deserts": false,
+    "urban": false,
+    "parks": false,
+    "biodiversity": false,
+    "ecoregions": false,
+    "marine_ecoregions": false
+   },
+   "points": {
+    "cities": false,
+    "airports": false,
+    "ports": false
+   },
+   "labels": {
+    "countries": false,
+    "states": false,
+    "counties": false,
+    "cities": false,
+    "airports": false,
+    "ports": false,
+    "lakes": false,
+    "rivers": false,
+    "regions": false,
+    "timezones": false
+   }
+  },
+  "legend": {
+   "show": true,
+   "title": "Ti\"tle \\ 'x'",
+   "show_title": false,
+   "location": "best",
+   "hierarchy": "auto",
+   "order": "az",
+   "counts": false,
+   "count_format": "(n)",
+   "blank_label": "(blank)",
+   "section_titles": true,
+   "title_separator": " / ",
+   "dataset_prefix": true,
+   "empty_groups": false,
+   "indent": 3,
+   "bold_groups": true,
+   "group_spacer": true,
+   "group_swatch": "circle",
+   "symbol_swatch_color": "#555555",
+   "columns": 1,
+   "label_spacing": 0.5,
+   "column_spacing": 2.0,
+   "handle_text_pad": null,
+   "handle_length": 2.0,
+   "border_pad": 0.4,
+   "marker_scale": 1.0,
+   "frame": true,
+   "frame_color": "#ffffff",
+   "frame_alpha": 1.0,
+   "frame_edge_color": "#000000",
+   "frame_width": 0.5,
+   "rounded": false,
+   "shadow": false,
+   "fontsize": 9.0,
+   "title_fontsize": 10.0,
+   "font_family": "",
+   "label_color": "#000000",
+   "title_color": "#000000",
+   "label_bold": false,
+   "label_italic": true,
+   "label_underline": false,
+   "title_bold": true,
+   "title_italic": false,
+   "title_underline": false,
+   "title_align": "center",
+   "draggable": false,
+   "anchor": null
+  },
+  "point_alpha": 1.0,
+  "point_edge": {
+   "color": "#000000",
+   "width": 0.6
+  },
+  "view": {
+   "xlim": [
+    -112.49683419262297,
+    -2.0863138073770315
+   ],
+   "ylim": [
+    -59.9441341,
+    19.4713241
+   ]
+  }
+ },
+ "projectName": "Field\\Notes \"x\"\n2",
+ "figureSize": null
+}
