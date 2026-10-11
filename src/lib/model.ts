@@ -129,7 +129,7 @@ export type LegendOptions = {
   indent: number;
   bold_groups: boolean;
   group_spacer: boolean;
-  group_swatch: "circle" | "first" | "none";
+  group_swatch: "circle" | "child" | "none";
   symbol_swatch_color: string;
   columns: number;
   label_spacing: number;
