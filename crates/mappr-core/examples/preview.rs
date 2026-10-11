@@ -1,6 +1,6 @@
 //! Render the base map in every projection to PNGs, for eyeballing.
 //!
-//! cargo run -p mappr-core --example preview --release -- <data/shapes dir> <out dir>
+//! cargo run -p mappr-core --example preview --release -- <data dir> <out dir>
 
 use std::time::Instant;
 

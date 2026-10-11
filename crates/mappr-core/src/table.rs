@@ -417,7 +417,7 @@ mod tests {
 
     #[test]
     fn pymappr_sample_data() {
-        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../PyMappr/sample_data");
+        let dir = crate::pymappr_dir().join("sample_data");
         let Ok(entries) = std::fs::read_dir(&dir) else { return };
         for entry in entries.flatten() {
             let path = entry.path();

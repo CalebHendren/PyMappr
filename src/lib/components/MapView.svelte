@@ -40,8 +40,23 @@
       projection: $state.snapshot(app.projection),
       view: app.view ? $state.snapshot(app.view) : null,
       pxWidth: Math.round(app.size.w),
-      layers: LAYERS.map((l) => l.id).filter((id) => app.layers[id]),
-      graticule: app.layers.graticule ? app.graticuleStep : 0,
+      // Transitional: the proof-of-concept toggles mapped onto the full contract.
+      pxPerPt: 100 / 72,
+      detailBoost: 0,
+      layers: {
+        lines: { countries: app.layers.countries, states: app.layers.states, rivers: app.layers.rivers, lakes_outline: app.layers.lakes },
+        fills: { land: app.layers.land },
+        points: {},
+        labels: {},
+        ocean: app.oceanFill,
+        lake_fill: app.layers.lakes ? app.lakeFill : "none",
+        bathymetry: false,
+        capitals_only: false,
+        basemap: "simple",
+        graticule: app.layers.graticule ? `${app.graticuleStep}°` : "Off",
+        hide_grid_labels: false,
+      },
+      districts: [],
     };
     const key = JSON.stringify(request);
     if (key === skipKey) return;

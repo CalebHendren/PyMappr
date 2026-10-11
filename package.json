@@ -1,6 +1,6 @@
 {
   "name": "rustymappr",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "",
   "type": "module",
   "scripts": {
@@ -10,14 +10,17 @@
     "prepare": "svelte-kit sync || echo ''",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "test": "vitest run",
+    "bridge": "cargo run -p rustymappr --bin devbridge --features devbridge"
   },
   "license": "MIT",
   "dependencies": {
     "@fontsource-variable/source-sans-3": "^5.3.0",
     "@lucide/svelte": "^1.55.0",
     "@tauri-apps/api": "^2",
-    "@tauri-apps/plugin-dialog": "^2.8.2"
+    "@tauri-apps/plugin-dialog": "^2.8.2",
+    "@tauri-apps/plugin-opener": "^2.7.1"
   },
   "devDependencies": {
     "@sveltejs/adapter-static": "^3.0.10",
@@ -29,6 +32,7 @@
     "svelte-check": "^4.6.0",
     "tailwindcss": "^4.3.3",
     "typescript": "~6.0.3",
-    "vite": "^8.0.16"
+    "vite": "^8.0.16",
+    "vitest": "^5.0.3"
   }
 }

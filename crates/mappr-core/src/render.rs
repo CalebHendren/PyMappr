@@ -550,8 +550,8 @@ mod tests {
 
     #[test]
     fn renders_pymappr_data_when_present() {
-        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../PyMappr/data/shapes");
-        if !Basemap::looks_valid(&dir) {
+        let dir = crate::pymappr_dir().join("data");
+        if !Basemap::looks_valid(&dir.join("shapes")) {
             return;
         }
         let basemap = Basemap::new(dir);

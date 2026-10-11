@@ -1,5 +1,6 @@
 //! Natural Earth base layers, read from the shapefiles PyMappr downloads
 //! (`data/shapes/<stem>/<stem>.shp`) and kept in memory once loaded.
+//! `Basemap` is given the `data` folder.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -103,8 +104,14 @@ impl Basemap {
         &self.data_dir
     }
 
+    /// The data folder: `shapes/` (Natural Earth), `basemap/` (rasters) and
+    /// anything else downloaded, laid out as PyMappr's `data` folder is.
+    pub fn shapes_dir(&self) -> PathBuf {
+        self.data_dir.join("shapes")
+    }
+
     fn shapefile(&self, stem: &str) -> PathBuf {
-        self.data_dir.join(stem).join(format!("{stem}.shp"))
+        self.shapes_dir().join(stem).join(format!("{stem}.shp"))
     }
 
     /// Whether the folder looks like PyMappr's `data/shapes`.
