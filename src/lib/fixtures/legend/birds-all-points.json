@@ -1,0 +1,572 @@
+{
+ "name": "birds-all-points",
+ "state": {
+  "datasets": [
+   {
+    "name": "asia_hornbills.csv",
+    "visible": true,
+    "source_path": "C:\\PyCharm\\PyMappr\\sample_data\\asia_hornbills.csv",
+    "columns": [
+     "name1",
+     "name2",
+     "name3",
+     "lon",
+     "lat"
+    ],
+    "name_labels": [
+     "Genus",
+     "Species",
+     "Type status"
+    ],
+    "group_by": "",
+    "color_by": "",
+    "symbol_by": "",
+    "vary_symbols": false,
+    "open_by": "",
+    "open_values": [],
+    "styles": {},
+    "legend_overrides": {},
+    "manual": null,
+    "rowsFrom": "hornbills-orchids#0"
+   },
+   {
+    "name": "europe_orchids.csv",
+    "visible": true,
+    "source_path": "C:\\PyCharm\\PyMappr\\sample_data\\europe_orchids.csv",
+    "columns": [
+     "name1",
+     "name2",
+     "lon",
+     "lat"
+    ],
+    "name_labels": [
+     "Genus",
+     "Species"
+    ],
+    "group_by": "",
+    "color_by": "",
+    "symbol_by": "",
+    "vary_symbols": false,
+    "open_by": "",
+    "open_values": [],
+    "styles": {},
+    "legend_overrides": {},
+    "manual": null,
+    "rowsFrom": "hornbills-orchids#1"
+   }
+  ],
+  "active": 1,
+  "map": {
+   "projection": "Equirectangular",
+   "proj_lon0": "",
+   "proj_lat0": "",
+   "basemap": "simple",
+   "continent": "World",
+   "orientation": "Landscape",
+   "compass": false,
+   "compass_options": {
+    "show": false,
+    "position": "upper right",
+    "style": "arrow",
+    "size": 1.0,
+    "color": "#1a1a1a"
+   },
+   "scale_bar": {
+    "show": false,
+    "units": "km",
+    "position": "lower left",
+    "style": "segmented",
+    "length_mode": "auto",
+    "fixed_length": null,
+    "segments": 4,
+    "width": 0.22,
+    "fontsize": 8.0,
+    "color": "#1a1a1a",
+    "draggable": false,
+    "anchor_x": null,
+    "anchor_y": null
+   },
+   "inset": {
+    "show": false,
+    "position": "lower right",
+    "size": 0.3,
+    "region": "state",
+    "zoom_out": 6.0,
+    "lon_min": null,
+    "lon_max": null,
+    "lat_min": null,
+    "lat_max": null,
+    "projection": "same",
+    "countries": true,
+    "states": false,
+    "counties": false,
+    "land": true,
+    "ocean": "none",
+    "points": true,
+    "box": true,
+    "box_color": "#d62728",
+    "draggable": false,
+    "anchor_x": null,
+    "anchor_y": null
+   },
+   "palette": "Default",
+   "graticule": "Off",
+   "hide_grid_labels": false,
+   "line_width": 1.0,
+   "dpi": "200",
+   "export_width": "As on screen",
+   "ocean": "none",
+   "lake_fill": "none",
+   "bathymetry": false,
+   "capitals_only": false,
+   "lines": {
+    "countries": true,
+    "states": false,
+    "counties": false,
+    "sovereignty": false,
+    "map_units": false,
+    "subunits": false,
+    "dependencies": false,
+    "disputed_lines": false,
+    "timezones": false,
+    "lakes_outline": false,
+    "rivers": false,
+    "wadis": false,
+    "maritime": false,
+    "eez": false,
+    "reefs": false,
+    "regions": false,
+    "roads": false
+   },
+   "fills": {
+    "disputed": false,
+    "land": false,
+    "glaciers": false,
+    "ice_shelves": false,
+    "playas": false,
+    "deserts": false,
+    "urban": false,
+    "parks": false,
+    "biodiversity": false,
+    "ecoregions": false,
+    "marine_ecoregions": false
+   },
+   "points": {
+    "cities": false,
+    "airports": false,
+    "ports": false
+   },
+   "labels": {
+    "countries": false,
+    "states": false,
+    "counties": false,
+    "cities": false,
+    "airports": false,
+    "ports": false,
+    "lakes": false,
+    "rivers": false,
+    "regions": false,
+    "timezones": false
+   }
+  },
+  "legend": {
+   "show": true,
+   "title": null,
+   "show_title": true,
+   "location": "lower left",
+   "hierarchy": "auto",
+   "order": "data",
+   "counts": false,
+   "count_format": "(n)",
+   "blank_label": "(blank)",
+   "section_titles": true,
+   "title_separator": " / ",
+   "dataset_prefix": true,
+   "empty_groups": false,
+   "indent": 3,
+   "bold_groups": true,
+   "group_spacer": true,
+   "group_swatch": "circle",
+   "symbol_swatch_color": "#555555",
+   "columns": 1,
+   "label_spacing": 0.5,
+   "column_spacing": 2.0,
+   "handle_text_pad": null,
+   "handle_length": 2.0,
+   "border_pad": 0.4,
+   "marker_scale": 1.0,
+   "frame": true,
+   "frame_color": "#ffffff",
+   "frame_alpha": 0.85,
+   "frame_edge_color": "#cccccc",
+   "frame_width": 0.8,
+   "rounded": true,
+   "shadow": false,
+   "fontsize": 8.0,
+   "title_fontsize": 9.0,
+   "font_family": "",
+   "label_color": "#000000",
+   "title_color": "#000000",
+   "label_bold": false,
+   "label_italic": false,
+   "label_underline": false,
+   "title_bold": true,
+   "title_italic": false,
+   "title_underline": false,
+   "title_align": "center",
+   "draggable": false,
+   "anchor": null
+  },
+  "point_alpha": 1.0,
+  "point_edge": {
+   "color": "#ffffff",
+   "width": 0.5
+  },
+  "view": {
+   "xlim": [
+    -25.058144,
+    135.610624
+   ],
+   "ylim": [
+    -27.95537395646258,
+    87.60955395646258
+   ]
+  }
+ },
+ "filter": null,
+ "layout": {
+  "datasets": [
+   {
+    "name": "asia_hornbills.csv",
+    "groups": [
+     {
+      "label": "asia_hornbills.csv",
+      "style": {
+       "color": "#d62728",
+       "marker": "Circle",
+       "size": 30.0,
+       "fill": null
+      },
+      "rows": [
+       0,
+       1,
+       2,
+       3,
+       4,
+       5,
+       6,
+       7,
+       8,
+       9,
+       10,
+       11,
+       12,
+       13,
+       14,
+       15,
+       16,
+       17,
+       18,
+       19,
+       20,
+       21,
+       22,
+       23,
+       24,
+       25,
+       26,
+       27,
+       28,
+       29,
+       30,
+       31,
+       32,
+       33,
+       34,
+       35,
+       36,
+       37,
+       38,
+       39,
+       40,
+       41,
+       42,
+       43,
+       44,
+       45,
+       46,
+       47,
+       48,
+       49,
+       50,
+       51,
+       52,
+       53,
+       54,
+       55,
+       56,
+       57,
+       58,
+       59,
+       60,
+       61,
+       62,
+       63,
+       64,
+       65,
+       66,
+       67,
+       68,
+       69,
+       70,
+       71,
+       72,
+       73,
+       74,
+       75,
+       76,
+       77,
+       78,
+       79,
+       80,
+       81,
+       82,
+       83,
+       84
+      ]
+     }
+    ],
+    "openGroups": [],
+    "labelMap": {
+     "All points": "asia_hornbills.csv"
+    },
+    "rows": [
+     {
+      "label": "asia_hornbills.csv",
+      "style": {
+       "color": "#d62728",
+       "marker": "Circle",
+       "size": 30.0,
+       "fill": null
+      }
+     }
+    ],
+    "sections": [],
+    "attribute": false,
+    "paletteOffset": 0
+   },
+   {
+    "name": "europe_orchids.csv",
+    "groups": [
+     {
+      "label": "europe_orchids.csv",
+      "style": {
+       "color": "#1f77b4",
+       "marker": "Circle",
+       "size": 30.0,
+       "fill": null
+      },
+      "rows": [
+       0,
+       1,
+       2,
+       3,
+       4,
+       5,
+       6,
+       7,
+       8,
+       9,
+       10,
+       11,
+       12,
+       13,
+       14,
+       15,
+       16,
+       17,
+       18,
+       19,
+       20,
+       21,
+       22,
+       23,
+       24,
+       25,
+       26,
+       27,
+       28,
+       29,
+       30,
+       31,
+       32,
+       33,
+       34,
+       35,
+       36,
+       37,
+       38,
+       39,
+       40,
+       41,
+       42,
+       43,
+       44,
+       45,
+       46,
+       47
+      ]
+     }
+    ],
+    "openGroups": [],
+    "labelMap": {
+     "All points": "europe_orchids.csv"
+    },
+    "rows": [
+     {
+      "label": "europe_orchids.csv",
+      "style": {
+       "color": "#1f77b4",
+       "marker": "Circle",
+       "size": 30.0,
+       "fill": null
+      }
+     }
+    ],
+    "sections": [],
+    "attribute": false,
+    "paletteOffset": 1
+   }
+  ],
+  "sections": null,
+  "rowOrder": [
+   "asia_hornbills.csv",
+   "europe_orchids.csv"
+  ],
+  "openNote": null
+ },
+ "title": null,
+ "editor": [
+  {
+   "key": "group\u0000All points",
+   "value": "All points",
+   "style": {
+    "color": "#1f77b4",
+    "marker": "Circle",
+    "size": 30.0,
+    "fill": null
+   },
+   "depth": 0
+  }
+ ],
+ "warning": "",
+ "status": "Ready.",
+ "legend": {
+  "title": null,
+  "entries": [
+   {
+    "text": "asia_hornbills.csv",
+    "size": 8.0,
+    "weight": "normal",
+    "style": "normal",
+    "color": "#000000",
+    "family": [
+     "sans-serif"
+    ],
+    "underline": false,
+    "handle": {
+     "marker": "o",
+     "markersize": 5.477225575051661,
+     "face": "#d62728",
+     "edge": "#ffffff",
+     "edgeWidth": 0.5
+    }
+   },
+   {
+    "text": "europe_orchids.csv",
+    "size": 8.0,
+    "weight": "normal",
+    "style": "normal",
+    "color": "#000000",
+    "family": [
+     "sans-serif"
+    ],
+    "underline": false,
+    "handle": {
+     "marker": "o",
+     "markersize": 5.477225575051661,
+     "face": "#1f77b4",
+     "edge": "#ffffff",
+     "edgeWidth": 0.5
+    }
+   }
+  ]
+ },
+ "geometry": {
+  "axes": [
+   635.04,
+   456.768
+  ],
+  "box": [
+   4.0,
+   4.0,
+   107.64,
+   27.68
+  ],
+  "frame": [
+   4.0,
+   4.0,
+   107.64,
+   27.68
+  ],
+  "texts": [
+   [
+    29.6,
+    19.84,
+    71.865,
+    8.64
+   ],
+   [
+    29.6,
+    7.2,
+    78.84,
+    8.64
+   ]
+  ],
+  "title": null,
+  "markers": [
+   [
+    15.2,
+    24.8
+   ],
+   [
+    15.2,
+    12.16
+   ]
+  ],
+  "metrics": [
+   {
+    "text": "asia_hornbills.csv",
+    "size": 8.0,
+    "weight": "normal",
+    "style": "normal",
+    "w": 71.865,
+    "h": 8.64,
+    "d": 2.16,
+    "lpH": 7.92,
+    "lpD": 1.44
+   },
+   {
+    "text": "europe_orchids.csv",
+    "size": 8.0,
+    "weight": "normal",
+    "style": "normal",
+    "w": 78.84,
+    "h": 8.64,
+    "d": 2.16,
+    "lpH": 7.92,
+    "lpD": 1.44
+   }
+  ]
+ }
+}
