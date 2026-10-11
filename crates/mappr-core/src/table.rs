@@ -328,6 +328,108 @@ pub fn build_dataset(table: &Table, mapping: &ColumnMapping) -> Result<Dataset, 
     Ok(Dataset { name_labels, points, skipped })
 }
 
+// A point is "far from the rest" when the nearest other point is at least
+// this far away, and this many times further than points usually are from
+// their nearest neighbour. Checked only for datasets small enough to compare
+// every pair quickly.
+const FAR_POINT_KM: f64 = 1000.0;
+const FAR_POINT_FACTOR: f64 = 10.0;
+const FAR_POINT_MAX_ROWS: usize = 5000;
+const EARTH_KM: f64 = 6371.0;
+
+fn unit(lon: f64, lat: f64) -> [f64; 3] {
+    let (l, p) = (lon.to_radians(), lat.to_radians());
+    [p.cos() * l.cos(), p.cos() * l.sin(), p.sin()]
+}
+
+fn nearest_km(v: &[f64; 3], others: &[[f64; 3]], skip: Option<usize>) -> f64 {
+    let best = others
+        .iter()
+        .enumerate()
+        .filter(|(j, _)| Some(*j) != skip)
+        .map(|(_, o)| (v[0] * o[0] + v[1] * o[1] + v[2] * o[2]).clamp(-1.0, 1.0))
+        .fold(-1.0f64, f64::max);
+    best.acos() * EARTH_KM
+}
+
+/// Python's `{:g}`: six significant digits, no trailing zeros.
+fn fmt_g(v: f64) -> String {
+    if v == 0.0 {
+        return "0".into();
+    }
+    let exp = v.abs().log10().floor() as i32;
+    if !(-5..6).contains(&exp) {
+        let s = format!("{:.5e}", v);
+        let (m, e) = s.split_once('e').unwrap();
+        let m = m.trim_end_matches('0').trim_end_matches('.');
+        let e: i32 = e.parse().unwrap();
+        return format!("{m}e{}{:02}", if e < 0 { '-' } else { '+' }, e.abs());
+    }
+    let decimals = (5 - exp).max(0) as usize;
+    let s = format!("{v:.decimals$}");
+    if s.contains('.') { s.trim_end_matches('0').trim_end_matches('.').to_string() } else { s }
+}
+
+/// Python's `{:,.0f}`.
+fn fmt_thousands(v: f64) -> String {
+    let n = v.round() as i64;
+    let digits = n.unsigned_abs().to_string();
+    let mut out = String::new();
+    for (i, c) in digits.chars().enumerate() {
+        if i > 0 && (digits.len() - i) % 3 == 0 {
+            out.push(',');
+        }
+        out.push(c);
+    }
+    if n < 0 { format!("-{out}") } else { out }
+}
+
+/// Plain-language notes on points far from all the others (a port of
+/// PyMappr's `far_points`). A lone point an ocean away from the rest is
+/// usually a coordinate typed without its minus sign or hemisphere letter;
+/// each note names the row and, when flipping a sign puts the point among
+/// the others, which sign. Empty when nothing stands out.
+pub fn far_points(dataset: &Dataset) -> Vec<String> {
+    let n = dataset.points.len();
+    if !(5..=FAR_POINT_MAX_ROWS).contains(&n) {
+        return Vec::new();
+    }
+    let vectors: Vec<[f64; 3]> = dataset.points.iter().map(|p| unit(p.lon, p.lat)).collect();
+    let nearest: Vec<f64> = (0..n).map(|i| nearest_km(&vectors[i], &vectors, Some(i))).collect();
+    let mut sorted = nearest.clone();
+    sorted.sort_by(f64::total_cmp);
+    let typical = if n % 2 == 1 { sorted[n / 2] } else { (sorted[n / 2 - 1] + sorted[n / 2]) / 2.0 };
+    let limit = FAR_POINT_KM.max(FAR_POINT_FACTOR * typical);
+    let far: Vec<usize> = (0..n).filter(|&i| nearest[i] > limit).collect();
+    if far.is_empty() || far.len() > n / 5 {
+        return Vec::new(); // a widespread dataset, not a stray point
+    }
+    let rest: Vec<[f64; 3]> = (0..n).filter(|i| !far.contains(i)).map(|i| vectors[i]).collect();
+    far.iter()
+        .map(|&i| {
+            let p = &dataset.points[i];
+            let mut note = format!(
+                "row {} ({}, {}) is {} km from the nearest other point",
+                p.row,
+                fmt_g(p.lat),
+                fmt_g(p.lon),
+                fmt_thousands(nearest[i])
+            );
+            for (what, lon, lat) in [
+                ("longitude", -p.lon, p.lat),
+                ("latitude", p.lon, -p.lat),
+                ("longitude and latitude", -p.lon, -p.lat),
+            ] {
+                if nearest_km(&unit(lon, lat), &rest, None) <= limit {
+                    note += &format!("; with the opposite sign on its {what} it would sit with the rest");
+                    break;
+                }
+            }
+            note + "."
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     //! Cases ported from PyMappr's tests/test_data_loader.py.
@@ -408,6 +510,44 @@ mod tests {
         assert_eq!(sniff_delimiter("a;b;c\n1;2;3\n"), b';');
         assert_eq!(sniff_delimiter("a\tb\n1\t2\n"), b'\t');
         assert_eq!(sniff_delimiter("a,b\n1,2\n"), b',');
+    }
+
+    fn cluster(extra: &str) -> String {
+        let rows: String = (0..12)
+            .map(|i| format!("Sp,{:.2},{:.2}
+", -88.0 - i as f64 * 0.3, 14.0 + i as f64 * 0.2))
+            .collect();
+        format!("Name,Longitude,Latitude
+{rows}{extra}")
+    }
+
+    #[test]
+    fn a_point_missing_its_minus_sign_is_pointed_out() {
+        let t = csv_table(&cluster("Sp,88.21,15.53
+"));
+        let notes = far_points(&build_dataset(&t, &guess_mapping(&t).unwrap()).unwrap());
+        assert_eq!(notes.len(), 1);
+        assert!(notes[0].starts_with("row 14 (15.53, 88.21)"), "{}", notes[0]);
+        assert!(notes[0].contains("opposite sign on its longitude"));
+    }
+
+    #[test]
+    fn a_spread_out_dataset_raises_no_alarm() {
+        let t = csv_table(&cluster(""));
+        assert!(far_points(&build_dataset(&t, &guess_mapping(&t).unwrap()).unwrap()).is_empty());
+        let seabirds = crate::pymappr_dir().join("sample_data/world_seabirds.csv");
+        if let Ok(t) = read_table(&seabirds, true, None) {
+            assert!(far_points(&build_dataset(&t, &guess_mapping(&t).unwrap()).unwrap()).is_empty());
+        }
+    }
+
+    #[test]
+    fn number_formats_match_python() {
+        assert_eq!(fmt_g(15.53), "15.53");
+        assert_eq!(fmt_g(-12.354055), "-12.3541");
+        assert_eq!(fmt_g(88.0), "88");
+        assert_eq!(fmt_thousands(17654.4), "17,654");
+        assert_eq!(fmt_thousands(999.6), "1,000");
     }
 
     #[test]

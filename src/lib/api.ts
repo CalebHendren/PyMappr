@@ -97,7 +97,20 @@ export type LoadedDataset = {
   nameLabels: string[];
   points: Point[];
   skipped: string[];
+  /** Notes on points far from the rest, usually a missing minus sign. */
+  farPoints: string[];
 };
+
+export type DataStatus = {
+  dir: string;
+  vectorsReady: number;
+  vectorsTotal: number;
+  rastersReady: number;
+  rastersTotal: number;
+  extrasReady: string[];
+};
+
+export type UpdateCheck = { checked: boolean; latest?: string; newer?: boolean; url?: string };
 
 export type JobStatus = {
   id: number;
@@ -257,6 +270,11 @@ export const api = {
   /** ISO3 codes of the countries inside the view. */
   countriesInView: (projection: ProjectionSpec, view: Rect) =>
     call<string[]>("countries_in_view", { projection, view }),
+  dataStatus: (dir: string | null) => call<DataStatus>("data_status", { dir }),
+  /** Download map data into `dir` (RustyMappr's own folder when null); returns a job id. */
+  dataDownload: (dir: string | null, rasters: boolean, extras: boolean) =>
+    call<number>("data_download", { dir, rasters, extras }),
+  checkUpdates: (force: boolean) => call<UpdateCheck>("check_updates", { force }),
   jobStatus: (id: number) => call<JobStatus | null>("job_status", { id }),
   jobCancel: (id: number) => call<void>("job_cancel", { id }),
 };

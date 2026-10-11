@@ -6,6 +6,7 @@ pub mod cmd_code;
 pub mod cmd_docs;
 pub mod cmd_map;
 pub mod core;
+pub mod downloader;
 pub mod jobs;
 
 use std::sync::Arc;

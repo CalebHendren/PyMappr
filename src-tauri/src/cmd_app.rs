@@ -22,6 +22,9 @@ pub fn dispatch(core: &Arc<Core>, cmd: &str, args: &Value) -> Option<CmdResult> 
         "inspect_table" => inspect_table(args),
         "load_dataset" => load_dataset(args),
         "export_map" => export_map(args),
+        "data_status" => data_status(core, args),
+        "data_download" => data_download(core, args),
+        "check_updates" => check_updates(core, args),
         "job_status" => job_status(core, args),
         "job_cancel" => job_cancel(core, args),
         _ => return None,
@@ -93,9 +96,39 @@ fn set_data_dir(core: &Arc<Core>, args: &Value) -> CmdResult {
     let dir = resolve_data_dir(Path::new(&a.path)).ok_or_else(|| {
         format!("No Natural Earth shapefiles in {}. Pick a data folder with a 'shapes' folder inside.", a.path)
     })?;
-    core.update_settings(&Map::from_iter([("dataDir".to_string(), json!(dir.display().to_string()))]))?;
-    *core.basemap.write().unwrap() = Some(Arc::new(Basemap::new(&dir)));
+    use_data_dir(core, &dir);
     ok(dir.display().to_string())
+}
+
+/// Switch to a data folder and remember it.
+pub fn use_data_dir(core: &Core, dir: &Path) {
+    let _ = core.update_settings(&Map::from_iter([("dataDir".to_string(), json!(dir.display().to_string()))]));
+    *core.basemap.write().unwrap() = Some(Arc::new(Basemap::new(dir)));
+}
+
+#[derive(Deserialize)]
+struct DirArg {
+    /// The data folder; RustyMappr's own download folder when absent.
+    dir: Option<String>,
+}
+
+fn data_status(core: &Arc<Core>, args: &Value) -> CmdResult {
+    let a: DirArg = parse(args)?;
+    let dir = a.dir.map(PathBuf::from).unwrap_or_else(|| core.default_data_dir.clone());
+    ok(crate::downloader::status(&dir))
+}
+
+fn data_download(core: &Arc<Core>, args: &Value) -> CmdResult {
+    #[derive(Deserialize)]
+    struct A {
+        dir: Option<String>,
+        rasters: bool,
+        extras: bool,
+    }
+    let a: A = parse(args)?;
+    let dir = a.dir.map(PathBuf::from).unwrap_or_else(|| core.default_data_dir.clone());
+    let opts = crate::downloader::Options { rasters: a.rasters, extras: a.extras };
+    ok(crate::downloader::start(core, dir, opts))
 }
 
 #[derive(Serialize)]
@@ -160,6 +193,8 @@ struct LoadedDataset {
     file_name: String,
     #[serde(flatten)]
     dataset: Dataset,
+    /// Notes on points far from the rest (likely sign errors).
+    far_points: Vec<String>,
 }
 
 fn load_dataset(args: &Value) -> CmdResult {
@@ -173,7 +208,8 @@ fn load_dataset(args: &Value) -> CmdResult {
     let path = PathBuf::from(a.path);
     let t = table::read_table(&path, a.mapping.header_row, a.sheet.as_deref()).map_err(err)?;
     let dataset = table::build_dataset(&t, &a.mapping).map_err(err)?;
-    ok(LoadedDataset { file_name: file_name(&path), dataset })
+    let far_points = table::far_points(&dataset);
+    ok(LoadedDataset { file_name: file_name(&path), dataset, far_points })
 }
 
 fn export_map(args: &Value) -> CmdResult {
@@ -208,4 +244,59 @@ fn job_cancel(core: &Arc<Core>, args: &Value) -> CmdResult {
     let a: A = parse(args)?;
     core.jobs.cancel(a.id);
     ok(())
+}
+
+const RELEASES: &str = "https://api.github.com/repos/CalebHendren/RustyMappr/releases/latest";
+pub const RELEASES_PAGE: &str = "https://github.com/CalebHendren/RustyMappr/releases";
+
+/// Ask GitHub for the latest release, at most once a day unless `force`.
+/// Returns `{checked, latest, newer, url}`; offline failures are an error
+/// only when forced (an automatic check stays quiet, as in PyMappr).
+fn check_updates(core: &Arc<Core>, args: &Value) -> CmdResult {
+    #[derive(Deserialize)]
+    struct A {
+        force: bool,
+    }
+    let a: A = parse(args)?;
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+    let last = core.settings().get("updateCheckedAt").and_then(Value::as_u64).unwrap_or(0);
+    if !a.force && now.saturating_sub(last) < 24 * 3600 {
+        return ok(json!({ "checked": false }));
+    }
+    core.update_settings(&Map::from_iter([("updateCheckedAt".to_string(), json!(now))]))?;
+    let fetched = reqwest::blocking::Client::builder()
+        .user_agent("RustyMappr-update-check")
+        .timeout(std::time::Duration::from_secs(15))
+        .build()
+        .and_then(|c| c.get(RELEASES).send())
+        .and_then(|r| r.error_for_status())
+        .and_then(|r| r.json::<Value>());
+    let release = match fetched {
+        Ok(r) => r,
+        Err(e) if a.force => return Err(format!("Could not check for updates: {e}")),
+        Err(_) => return ok(json!({ "checked": false })),
+    };
+    let latest = release["tag_name"].as_str().unwrap_or("").trim_start_matches('v').to_string();
+    let newer = is_newer(&latest, env!("CARGO_PKG_VERSION"));
+    let url = release["html_url"].as_str().unwrap_or(RELEASES_PAGE).to_string();
+    ok(json!({ "checked": true, "latest": latest, "newer": newer, "url": url }))
+}
+
+/// Whether version `a` (MAJOR.MINOR.PATCH) is newer than `b`.
+pub fn is_newer(a: &str, b: &str) -> bool {
+    let parts = |v: &str| v.split('.').map(|p| p.parse::<u64>().unwrap_or(0)).collect::<Vec<_>>();
+    parts(a) > parts(b)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn compares_versions_numerically() {
+        assert!(is_newer("0.10.0", "0.9.9"));
+        assert!(is_newer("1.0.0", "0.2.0"));
+        assert!(!is_newer("0.2.0", "0.2.0"));
+        assert!(!is_newer("", "0.2.0"));
+    }
 }
