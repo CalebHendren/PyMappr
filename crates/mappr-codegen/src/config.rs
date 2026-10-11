@@ -69,10 +69,38 @@ impl Branding {
 #[derive(Debug, Clone)]
 pub struct ExportOptions {
     pub project_name: String,
-    /// The exported map size in inches (the renderer's
-    /// `export_size_inches`); None for PyMappr's default canvas.
+    /// The exported map size in inches, as PyMappr's
+    /// `renderer.export_size_inches(width_cm)`: at the chosen print width
+    /// (`map.export_width`, e.g. 17 cm = 6.693 in) or the on-screen size,
+    /// and for a portrait map the cropped map rather than the letterboxed
+    /// canvas. Only the width is used as given; the height follows from
+    /// the view's aspect. None means PyMappr's default 9 x 6.5 in canvas.
     pub figure_size: Option<(f64, f64)>,
-    /// What `MapRenderer.inset_export()` returns, or None without an inset.
+    /// What `MapRenderer.inset_export()` returns, or None without an inset
+    /// (a `state["inset_export"]` is used when this is None). JSON fields:
+    ///
+    /// - `rect`: [x, y, width, height], the inset's place in the main map's
+    ///   axes fraction (0..1 from the lower left), rounded to 6 places;
+    /// - `projection` (name), `crs` (proj4 string or null for plain
+    ///   lon/lat), `hemisphere` (bool, the globe), `lon_0`, `lat_0`,
+    ///   `min_lat`, `max_lat`, `lon_halfspan`: the inset's own projection
+    ///   after any "same" fallback, as `ProjInfo` has them;
+    /// - `region`: [lon0, lon1, lat0, lat1] it shows; `limits`: its axis
+    ///   limits [x0, x1, y0, y1] in its own projected coordinates;
+    /// - `zoom`: log2(world width / limits width) without any export detail
+    ///   boost, which picks its Natural Earth resolution;
+    /// - `layers`: [[source, kwargs], ...] in draw order, source a layer key
+    ///   ("land", "countries", "continents", "states", "counties", "ocean")
+    ///   and kwargs the matplotlib style: a fill has `facecolor` (not
+    ///   "none"), `edgecolor`, `zorder`; a line has `facecolor: "none"`,
+    ///   `edgecolor`, `linewidth`, `linestyle` ("solid" or [0, [on, off]]),
+    ///   `zorder`;
+    /// - `points` (bool), `point_scale` (0.3), `frame_width` (0.8);
+    /// - `horizon`: for the globe, [[x...], [y...]] of the disk outline
+    ///   (null where a point does not project), else null;
+    /// - `box`: null, or {`target`: "inset" | "main", `x`: [...], `y`: [...]
+    ///   (null breaks the line), `color`, `width` (1.2)}: the outline linking
+    ///   the maps, in the target map's coordinates.
     pub inset_export: Option<Value>,
     pub branding: Branding,
     /// The CSV line ending; pandas writes the platform's (`\r\n` on Windows).
