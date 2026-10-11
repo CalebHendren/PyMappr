@@ -310,13 +310,11 @@ export function stateSnapshot(state: ProjectState): string {
 // ---------------------------------------------------------------- documents
 
 /** A project file's text (PyMappr's `save_project`). */
-export function serializeProject(
-  name: string,
-  state: ProjectState | Record<string, unknown>,
-  appVersion: string,
-  now: Date = new Date(),
-): string {
-  const body = "datasets" in state && Array.isArray(state.datasets) && "map" in state ? stateToDict(state as ProjectState) : state;
+export function serializeProject(name: string, state: ProjectState, appVersion: string, now: Date = new Date()): string {
+  return projectEnvelope(name, stateToDict(state), appVersion, now);
+}
+
+function projectEnvelope(name: string, body: Record<string, unknown>, appVersion: string, now: Date): string {
   return pythonJson({
     format: PROJECT_FORMAT,
     format_version: PROJECT_FORMAT_VERSION,
@@ -382,7 +380,7 @@ export type SessionInfo = {
 /** The autosaved session (`session.pymappr`): the state plus where it came
  * from (PyMappr's `_save_session`). */
 export function serializeSession(state: ProjectState, info: SessionInfo, appVersion: string, now: Date = new Date()): string {
-  return serializeProject(
+  return projectEnvelope(
     info.projectName,
     {
       ...stateToDict(state),
