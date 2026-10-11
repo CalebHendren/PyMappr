@@ -146,8 +146,8 @@ ensure_packages <- function(pkgs) {{
     paste0('\"', missing, '\"', collapse = \", \"))
   if (!(\"--install-deps\" %in% commandArgs(trailingOnly = TRUE))) {{
     stop(\"This script needs \", paste(missing, collapse = \", \"),
-         \". Install with:\\n    \", command,
-         \"\\nor run it with Rscript ... --install-deps to install them \",
+         \". Install with:\n    \", command,
+         \"\nor run it with Rscript ... --install-deps to install them \",
          \"automatically.\", call. = FALSE)
   }}
   message(\"Installing missing packages: \", paste(missing, collapse = \", \"))

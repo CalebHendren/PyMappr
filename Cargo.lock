@@ -2255,8 +2255,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f9f8bd3e56ce4dfc153cf470fffbfa98c7620958b312ca5c3a4b8d5181fd13c6"
 
 [[package]]
+name = "mappr-codegen"
+version = "0.2.0"
+dependencies = [
+ "indexmap 2.14.2",
+ "mappr-core",
+ "serde_json",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "mappr-core"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "calamine",
  "csv",
@@ -3238,7 +3248,7 @@ checksum = "cf54715a573b99ac80df0bc206da022bcd442c974952c7b9720069370852e21f"
 
 [[package]]
 name = "rustymappr"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "dirs",
  "mappr-core",
@@ -3411,6 +3421,7 @@ version = "1.0.152"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1741ab7a6cc54a03a89b5d563ed60075c277d9e3cfa73ad0c1f23f23974703c6"
 dependencies = [
+ "indexmap 2.14.2",
  "itoa",
  "memchr",
  "serde",
