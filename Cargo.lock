@@ -2256,7 +2256,7 @@ checksum = "f9f8bd3e56ce4dfc153cf470fffbfa98c7620958b312ca5c3a4b8d5181fd13c6"
 
 [[package]]
 name = "mappr-core"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "calamine",
  "csv",
@@ -3238,7 +3238,7 @@ checksum = "cf54715a573b99ac80df0bc206da022bcd442c974952c7b9720069370852e21f"
 
 [[package]]
 name = "rustymappr"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "dirs",
  "mappr-core",

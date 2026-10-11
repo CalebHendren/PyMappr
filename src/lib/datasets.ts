@@ -171,3 +171,6 @@ export function skippedReport(imported: number, skipped: string[]): { kind: "err
   if (more > 0) shown += `\n… and ${more} more`;
   return { kind: "warning", title: "Some rows skipped", message: `Imported ${imported} rows; skipped ${skipped.length}:\n\n${shown}` };
 }
+
+/** What PyMappr says when the dataset cannot be combined. */
+export const COMBINE_NEEDS_TWO = "Select a dataset with at least two name columns first.";
