@@ -57,7 +57,16 @@ pub fn resolve_data_dir(dir: &Path) -> Option<PathBuf> {
         .into_iter()
         .chain(shapes_parent.map(Path::to_path_buf))
         .find(|d| Basemap::looks_valid(&d.join("shapes")))
-        .map(|d| d.canonicalize().unwrap_or(d))
+        .map(|d| plain_path(d.canonicalize().unwrap_or(d)))
+}
+
+/// Drop Windows' `\\?\` verbatim prefix that `canonicalize` adds, so paths
+/// read normally in the UI and in saved settings.
+fn plain_path(p: PathBuf) -> PathBuf {
+    match p.to_str().and_then(|s| s.strip_prefix(r"\\?\")) {
+        Some(rest) if !rest.starts_with("UNC") => PathBuf::from(rest),
+        _ => p,
+    }
 }
 
 #[derive(Serialize)]
@@ -315,6 +324,14 @@ pub fn is_newer(a: &str, b: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn verbatim_prefix_is_dropped() {
+        assert_eq!(plain_path(PathBuf::from(r"\\?\C:\PyCharm\PyMappr\data")), PathBuf::from(r"C:\PyCharm\PyMappr\data"));
+        // Verbatim UNC paths keep their prefix: stripping it would change them.
+        assert_eq!(plain_path(PathBuf::from(r"\\?\UNC\server\share")), PathBuf::from(r"\\?\UNC\server\share"));
+        assert_eq!(plain_path(PathBuf::from(r"C:\data")), PathBuf::from(r"C:\data"));
+    }
 
     #[test]
     fn compares_versions_numerically() {
