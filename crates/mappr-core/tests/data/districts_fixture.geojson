@@ -1,0 +1,5 @@
+{"type":"FeatureCollection","features":[
+{"type":"Feature","properties":{"shapeName":"Alpha"},"geometry":{"type":"Polygon","coordinates":[[[0,0],[10,0],[10,10],[0,10],[0,0]],[[2,2],[4,2],[4,4],[2,4],[2,2]]]}},
+{"type":"Feature","properties":{"shapeName":"Beta"},"geometry":{"type":"MultiPolygon","coordinates":[[[[20,0],[30,0],[30,10],[20,0]]],[[[40,0],[50,0],[50,10],[40,0]]]]}},
+{"type":"Feature","properties":{"shapeName":"Gamma"},"geometry":{"type":"Point","coordinates":[5,5]}}
+]}

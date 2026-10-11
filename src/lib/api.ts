@@ -146,6 +146,9 @@ export type RenderRequest = {
   view: Rect | null;
   /** Map width on screen (or in the export) in pixels; sets the detail. */
   pxWidth: number;
+  /** Map height in pixels when the view is stretched to a box of another
+   * shape (PyMappr's world maps fill the canvas); omit for square units. */
+  pxHeight?: number | null;
   /** Pixels per typographic point, for label sizes and collisions. */
   pxPerPt: number;
   /** Added to the zoom when picking data detail (PyMappr's export boost). */
@@ -156,12 +159,17 @@ export type RenderRequest = {
 };
 
 /** One drawable base layer, already in draw order. `id` keys the style
- * tables in styles.ts (bathymetry layers are "bathymetry:<depth>"). */
+ * tables in styles.ts (bathymetry layers are "bathymetry:<depth>"; lake
+ * fill is "lakes", lake outlines "lakes_outline"; downloaded districts are
+ * one "districts" line layer). Fill paths keep each polygon's ring
+ * orientation, so draw them with fill-rule "nonzero". Paths are thinned
+ * to 0.01 pt and cut to the view plus a 5% margin. */
 export type RenderedLayer = { id: string; kind: "fill" | "line"; d: string };
 
 export type NeMarker = { layer: "cities" | "capitals" | "airports" | "ports"; x: number; y: number };
 
 export type MapLabel = {
+  /** A LABEL_STYLES key; "districts" labels take the counties style. */
   layer: string;
   text: string;
   x: number;
@@ -185,7 +193,8 @@ export type RenderedMap = {
   layers: RenderedLayer[];
   markers: NeMarker[];
   labels: MapLabel[];
-  /** Raster basemap warped to the view, as an embedded image. */
+  /** Raster basemap warped to the view, as an embedded PNG; transparent
+   * off the world. Draw it stretched (preserveAspectRatio="none"). */
   raster: { href: string; x: number; y: number; w: number; h: number } | null;
   graticule: {
     d: string;
@@ -208,7 +217,10 @@ export type ScaleBarRequest = {
   options: import("./model").ScaleBarOptions;
 };
 
-/** Bars in axes fractions (0..1 from the left/bottom), as PyMappr lays them out. */
+/** Bars in axes fractions; `x`, `y` are the lower-left corner of the bar,
+ * which is `width` wide and 0.011 tall. The first bar's label sits 0.012
+ * above it (va bottom), a second bar's 0.012 below it (va top). Axes
+ * fractions run 0..1 from the left/bottom, as PyMappr lays them out. */
 export type ScaleBar = {
   bars: { x: number; y: number; width: number; label: string; units: "km" | "mi"; segments: number }[];
   /** Why no bar could be drawn, for the status line. */
@@ -219,14 +231,21 @@ export type InsetRequest = {
   projection: ProjectionSpec;
   view: Rect;
   pxWidth: number;
+  /** As in RenderRequest: the map box's height when not the view's shape. */
+  pxHeight?: number | null;
   pxPerPt: number;
   options: import("./model").InsetOptions;
+  /** The scale bar's options, so an inset in its corner steps around it. */
+  scaleBar?: import("./model").ScaleBarOptions | null;
   /** All visible user points as lon/lat, for "Your points". */
   points: [number, number][];
 };
 
 export type RenderedInset = {
   map: RenderedMap;
+  /** Where the inset sits, in the map's axes fractions: x, y of its
+   * lower-left corner from the left and bottom, and its w, h. */
+  rect: Rect;
   /** The inset's own view in its SVG coordinates. */
   view: Rect;
   /** The inset's projection (after "same" fallbacks). */
@@ -259,8 +278,9 @@ export const api = {
     call<void>("export_map", { svg, format, widthPx, dpi, path }),
   scaleBar: (request: ScaleBarRequest) => call<ScaleBar>("scale_bar", { request }),
   renderInset: (request: InsetRequest) => call<RenderedInset>("render_inset", { request }),
-  /** The view framing a lon/lat box (continent, data extent) in a box of
-   * the given aspect (h / w), as PyMappr's set_extent does. */
+  /** The view framing a lon/lat box [lon_min, lon_max, lat_min, lat_max]
+   * (continent, data extent) in a box of the given aspect (h / w), as
+   * PyMappr's set_extent does (the globe frames its whole disk). */
   extentView: (projection: ProjectionSpec, lonlat: [number, number, number, number], aspect: number) =>
     call<Rect>("extent_view", { projection, lonlat, aspect }),
   districtsList: () => call<{ iso3: string; name: string; license: string; source: string }[]>("districts_list"),
