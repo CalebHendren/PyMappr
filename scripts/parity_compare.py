@@ -70,7 +70,9 @@ def compare_geometry(a, b):
         for key in ("x", "y"):
             if not close(t[key], match[key]):
                 problems.append(f"text {t['text']!r} {key} {t[key]:.3f} vs {match[key]:.3f}")
-        for key in ("size", "color", "weight", "style"):
+        if not close(float(t.get("size") or 0), float(match.get("size") or 0), 0.001):
+            problems.append(f"text {t['text']!r} size {t.get('size')} vs {match.get('size')}")
+        for key in ("color", "weight", "style"):
             if str(t.get(key)) != str(match.get(key)):
                 problems.append(f"text {t['text']!r} {key} {t.get(key)} vs {match.get(key)}")
     problems += [f"extra text {u['text']!r}" for u in rest]

@@ -40,6 +40,7 @@ export async function exportSvg(widthCm: number | null, dpi: number, sym: Symbol
     projection: $state.snapshot(store.projection),
     view: $state.snapshot(view),
     pxWidth: Math.round(boxPx),
+    pxHeight: Math.round((fig.box.h / 72) * dpi),
     pxPerPt: dpi / 72,
     detailBoost: boost >= 0.5 ? boost : 0,
     layers: $state.snapshot(layerSettings(store.doc)),

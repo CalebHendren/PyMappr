@@ -60,6 +60,7 @@
       projection: $state.snapshot(store.projection),
       view: $state.snapshot(view),
       pxWidth: Math.round(fig.box.w),
+      pxHeight: Math.round(fig.box.h),
       pxPerPt: fig.perPt,
       detailBoost: 0,
       layers: $state.snapshot(layerSettings(store.doc)),
@@ -133,9 +134,11 @@
     const request = {
       projection: $state.snapshot(store.projection),
       view: $state.snapshot(view),
-      pxWidth: Math.round(fig.box.w * options.size),
+      pxWidth: Math.round(fig.box.w),
+      pxHeight: Math.round(fig.box.h),
       pxPerPt: fig.perPt,
       options,
+      scaleBar: $state.snapshot(store.doc.map.scale_bar),
       points,
     };
     const timer = setTimeout(() => {

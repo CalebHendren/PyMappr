@@ -56,6 +56,8 @@
   documents.askName = (title, initial) => new Promise((resolve) => (asking = { title, initial, resolve }));
 
   onMount(async () => {
+    // The legend measures its text, so the map fonts must be loaded first.
+    await loadMapFonts();
     await store.init();
     await documents.restoreSession();
     if (store.info && !store.info.dataDir) downloading = true;
@@ -74,6 +76,14 @@
       addEventListener("beforeunload", () => documents.saveSession());
     }
   });
+
+  /** Load the bundled DejaVu faces (matplotlib's) before any map text is measured. */
+  async function loadMapFonts() {
+    const faces = ["DejaVu Sans", "DejaVu Serif", "DejaVu Sans Mono"].flatMap((f) =>
+      ["", "bold ", "italic ", "italic bold "].map((s) => document.fonts.load(`${s}10px "${f}"`)),
+    );
+    await Promise.allSettled(faces);
+  }
 
   async function exit() {
     await documents.saveSession();

@@ -22,8 +22,8 @@
   import type { Snippet } from "svelte";
   import type { Rect, RenderedInset, RenderedMap, ScaleBar } from "$lib/api";
   import type { Figure } from "$lib/layout";
-  import { cornerPlace, mapToFigure } from "$lib/layout";
-  import type { CompassOptions, InsetOptions, MapSettings } from "$lib/model";
+  import { mapToFigure } from "$lib/layout";
+  import type { CompassOptions, MapSettings } from "$lib/model";
   import { markerPath } from "$lib/markers";
   import {
     BATHYMETRY,
@@ -79,6 +79,9 @@
   }: Props = $props();
 
   const pt = $derived(fig.perPt);
+  // DejaVu Sans's typo ascender and descender per em, as matplotlib lays text out.
+  const ASCENT = 1556 / 2048;
+  const DESCENT = 492 / 2048;
   const box = $derived(fig.box);
   /** Map units per figure unit. */
   const k = $derived(view.w / box.w);
@@ -134,24 +137,12 @@
   });
 
   // ---- inset ---------------------------------------------------------------
+  // The backend places the inset (corner, drag anchor, stepping around a
+  // scale bar) in axes fractions from the bottom-left, as PyMappr does.
   const insetBox = $derived.by(() => {
     if (!inset || !settings.inset.show) return null;
-    const o: InsetOptions = settings.inset;
-    const w = Math.min(Math.max(o.size, 0.1), 0.6) * box.w;
-    let h = w * inset.aspect;
-    if (h > box.h * 0.6) h = box.h * 0.6;
-    let at: { x: number; y: number };
-    if (o.draggable && o.anchor_x !== null && o.anchor_y !== null) {
-      at = { x: box.x + o.anchor_x * box.w, y: box.y + (1 - o.anchor_y) * box.h - h };
-    } else {
-      at = cornerPlace(box, o.position, w, h, 0.02);
-      const sb = settings.scale_bar;
-      if (sb.show && sb.position === o.position) {
-        const lift = 0.06 * box.h + 0.015 * box.h;
-        at.y += o.position.includes("lower") ? -lift : lift;
-      }
-    }
-    return { x: at.x, y: at.y, w, h };
+    const r = inset.rect;
+    return { x: box.x + r.x * box.w, y: box.y + (1 - r.y - r.h) * box.h, w: r.w * box.w, h: r.h * box.h };
   });
   const insetK = $derived(inset && insetBox ? inset.view.w / insetBox.w : 1);
 </script>
@@ -184,7 +175,7 @@
         <path
           d={layer.d}
           fill={s.fill}
-          fill-rule="evenodd"
+          fill-rule="nonzero"
           fill-opacity={s.opacity}
           stroke={s.stroke}
           stroke-width={s.width}
@@ -222,6 +213,7 @@
         fill={s.face}
         stroke={s.edge}
         stroke-width={(0.5 * pt) / markerR(s.size)}
+        data-mark="{fx},{fy},{s.size},{s.face},{s.edge}"
       />
     {/each}
     <g opacity={alpha}>
@@ -243,9 +235,11 @@
       {@const off = labelOffsets[`${l.layer}|${l.text}`] ?? [0, 0]}
       {@const [fx, fy] = toFig(l.x + off[0], l.y + off[1])}
       {@const size = s.size * l.fontScale * pt}
+      <!-- matplotlib places the text box from DejaVu's ascent and descent. -->
       <text
         x={fx}
-        y={l.va === "bottom" ? fy - size * 0.25 : fy + size * 0.35}
+        y={l.va === "bottom" ? fy - DESCENT * size : fy + ((ASCENT - DESCENT) / 2) * size}
+        data-anchor="{fx},{fy}"
         font-size={size}
         font-weight={s.bold ? "bold" : "normal"}
         font-style={s.italic ? "italic" : "normal"}
@@ -268,16 +262,18 @@
   {#if showTicks && map.graticule}
     {@const fs = GRATICULE.tickSize * pt}
     {@const tick = 2.5 * pt}
+    {@const gap = (2.5 + 3.5) * pt}
     <g font-size={fs} fill="#000000">
       {#each map.graticule.xTicks as t, i (i)}
         {@const fx = box.x + ((t.pos - view.x) / view.w) * box.w}
         <line x1={fx} x2={fx} y1={box.y + box.h} y2={box.y + box.h + tick} stroke="#000000" stroke-width={FRAME.width * pt} />
-        <text x={fx} y={box.y + box.h + tick + fs * 1.05} text-anchor="middle">{t.text}</text>
+        <!-- Tick labels sit the tick length plus matplotlib's 3.5 pt pad away. -->
+        <text x={fx} y={box.y + box.h + gap + ASCENT * fs} text-anchor="middle" data-anchor="{fx},{box.y + box.h + gap}">{t.text}</text>
       {/each}
       {#each map.graticule.yTicks as t, i (i)}
         {@const fy = box.y + ((t.pos - view.y) / view.h) * box.h}
         <line x1={box.x - tick} x2={box.x} y1={fy} y2={fy} stroke="#000000" stroke-width={FRAME.width * pt} />
-        <text x={box.x - tick - fs * 0.3} y={fy + fs * 0.35} text-anchor="end">{t.text}</text>
+        <text x={box.x - gap} y={fy + ((ASCENT - DESCENT) / 2) * fs} text-anchor="end" data-anchor="{box.x - gap},{fy}">{t.text}</text>
       {/each}
     </g>
   {/if}
@@ -401,11 +397,11 @@
   {#if inset}
     {#each inset.map.layers as layer, i (layer.id + i)}
       {@const s = layerStyle(layer.id, layer.kind, Math.max(lineScale * INSET.lineScale, 0.2), pt * insetK)}
-      {#if layer.d}
+      {#if layer.d && layer.id !== "ocean"}
         <path
           d={layer.d}
           fill={layer.id === "land" ? INSET.land : s.fill}
-          fill-rule="evenodd"
+          fill-rule="nonzero"
           fill-opacity={s.opacity}
           stroke={s.stroke}
           stroke-width={s.width}

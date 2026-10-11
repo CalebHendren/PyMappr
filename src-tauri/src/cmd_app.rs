@@ -25,6 +25,8 @@ pub fn dispatch(core: &Arc<Core>, cmd: &str, args: &Value) -> Option<CmdResult> 
         "data_status" => data_status(core, args),
         "data_download" => data_download(core, args),
         "check_updates" => check_updates(core, args),
+        #[cfg(feature = "devbridge")]
+        "parity_write" => parity_write(args),
         "job_status" => job_status(core, args),
         "job_cancel" => job_cancel(core, args),
         _ => return None,
@@ -244,6 +246,28 @@ fn job_cancel(core: &Arc<Core>, args: &Value) -> CmdResult {
     let a: A = parse(args)?;
     core.jobs.cancel(a.id);
     ok(())
+}
+
+/// Dev only: write the parity check's files for one rendering (see
+/// scripts/parity_compare.py): the SVG, its PNG at the figure's pixel size
+/// through the export renderer, and the geometry the page measured.
+#[cfg(feature = "devbridge")]
+fn parity_write(args: &Value) -> CmdResult {
+    #[derive(Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct A {
+        dir: String,
+        svg: String,
+        geometry: Value,
+        width_px: u32,
+    }
+    let a: A = parse(args)?;
+    let dir = PathBuf::from(&a.dir);
+    std::fs::create_dir_all(&dir).map_err(err)?;
+    std::fs::write(dir.join("screen.svg"), &a.svg).map_err(err)?;
+    std::fs::write(dir.join("geometry.json"), serde_json::to_string_pretty(&a.geometry).map_err(err)?).map_err(err)?;
+    export::export(&a.svg, Format::Png, a.width_px, 100.0, &dir.join("screen.png")).map_err(err)?;
+    ok(dir.display().to_string())
 }
 
 const RELEASES: &str = "https://api.github.com/repos/CalebHendren/RustyMappr/releases/latest";
