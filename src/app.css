@@ -1,0 +1,85 @@
+@import "tailwindcss";
+@import "@fontsource-variable/source-sans-3/wght.css";
+@import "@fontsource-variable/source-sans-3/wght-italic.css";
+
+/* Palette: museum-drawer sage with an elytra-green accent. */
+:root {
+  --paper: #e8ece9;
+  --panel: #f6f7f5;
+  --raised: #ffffff;
+  --ink: #22312c;
+  --muted: #63726c;
+  --line: #d3dad6;
+  --accent: #1e6b52;
+  --accent-ink: #ffffff;
+  --accent-soft: #dcebe4;
+  --danger: #a33a2c;
+  color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+  --paper: #0f1513;
+  --panel: #18201d;
+  --raised: #1f2925;
+  --ink: #e1e9e5;
+  --muted: #93a39c;
+  --line: #2d3934;
+  --accent: #5fc19a;
+  --accent-ink: #0f1513;
+  --accent-soft: #1f3a30;
+  --danger: #ec8a7c;
+  color-scheme: dark;
+}
+
+@theme inline {
+  --font-sans: "Source Sans 3 Variable", system-ui, sans-serif;
+  --color-paper: var(--paper);
+  --color-panel: var(--panel);
+  --color-raised: var(--raised);
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --color-line: var(--line);
+  --color-accent: var(--accent);
+  --color-accent-ink: var(--accent-ink);
+  --color-accent-soft: var(--accent-soft);
+  --color-danger: var(--danger);
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+  user-select: none;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+@layer components {
+  .btn {
+    @apply inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[13px] font-medium text-ink transition-colors hover:bg-accent-soft disabled:opacity-40 disabled:hover:bg-transparent;
+  }
+  .btn-primary {
+    @apply inline-flex items-center gap-1.5 rounded-md bg-accent px-3 py-1.5 text-[13px] font-semibold text-accent-ink transition-opacity hover:opacity-90 disabled:opacity-40;
+  }
+  .field {
+    @apply w-full rounded-md border border-line bg-raised px-2 py-1 text-[13px] text-ink;
+  }
+  .label {
+    @apply text-[12px] font-medium text-muted;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition: none !important;
+  }
+}

@@ -1,0 +1,23 @@
+[package]
+name = "rustymappr"
+description = "Distribution maps from locality tables"
+authors = ["Caleb Hendren"]
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+# The `_lib` suffix keeps the lib name distinct from the bin name, which
+# Windows needs (rust-lang/cargo#8519).
+name = "rustymappr_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+mappr-core = { path = "../crates/mappr-core" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"

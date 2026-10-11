@@ -1,0 +1,15 @@
+[package]
+name = "mappr-core"
+description = "Data loading, coordinate parsing, projection and rendering for RustyMappr"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+calamine = "0.36"
+csv = "1.4"
+fancy-regex = "0.19"
+resvg = "0.48"
+serde = { version = "1", features = ["derive"] }
+shapefile = "0.9"
+thiserror = "2"
