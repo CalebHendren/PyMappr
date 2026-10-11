@@ -1,11 +1,21 @@
 //! RustyMappr's core: everything that is not UI.
 
 pub mod basemap;
+pub mod catalog;
 pub mod coords;
+pub mod districts;
 pub mod export;
+pub mod geom;
+pub mod graticule;
+pub mod inset;
+pub mod labels;
+pub mod overlays;
 pub mod projection;
+pub mod raster;
+pub mod regions;
 pub mod render;
 pub mod table;
+pub mod view;
 
 /// PyMappr's checkout, for tests that use its sample data and map data:
 /// `PYMAPPR_DIR`, else `C:\PyCharm\PyMappr`. Tests skip themselves when the

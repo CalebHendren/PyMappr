@@ -515,13 +515,13 @@ mod tests {
         let mut made = false;
         b.cached_lru("k0", || {
             made = true;
-            0
+            0usize
         });
         assert!(made);
         let mut made = false;
         b.cached_lru(&format!("k{}", LRU_SIZE + 4), || {
             made = true;
-            0
+            0usize
         });
         assert!(!made);
     }
