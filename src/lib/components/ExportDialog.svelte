@@ -4,11 +4,11 @@
   import { api, saveFile } from "$lib/api";
   import { exportFigure, exportSvg, FORMATS, VECTOR, type Format } from "$lib/exporting.svelte";
   import { printPixels } from "$lib/layout";
-  import type { PointStyle } from "$lib/points";
+  import type { Symbology } from "$lib/symbology";
   import { store } from "$lib/store.svelte";
   import Modal from "./Modal.svelte";
 
-  let { onClose, styles }: { onClose: () => void; styles: (PointStyle | null)[][] } = $props();
+  let { onClose, sym }: { onClose: () => void; sym: Symbology } = $props();
 
   const AS_ON_SCREEN = "As on screen";
   const WIDTHS: [string, string][] = [
@@ -44,7 +44,7 @@
     saving = true;
     error = null;
     try {
-      const { svg, px } = await exportSvg(widthCm, dpi, styles);
+      const { svg, px } = await exportSvg(widthCm, dpi, sym);
       await api.exportMap(svg, format, px.w, dpi, path);
       store.setStatus(`Saved ${path}`);
       onClose();

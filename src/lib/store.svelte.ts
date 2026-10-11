@@ -16,6 +16,7 @@ import {
 } from "./api";
 import { ADVANCED_LAYERS, defaultState, withDefaults, type DatasetEntry, type ProjectState } from "./model";
 import { fitAspect, limitsFromView, viewFromLimits } from "./layout";
+import { stateSnapshot } from "./project";
 
 export type Theme = "light" | "dark";
 
@@ -121,8 +122,8 @@ class Store {
   doc = $state<ProjectState>(defaultState());
   projectName = $state("Untitled");
   projectPath = $state<string | null>(null);
-  /** JSON of the document as last saved or opened, for "unsaved changes". */
-  saved = $state(JSON.stringify(defaultState()));
+  /** Snapshot of the document as last saved or opened, for "unsaved changes". */
+  saved = $state(stateSnapshot(defaultState()));
 
   // ---- the session -------------------------------------------------------
   info = $state<AppInfo | null>(null);
@@ -144,8 +145,8 @@ class Store {
   /** Projected point positions per dataset, keyed by projection. */
   projected = $state<{ key: string; xy: ([number, number] | null)[] }[]>([]);
   cursor = $state<[number, number] | null>(null);
-  /** Filter on the active dataset: a column and the values hidden. */
-  filter = $state<{ column: string; hidden: string[] } | null>(null);
+  /** Filter on the active dataset (not saved with projects). */
+  filter = $state<import("./symbology").PointFilter | null>(null);
   /** Dragged map labels, keyed "layer|text", offsets in map units. */
   labelOffsets = $state<Record<string, [number, number]>>({});
   back = $state<Rect[]>([]);
@@ -158,7 +159,7 @@ class Store {
 
   active = $derived(this.doc.active === null ? null : (this.doc.datasets[this.doc.active] ?? null));
   projection = $derived(projectionSpec(this.doc));
-  dirty = $derived(JSON.stringify($state.snapshot(this.doc)) !== this.saved);
+  dirty = $derived(stateSnapshot($state.snapshot(this.doc) as ProjectState) !== this.saved);
   /** Advanced layers switched on (by a project) while the switch is off. */
   hiddenAdvancedOn = $derived.by(() => {
     if (this.advanced) return 0;
@@ -210,7 +211,7 @@ class Store {
     this.doc = withDefaults(state);
     this.projectName = name;
     this.projectPath = path;
-    this.saved = JSON.stringify($state.snapshot(this.doc));
+    this.saved = stateSnapshot($state.snapshot(this.doc) as ProjectState);
     this.projected = this.doc.datasets.map(() => ({ key: "", xy: [] }));
     this.filter = null;
     this.labelOffsets = {};
@@ -225,7 +226,7 @@ class Store {
     this.syncViewToDoc();
     this.projectName = name;
     this.projectPath = path;
-    this.saved = JSON.stringify($state.snapshot(this.doc));
+    this.saved = stateSnapshot($state.snapshot(this.doc) as ProjectState);
   }
 
   /** Write the current view into the document (it is saved as limits). */

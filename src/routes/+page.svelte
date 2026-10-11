@@ -1,8 +1,20 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { api, confirmDialog, openUrl, pickFile, pickFolder, type TablePreview } from "$lib/api";
-  import { basicStyles } from "$lib/points";
+  import { api, confirmDialog, inTauri, openUrl, pickFile, pickFolder, type TablePreview } from "$lib/api";
+  import type { ManualParse } from "$lib/api-docs";
+  import { applyCombine, editManualEntry, manualEntry, manualStyle, type ManualResult } from "$lib/datasets";
+  import { documents } from "$lib/documents.svelte";
+  import { exportFigure, mapPng } from "$lib/exporting.svelte";
+  import { editorPaletteOffset, editorRows, paletteFor, symbology } from "$lib/symbology";
   import { store } from "$lib/store.svelte";
+  import CodeExport from "$lib/components/code/CodeExport.svelte";
+  import CombineColumns from "$lib/components/dialogs/CombineColumns.svelte";
+  import FilterBar from "$lib/components/dialogs/FilterBar.svelte";
+  import LegendEditor from "$lib/components/dialogs/LegendEditor.svelte";
+  import ManualEntry from "$lib/components/dialogs/ManualEntry.svelte";
+  import Presets from "$lib/components/dialogs/Presets.svelte";
+  import ProjectsDialog from "$lib/components/dialogs/ProjectsDialog.svelte";
+  import NameDialog from "$lib/components/NameDialog.svelte";
   import ColumnMapper from "$lib/components/ColumnMapper.svelte";
   import DataDownload from "$lib/components/DataDownload.svelte";
   import DataTab from "$lib/components/DataTab.svelte";
@@ -28,14 +40,87 @@
   const notice = $derived(notices[0] ?? null);
   let about = $state(false);
 
-  const styles = $derived(basicStyles(store.doc));
+  let projectsOpen = $state(false);
+  let manual = $state<{ index: number | null } | null>(null);
+  let combining = $state(false);
+  let editingRows = $state(false);
+  let codeOpen = $state(false);
+  let asking = $state<{ title: string; initial: string; resolve: (name: string | null) => void } | null>(null);
+
+  // PyMappr's symbology: point styles, legend rows, warnings.
+  const sym = $derived(symbology(store.doc, store.filter));
+  $effect(() => {
+    if (sym.warning) store.status = sym.warning;
+  });
+
+  documents.askName = (title, initial) => new Promise((resolve) => (asking = { title, initial, resolve }));
 
   onMount(async () => {
     await store.init();
+    await documents.restoreSession();
     if (store.info && !store.info.dataDir) downloading = true;
     // The automatic update check: once a day, silent when offline.
     setTimeout(() => checkUpdates(false), 2000);
+    // Save the session on the way out, as PyMappr does.
+    if (inTauri) {
+      const { getCurrentWindow } = await import("@tauri-apps/api/window");
+      const win = getCurrentWindow();
+      win.onCloseRequested(async (e) => {
+        e.preventDefault();
+        await documents.saveSession();
+        await win.destroy();
+      });
+    } else {
+      addEventListener("beforeunload", () => documents.saveSession());
+    }
   });
+
+  async function exit() {
+    await documents.saveSession();
+    if (inTauri) {
+      const { getCurrentWindow } = await import("@tauri-apps/api/window");
+      await getCurrentWindow().destroy();
+    }
+  }
+
+  function acceptManual(result: ManualResult, parsed: ManualParse) {
+    const index = manual?.index ?? null;
+    manual = null;
+    if (index !== null) {
+      store.doc.datasets[index] = editManualEntry(store.doc.datasets[index], result, parsed);
+      store.projected[index] = { key: "", xy: [] };
+      store.setStatus(`Updated ${result.legend}.`);
+    } else {
+      store.addEntry(manualEntry(result, parsed));
+      store.setStatus(`Added ${parsed.rows.length} typed-in points.`);
+    }
+    if (parsed.skipped.length)
+      notices = [...notices, { title: "Some lines skipped", lines: parsed.skipped.slice(0, 12), more: Math.max(0, parsed.skipped.length - 12) }];
+  }
+
+  function acceptCombine(labels: string[], separator: string) {
+    combining = false;
+    const i = store.doc.active;
+    if (i === null) return;
+    const r = applyCombine(store.doc.datasets[i], labels, separator);
+    store.doc.datasets[i] = r.entry;
+    store.filter = null;
+    store.setStatus(r.status);
+  }
+
+  /** The map as the AI check may see it: a PNG of the current figure. */
+  const mapImage = () => mapPng(sym);
+
+  function codeInput() {
+    store.syncViewToDoc();
+    const fig = exportFigure(parseFloat(store.doc.map.export_width) || null);
+    return {
+      state: $state.snapshot(store.doc),
+      figureSize: fig ? ([fig.w / 72, fig.h / 72] as [number, number]) : null,
+      renderer: null,
+      projectName: store.projectName,
+    };
+  }
 
   async function addData() {
     const path = await pickFile("Add data file", [
@@ -102,28 +187,28 @@
     if (ds && (await confirmDialog(`Remove "${ds.name}" from the map?`))) store.removeDataset(index);
   }
 
-  const soon = (what: string) => () => store.setStatus(`${what} is not ready yet in this build.`);
-
   const menus: Menu[] = $derived([
     {
       label: "File",
       items: [
-        { label: "New project", shortcut: "Ctrl+N", action: soon("New project") },
-        { label: "Projects…", shortcut: "Ctrl+P", action: soon("The projects manager") },
-        { label: "Save project", shortcut: "Ctrl+S", action: soon("Saving projects") },
-        { label: "Save project as…", action: soon("Saving projects") },
+        { label: "New project", shortcut: "Ctrl+N", action: () => documents.newProject() },
+        { label: "Projects…", shortcut: "Ctrl+P", action: () => (projectsOpen = true) },
+        { label: "Save project", shortcut: "Ctrl+S", action: () => documents.save() },
+        { label: "Save project as…", action: () => documents.saveAs() },
         { separator: true },
-        { label: "Import project…", action: soon("Importing projects") },
-        { label: "Export project…", action: soon("Exporting projects") },
-        { label: "Set projects folder…", action: soon("The projects folder") },
+        { label: "Import project…", action: () => documents.importProject() },
+        { label: "Export project…", action: () => documents.exportProject() },
+        { label: "Set projects folder…", action: () => documents.setProjectsFolder() },
         { separator: true },
         { label: "Add data file…", shortcut: "Ctrl+O", action: addData },
-        { label: "Manual entry…", shortcut: "Ctrl+M", action: soon("Manual entry") },
+        { label: "Manual entry…", shortcut: "Ctrl+M", action: () => (manual = { index: null }) },
         { separator: true },
         { label: "Save map as…", shortcut: "Ctrl+E", action: () => (saving = true), disabled: !store.svgEl },
-        { label: "Export map as code (Python/R)…", action: soon("Code export") },
+        { label: "Export map as code (Python/R)…", action: () => (codeOpen = true), disabled: !store.doc.datasets.length },
         { separator: true },
         { label: "Download map data…", action: () => (downloading = true) },
+        { separator: true },
+        { label: "Exit", action: exit },
       ],
     },
     {
@@ -161,10 +246,10 @@
       "=": () => store.zoomBy(1.3),
       "+": () => store.zoomBy(1.3),
       "-": () => store.zoomBy(1 / 1.3),
-      n: soon("New project"),
-      p: soon("The projects manager"),
-      s: soon("Saving projects"),
-      m: soon("Manual entry"),
+      n: () => documents.newProject(),
+      p: () => (projectsOpen = true),
+      s: () => documents.save(),
+      m: () => (manual = { index: null }),
     };
     if (actions[key]) {
       e.preventDefault();
@@ -183,20 +268,36 @@
     {#snippet data()}
       <DataTab
         onAddData={addData}
-        onManualEntry={soon("Manual entry")}
-        onEditManual={soon("Editing typed-in data")}
+        onManualEntry={() => (manual = { index: null })}
+        onEditManual={(i) => (manual = { index: i })}
         onRemove={removeDataset}
-        onCombine={soon("Combining columns")}
-      />
+        onCombine={() => (combining = true)}
+      >
+        {#snippet presets()}
+          <Presets
+            project={store.doc}
+            appVersion={store.info?.version ?? "0.0.0"}
+            onapply={(r) => {
+              store.doc = r.state;
+              if (!r.keepView) store.zoomToData();
+              store.setStatus(r.status);
+            }}
+            onstatus={(m) => store.setStatus(m)}
+          />
+        {/snippet}
+      </DataTab>
     {/snippet}
-    {#snippet legend()}<LegendTab onCustomize={soon("The legend rows editor")} />{/snippet}
-    {#snippet map()}<MapTab onSaveMap={() => (saving = true)} onExportCode={soon("Code export")} />{/snippet}
+    {#snippet legend()}<LegendTab onCustomize={() => (editingRows = true)} />{/snippet}
+    {#snippet map()}<MapTab onSaveMap={() => (saving = true)} onExportCode={() => (codeOpen = true)} />{/snippet}
     {#snippet layers()}<LayersTab onChooseDataDir={chooseDataDir} onDownloadData={() => (downloading = true)} />{/snippet}
     {#snippet labels()}<LabelsTab />{/snippet}
   </Sidebar>
 
-  <main class="relative min-w-0 bg-paper">
-    <MapView {styles} />
+  <main class="relative flex min-w-0 flex-col bg-paper">
+    <div class="relative min-h-0 flex-1"><MapView {sym} /></div>
+    {#if store.active}
+      <FilterBar entry={store.active} datasetIndex={store.doc.active} onchange={(f) => (store.filter = f)} />
+    {/if}
     {#if store.info?.dataDir && !store.doc.datasets.length}
       <div class="pointer-events-none absolute inset-x-0 top-4 flex justify-center">
         <div class="pointer-events-auto flex items-center gap-3 rounded-lg border border-line bg-panel/95 px-4 py-2 shadow-sm">
@@ -215,7 +316,7 @@
 {/if}
 
 {#if saving}
-  <ExportDialog {styles} onClose={() => (saving = false)} />
+  <ExportDialog {sym} onClose={() => (saving = false)} />
 {/if}
 
 {#if downloading}
@@ -233,6 +334,65 @@
       <button class="btn-primary" onclick={() => (notices = notices.slice(1))}>OK</button>
     {/snippet}
   </Modal>
+{/if}
+
+{#if projectsOpen}
+  <ProjectsDialog
+    onopen={(path, changes) => {
+      projectsOpen = false;
+      documents.followChanges(changes);
+      documents.open(path);
+    }}
+    onClose={(changes) => {
+      projectsOpen = false;
+      documents.followChanges(changes);
+    }}
+  />
+{/if}
+
+{#if manual}
+  {@const editing = manual.index !== null ? store.doc.datasets[manual.index] : null}
+  <ManualEntry
+    legend={editing?.manual ? editing.name : ""}
+    text={editing?.manual?.text ?? ""}
+    order={(editing?.manual?.order as "lat,lon" | "lon,lat") ?? "lat,lon"}
+    style={editing ? manualStyle(editing) : undefined}
+    onaccept={acceptManual}
+    onClose={() => (manual = null)}
+  />
+{/if}
+
+{#if combining && store.active}
+  <CombineColumns entry={store.active} onaccept={acceptCombine} onClose={() => (combining = false)} />
+{/if}
+
+{#if editingRows && store.active && store.doc.active !== null}
+  {@const i = store.doc.active}
+  <LegendEditor
+    rows={editorRows(store.active, sym.options, paletteFor(store.doc.map.palette), editorPaletteOffset(store.doc, i))}
+    overrides={store.active.legend_overrides}
+    onchange={(o) => (store.doc.datasets[i].legend_overrides = o)}
+    onreorder={(o) => {
+      store.doc.legend.order = "manual";
+      store.doc.datasets[i].legend_overrides = o;
+    }}
+    onClose={() => (editingRows = false)}
+  />
+{/if}
+
+{#if codeOpen}
+  <CodeExport input={codeInput()} getMapImage={mapImage} onClose={() => (codeOpen = false)} />
+{/if}
+
+{#if asking}
+  <NameDialog
+    title={asking.title}
+    initial={asking.initial}
+    onDone={(name) => {
+      asking?.resolve(name);
+      asking = null;
+    }}
+  />
 {/if}
 
 {#if about}

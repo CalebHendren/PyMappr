@@ -5,7 +5,8 @@ import { flushSync, mount, unmount } from "svelte";
 import { api } from "./api";
 import Scene from "./components/map/Scene.svelte";
 import { hasTicks, printFigure, printPixels, type Figure } from "./layout";
-import { insetMarks, marks as buildMarks, type PointStyle } from "./points";
+import { insetMarks, marks as buildMarks } from "./points";
+import type { Symbology } from "./symbology";
 import { layerSettings, store } from "./store.svelte";
 
 export const FORMATS = [
@@ -25,7 +26,8 @@ export function exportFigure(widthCm: number | null): Figure | null {
 }
 
 /** Render the current map at print size and return its SVG text. */
-export async function exportSvg(widthCm: number | null, dpi: number, styles: (PointStyle | null)[][]): Promise<{ svg: string; px: { w: number; h: number } }> {
+export async function exportSvg(widthCm: number | null, dpi: number, sym: Symbology): Promise<{ svg: string; px: { w: number; h: number } }> {
+  const styles = sym.points;
   const screen = store.screenFig;
   const view = store.view;
   if (!screen || !view || !store.map) throw new Error("There is no map to save yet.");
@@ -53,15 +55,16 @@ export async function exportSvg(widthCm: number | null, dpi: number, styles: (Po
       map,
       settings: $state.snapshot(store.doc.map),
       globe,
-      marks: buildMarks(store.doc, styles, store.projected, store.filter),
-      edge: $state.snapshot(store.doc.point_edge),
+      marks: buildMarks(store.doc, styles, store.projected),
       alpha: store.doc.point_alpha,
       showTicks: hasTicks(store.doc.map.graticule, store.doc.map.hide_grid_labels, globe),
       labelOffsets: $state.snapshot(store.labelOffsets),
       scaleBar: $state.snapshot(store.scaleBar),
       inset: $state.snapshot(store.inset),
       insetMarks: store.inset ? insetMarks(store.doc, styles, store.inset.points) : [],
-      showLegend: store.doc.legend.show,
+      legend: sym.legend,
+      legendOptions: sym.options,
+      pointEdge: $state.snapshot(store.doc.point_edge),
       sizeUnit: "pt",
     },
   });
@@ -69,4 +72,29 @@ export async function exportSvg(widthCm: number | null, dpi: number, styles: (Po
   const svg = target.querySelector("svg")!.outerHTML;
   unmount(scene);
   return { svg, px };
+}
+
+/** A PNG data URL of the current map at screen size (for the AI check). */
+export async function mapPng(sym: Symbology): Promise<string | null> {
+  try {
+    const { svg, px } = await exportSvg(null, 100, sym);
+    const url = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml" }));
+    const img = new Image();
+    await new Promise((ok, fail) => {
+      img.onload = ok;
+      img.onerror = fail;
+      img.src = url;
+    });
+    const canvas = document.createElement("canvas");
+    canvas.width = px.w;
+    canvas.height = px.h;
+    const ctx = canvas.getContext("2d")!;
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, px.w, px.h);
+    ctx.drawImage(img, 0, 0, px.w, px.h);
+    URL.revokeObjectURL(url);
+    return canvas.toDataURL("image/png");
+  } catch {
+    return null;
+  }
 }

@@ -1,6 +1,6 @@
 <script lang="ts">
   // A marker sample for lists in the panel.
-  import { markerPath, isOpenMarker } from "$lib/marker-paths";
+  import { isOpenMarker, markerPath } from "$lib/markers";
 
   let {
     marker,

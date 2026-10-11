@@ -5,11 +5,13 @@
   import { untrack } from "svelte";
   import { api, type RenderRequest } from "$lib/api";
   import { figureToMap, hasTicks, screenFigure } from "$lib/layout";
-  import { insetMarks as buildInsetMarks, marks as buildMarks, type PointStyle } from "$lib/points";
+  import { insetMarks as buildInsetMarks, marks as buildMarks } from "$lib/points";
+  import type { Symbology } from "$lib/symbology";
   import { layerSettings, lonLats, store } from "$lib/store.svelte";
   import Scene from "./Scene.svelte";
 
-  let { styles }: { styles: (PointStyle | null)[][] } = $props();
+  let { sym }: { sym: Symbology } = $props();
+  const styles = $derived(sym.points);
 
   let container: HTMLDivElement;
   let size = $state({ w: 900, h: 650 });
@@ -145,7 +147,7 @@
     return () => clearTimeout(timer);
   });
 
-  const marks = $derived(buildMarks(store.doc, styles, store.projected, store.filter));
+  const marks = $derived(buildMarks(store.doc, styles, store.projected));
   const insetMarks = $derived(store.inset ? buildInsetMarks(store.doc, styles, store.inset.points) : []);
 
   // ---- mouse --------------------------------------------------------------
@@ -328,14 +330,15 @@
   {#if store.view && store.map}
     <Scene
       bind:svgEl={store.svgEl}
-      showLegend={store.doc.legend.show}
       {fig}
       view={store.view}
       map={store.map}
       settings={store.doc.map}
       {globe}
       {marks}
-      edge={store.doc.point_edge}
+      legend={sym.legend}
+      legendOptions={sym.options}
+      pointEdge={store.doc.point_edge}
       alpha={store.doc.point_alpha}
       {showTicks}
       labelOffsets={store.labelOffsets}

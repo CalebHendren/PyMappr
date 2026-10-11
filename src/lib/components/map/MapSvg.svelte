@@ -1,13 +1,15 @@
 <script lang="ts" module>
-  /** A user point, already projected (SVG map coordinates) and styled. */
+  /** A user point, already projected (SVG map coordinates) and painted. */
   export type Mark = {
     x: number;
     y: number;
-    color: string;
     marker: string;
     /** matplotlib area in pt². */
     size: number;
-    open: boolean;
+    face: string;
+    edge: string;
+    /** Outline width in pt. */
+    edgeWidth: number;
   };
 </script>
 
@@ -22,7 +24,7 @@
   import type { Figure } from "$lib/layout";
   import { cornerPlace, mapToFigure } from "$lib/layout";
   import type { CompassOptions, InsetOptions, MapSettings } from "$lib/model";
-  import { markerPath } from "$lib/marker-paths";
+  import { markerPath } from "$lib/markers";
   import {
     BATHYMETRY,
     FILL_STYLES,
@@ -45,7 +47,6 @@
     settings: MapSettings;
     globe: boolean;
     marks: Mark[];
-    edge: { color: string; width: number };
     alpha: number;
     showTicks: boolean;
     labelOffsets?: Record<string, [number, number]>;
@@ -66,7 +67,6 @@
     settings,
     globe,
     marks,
-    edge,
     alpha,
     showTicks,
     labelOffsets = {},
@@ -228,12 +228,14 @@
       {#each marks as m, i (i)}
         {@const [fx, fy] = toFig(m.x, m.y)}
         {@const r = markerR(m.size)}
-        {@const d = markerPath(m.marker)}
-        {#if m.open}
-          <path d={d} transform="translate({fx} {fy}) scale({r})" fill="#ffffff" stroke={m.color} stroke-width={(1.2 * pt) / r} />
-        {:else}
-          <path d={d} transform="translate({fx} {fy}) scale({r})" fill={m.color} stroke={edge.color} stroke-width={(edge.width * pt) / r} />
-        {/if}
+        <path
+          d={markerPath(m.marker)}
+          transform="translate({fx} {fy}) scale({r})"
+          fill={m.face}
+          stroke={m.edgeWidth > 0 ? m.edge : "none"}
+          stroke-width={(m.edgeWidth * pt) / r}
+          data-mark="{fx},{fy},{m.size},{m.face},{m.edge}"
+        />
       {/each}
     </g>
     {#each map.labels as l, i (i)}
@@ -382,9 +384,9 @@
           <path
             d={markerPath(m.marker)}
             transform="translate({fx} {fy}) scale({r})"
-            fill={m.open ? "#ffffff" : m.color}
-            stroke={m.open ? m.color : edge.color}
-            stroke-width={((m.open ? 1.2 : edge.width) * INSET.lineScale * pt) / r}
+            fill={m.face}
+            stroke={m.edgeWidth > 0 ? m.edge : "none"}
+            stroke-width={(m.edgeWidth * INSET.lineScale * pt) / r}
             opacity={alpha}
           />
         {/each}

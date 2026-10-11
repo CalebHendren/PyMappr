@@ -34,13 +34,22 @@ pub fn pixel_width(width_cm: f64, dpi: f64) -> u32 {
     (width_cm / 2.54 * dpi).round().max(1.0) as u32
 }
 
-/// DejaVu Sans, matplotlib's default font (and so PyMappr's), compiled in so
-/// exports render map text exactly as the screen does on any machine.
-const MAP_FONTS: [&[u8]; 4] = [
+/// The DejaVu family, matplotlib's fonts (and so PyMappr's), compiled in so
+/// exports render map and legend text exactly as the screen does on any
+/// machine: Sans for the map, Serif and Sans Mono for the legend's choices.
+const MAP_FONTS: [&[u8]; 12] = [
     include_bytes!("../fonts/DejaVuSans.ttf"),
     include_bytes!("../fonts/DejaVuSans-Bold.ttf"),
     include_bytes!("../fonts/DejaVuSans-Oblique.ttf"),
     include_bytes!("../fonts/DejaVuSans-BoldOblique.ttf"),
+    include_bytes!("../fonts/DejaVuSerif.ttf"),
+    include_bytes!("../fonts/DejaVuSerif-Bold.ttf"),
+    include_bytes!("../fonts/DejaVuSerif-Italic.ttf"),
+    include_bytes!("../fonts/DejaVuSerif-BoldItalic.ttf"),
+    include_bytes!("../fonts/DejaVuSansMono.ttf"),
+    include_bytes!("../fonts/DejaVuSansMono-Bold.ttf"),
+    include_bytes!("../fonts/DejaVuSansMono-Oblique.ttf"),
+    include_bytes!("../fonts/DejaVuSansMono-BoldOblique.ttf"),
 ];
 
 fn load_map_fonts(db: &mut usvg::fontdb::Database) {
