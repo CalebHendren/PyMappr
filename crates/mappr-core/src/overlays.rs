@@ -16,6 +16,7 @@ const BAR_HEIGHT: f64 = 0.011;
 const BAR_GAP: f64 = 0.005;
 /// Room one label row needs, so a stack can be lifted clear of the frame.
 const LABEL_ROOM: f64 = 0.030;
+const LABEL_GAP: f64 = 0.012;
 
 /// The scale bar's options, as in the project's `map.scale_bar`.
 #[derive(Debug, Clone, Deserialize)]
@@ -216,6 +217,26 @@ impl Measure<'_> {
     }
 }
 
+/// Where an inset or legend in the bar's corner has to stop (PyMappr's
+/// `_scale_bar_clearance`): an axes-fraction y plus a distance in points
+/// for the label. `None` when the bar is not drawn or was dragged.
+pub fn clearance(opts: &ScaleBarOptions, bar: &ScaleBar) -> Option<(f64, f64)> {
+    if bar.bars.is_empty() || opts.anchor().is_some() {
+        return None;
+    }
+    let n = bar.bars.len() as f64;
+    let stack = n * BAR_HEIGHT + (n - 1.0) * BAR_GAP;
+    let base_y = bar.bars.iter().map(|b| b.y).fold(f64::INFINITY, f64::min);
+    let text = opts.fontsize * 1.4;
+    Some(if opts.position.starts_with("lower") {
+        (base_y + stack + LABEL_GAP, text)
+    } else if bar.bars.len() > 1 {
+        (base_y - LABEL_GAP, -text)
+    } else {
+        (base_y, 0.0)
+    })
+}
+
 const CANNOT_MEASURE: &str = "Scale bar: the map scale cannot be measured at this view.";
 const VARIES: &str = "Scale bar: scale varies too much across this view to draw an accurate bar - zoom in, or move the bar away from the poles.";
 
@@ -397,17 +418,11 @@ mod tests {
         }
     }
 
-    /// PyMappr refuses a bar on a whole Winkel Tripel world because pyproj
-    /// wraps the off-map corner's longitude and the bar's measurement goes
-    /// wrong. Here the corner has no lon/lat, so the bar is measured on the
-    /// nearest row that is on the map, as PyMappr does on Robinson.
     #[test]
-    fn a_world_view_is_measured_where_the_map_is() {
+    fn a_world_view_at_the_poles_refuses_rather_than_lying() {
         let (proj, view) = setup("Winkel Tripel", [-180.0, 180.0, -90.0, 90.0]);
         let bar = scale_bar(&proj, view, &on());
-        assert!(bar.error.is_some() || bar.bars[0].width <= 0.95);
-        let (proj, view) = setup("Mercator", [-180.0, 180.0, -85.0, 85.0]);
-        let bar = scale_bar(&proj, view, &ScaleBarOptions { length_mode: "fixed".into(), fixed_length: Some(20_000.0), ..on() });
+        assert!(bar.bars.is_empty());
         assert!(bar.error.unwrap().contains("zoom in"));
     }
 }

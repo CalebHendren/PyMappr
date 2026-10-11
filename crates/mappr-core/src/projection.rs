@@ -316,8 +316,23 @@ impl Projection {
     /// Longitude/latitude of a projected point inside the drawn part of
     /// the world, for the cursor read-out.
     pub fn inverse(&self, x: f64, y: f64) -> Option<(f64, f64)> {
-        let (lon, lat) = self.inverse_raw(x, y)?;
+        let (lon, lat) = self.inverse_on_map(x, y, None)?;
         self.in_domain(lon, lat).then_some((lon, lat))
+    }
+
+    /// [`Self::inverse_seeded`], but `None` for points off the world's
+    /// outline that PROJ answers with a wrapped longitude.
+    pub fn inverse_on_map(&self, x: f64, y: f64, seed: Option<(f64, f64)>) -> Option<(f64, f64)> {
+        let (lon, lat) = self.inverse_seeded(x, y, seed)?;
+        let on_map = match self.kind {
+            Kind::Mercator => x.abs() <= PI * A * (1.0 + 1e-12),
+            Kind::NaturalEarth | Kind::WinkelTripel => {
+                let back = if x.abs() < 1e-9 { Some((x, y)) } else { self.forward(lon, lat) };
+                back.is_some_and(|(fx, fy)| (fx - x).abs() < 1e-3 && (fy - y).abs() < 1e-3)
+            }
+            _ => true,
+        };
+        on_map.then_some((lon, lat))
     }
 
     /// Longitude/latitude of a projected point as PROJ's inverse gives it:
@@ -339,12 +354,19 @@ impl Projection {
             (lam.abs() <= PI + 1e-9 && phi.abs() <= FRAC_PI_2 + 1e-9)
                 .then(|| (lam.to_degrees().clamp(-180.0, 180.0), phi.to_degrees().clamp(-90.0, 90.0)))
         };
+        // PROJ wraps an out-of-range longitude (`adjlon`) rather than refuse
+        // it on these, so points past the outline come back from the
+        // other side of the world, as pyproj gives them to PyMappr.
+        let wrapped = |lam: f64, phi: f64| {
+            (phi.abs() <= FRAC_PI_2 + 1e-9 && lam.is_finite())
+                .then(|| (wrap_lon(lam.to_degrees()), phi.to_degrees().clamp(-90.0, 90.0)))
+        };
         let (xn, yn) = (x / A, y / A);
         match self.kind {
             Kind::Equirectangular => {
                 ((-180.0..=180.0).contains(&x) && (-90.0..=90.0).contains(&y)).then_some((x, y))
             }
-            Kind::Mercator => world(xn, phi2((-yn).exp())),
+            Kind::Mercator => wrapped(xn, phi2((-yn).exp())),
             Kind::Robinson => {
                 let (lam, phi) = robinson_inverse(xn, yn)?;
                 world(lam, phi)
@@ -362,13 +384,13 @@ impl Projection {
             }
             Kind::NaturalEarth => {
                 let (lam, phi) = natural_earth_inverse(xn, yn)?;
-                world(lam, phi)
+                wrapped(lam, phi)
             }
             Kind::WinkelTripel => {
                 let seed = seed.map(|(lon, lat)| (lon.to_radians(), lat.to_radians()));
                 let starts = [(xn, yn), (xn * 0.75, yn * 0.9), (0.0, 0.0)];
                 let (lam, phi) = newton_inverse(winkel_tripel, xn, yn, seed, &starts)?;
-                world(lam, phi)
+                wrapped(lam, phi)
             }
             Kind::Orthographic { sin0, cos0, nu0 } => {
                 // The spherical inverse, then Newton on the ellipsoidal
@@ -546,6 +568,12 @@ const ROBIN_Y: [[f64; 4]; 19] = [
     [1.0, 0.00328947, -0.000319159, -4.2106e-06],
 ];
 
+/// A row of the Robinson table as PROJ holds it: in single precision,
+/// which moves points by up to a few metres.
+fn robin(c: [f64; 4]) -> [f64; 4] {
+    c.map(|v| v as f32 as f64)
+}
+
 fn robinson(lam: f64, phi: f64) -> (f64, f64) {
     const FXC: f64 = 0.8487;
     const FYC: f64 = 1.3523;
@@ -553,8 +581,8 @@ fn robinson(lam: f64, phi: f64) -> (f64, f64) {
     let aphi = phi.abs();
     let i = ((aphi * 180.0 / (5.0 * PI) + 1e-15).floor() as usize).min(18);
     let z = (aphi - (5.0f64).to_radians() * i as f64).to_degrees();
-    let x = v(ROBIN_X[i], z) * FXC * lam;
-    let y = v(ROBIN_Y[i], z) * FYC;
+    let x = v(robin(ROBIN_X[i]), z) * FXC * lam;
+    let y = v(robin(ROBIN_Y[i]), z) * FYC;
     (x, if phi < 0.0 { -y } else { y })
 }
 
@@ -719,17 +747,17 @@ fn robinson_inverse(x: f64, y: f64) -> Option<(f64, f64)> {
             return None;
         }
         phi = FRAC_PI_2.copysign(y);
-        lam /= ROBIN_X[NODES][0];
+        lam /= robin(ROBIN_X[NODES])[0];
         return Some((lam, phi));
     }
     let mut i = ((phi * NODES as f64).floor() as usize).min(NODES - 1);
     loop {
-        if ROBIN_Y[i][0] > phi {
+        if robin(ROBIN_Y[i])[0] > phi {
             if i == 0 {
                 break;
             }
             i -= 1;
-        } else if ROBIN_Y[i + 1][0] <= phi {
+        } else if robin(ROBIN_Y[i + 1])[0] <= phi {
             i += 1;
             if i >= NODES {
                 return None;
@@ -738,8 +766,8 @@ fn robinson_inverse(x: f64, y: f64) -> Option<(f64, f64)> {
             break;
         }
     }
-    let t_row = ROBIN_Y[i];
-    let mut t = 5.0 * (phi - t_row[0]) / (ROBIN_Y[i + 1][0] - t_row[0]);
+    let t_row = robin(ROBIN_Y[i]);
+    let mut t = 5.0 * (phi - t_row[0]) / (robin(ROBIN_Y[i + 1])[0] - t_row[0]);
     for _ in 0..100 {
         let t1 = (v(t_row, t) - phi) / dv(t_row, t);
         t -= t1;
@@ -751,7 +779,7 @@ fn robinson_inverse(x: f64, y: f64) -> Option<(f64, f64)> {
     if y < 0.0 {
         lat = -lat;
     }
-    lam /= v(ROBIN_X[i], t);
+    lam /= v(robin(ROBIN_X[i]), t);
     Some((lam, lat))
 }
 
@@ -773,9 +801,6 @@ fn natural_earth_inverse(x: f64, y: f64) -> Option<(f64, f64)> {
     const C3: f64 = 9.0 * B3;
     const C4: f64 = 11.0 * B4;
     let max_y = 0.8707 * 0.52 * PI;
-    if y.abs() > max_y + 1e-12 {
-        return None;
-    }
     let y = y.clamp(-max_y, max_y);
     let mut yc = y;
     for _ in 0..100 {
@@ -814,8 +839,7 @@ mod tests {
             let p = proj(cols[0]);
             let nums: Vec<f64> = cols[1..].iter().map(|v| v.parse().unwrap()).collect();
             let (x, y) = p.forward(nums[0], nums[1]).expect(line);
-            // Robinson: PROJ revised its coefficient table; the old one is < 0.5 m off.
-            let tol = 1.0;
+            let tol = 1e-6;
             if (x - nums[2]).abs() >= tol || (y - nums[3]).abs() >= tol {
                 failures.push(format!(
                     "{}: ({}, {}) gave ({x}, {y}), expected ({}, {})",

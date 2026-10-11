@@ -123,6 +123,7 @@ fn main() {
             projection: spec,
             view: Some(view),
             px_width: WIDTH,
+            px_height: None,
             px_per_pt: 96.0 / 72.0,
             detail_boost: 0.0,
             layers,

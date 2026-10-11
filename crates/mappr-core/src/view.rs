@@ -84,7 +84,17 @@ pub fn extent_view(proj: &Projection, lonlat: [f64; 4], aspect: f64) -> Rect {
             (y0, y1) = (cy - new_h / 2.0, cy + new_h / 2.0);
         }
     }
-    Rect::from_bounds([x0, x1, y0, y1])
+    // PyMappr's `_wrap_view`: a centre past the antimeridian moves one
+    // world-width back, onto the primary world, its neighbour copy drawn.
+    let cx = (x0 + x1) / 2.0;
+    let mut shift = 0.0;
+    while cx + shift > wx1 {
+        shift -= world_w;
+    }
+    while cx + shift < wx0 {
+        shift += world_w;
+    }
+    Rect::from_bounds([x0 + shift, x1 + shift, y0, y1])
 }
 
 /// The lon/lat extent a view shows and its centre, sampled on a 25 x 25
@@ -164,7 +174,7 @@ mod tests {
             let p = proj(name);
             let v = extent_view(&p, [175.0, 191.0, -23.5, -11.0], ASPECT);
             assert!(v.w < p.world_width() / 8.0, "{name}");
-            assert!(v.x + v.w > p.bounds[1], "{name}: runs onto the copy east");
+            assert!(v.x < p.bounds[0], "{name}: wrapped back, running onto the copy west");
         }
     }
 

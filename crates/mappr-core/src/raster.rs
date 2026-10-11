@@ -133,7 +133,7 @@ pub fn raster(basemap: &Basemap, ctx: &MapContext, mode: &str) -> Result<Option<
         return Ok(None);
     }
     let px_w = ctx.px_width;
-    let px_h = ctx.px_width * ctx.view.h / ctx.view.w;
+    let px_h = ctx.px_height;
     let widths: Vec<usize> = levels.iter().map(|l| l.w).collect();
     let img = &levels[pyramid_level(&widths, vx1 - vx0, world_w, px_w)];
     let nx = (px_w * OVERSAMPLE).clamp(2.0, MAX_WARP_PX) as usize;
@@ -147,7 +147,7 @@ pub fn raster(basemap: &Basemap, ctx: &MapContext, mode: &str) -> Result<Option<
             if wraps && !proj.is_globe() {
                 x = wx0 + (x - wx0).rem_euclid(world_w);
             }
-            let Some((lon, lat)) = proj.inverse_seeded(x, y, seed) else {
+            let Some((lon, lat)) = proj.inverse_on_map(x, y, seed) else {
                 seed = None;
                 continue;
             };

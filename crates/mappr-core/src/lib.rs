@@ -11,6 +11,8 @@ pub mod inset;
 pub mod labels;
 pub mod overlays;
 pub mod projection;
+#[cfg(test)]
+mod pymappr_reference;
 pub mod raster;
 pub mod regions;
 pub mod render;

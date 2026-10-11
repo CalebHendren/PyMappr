@@ -174,7 +174,7 @@ pub fn labels(
     let region = label_region(&ctx.proj);
     let mut placed: Vec<[f64; 4]> = Vec::new();
     let mut out = Vec::new();
-    let ppu = ctx.px_per_unit();
+    let (ppu, ppu_y) = (ctx.px_per_unit(), ctx.px_per_unit_y());
     for style in LABEL_STYLES {
         let on = match style.key {
             "districts" => !districts.is_empty() && (settings.label("districts") || settings.label("counties")),
@@ -204,7 +204,7 @@ pub fn labels(
         let va = if point_layer(style.key).is_some() { "bottom" } else { "center" };
         let fontsize_px = style.fontsize * scale * ctx.px_per_pt;
         for c in candidates {
-            let rect = estimate_rect((c.x - ctx.view.x) * ppu, (c.y - ctx.view.y) * ppu, &c.text, fontsize_px);
+            let rect = estimate_rect((c.x - ctx.view.x) * ppu, (c.y - ctx.view.y) * ppu_y, &c.text, fontsize_px);
             if overlaps_any(&rect, &placed) {
                 continue;
             }

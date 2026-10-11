@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use crate::basemap::{Basemap, scale_of};
 use crate::catalog::LINE_LAYERS;
 use crate::projection::{GLOBE, Projection, ProjectionSpec, UnknownProjection};
+use crate::overlays::{ScaleBarOptions, clearance, corner_anchor, scale_bar};
 use crate::regions::{InsetOptions, inset_box_target, inset_extent};
 use crate::render::{Kind, MapContext, PathWriter, Rect, RenderedLayer, RenderedMap, draw, outline, projected};
 use crate::view::{project_extent, view_lonlat};
@@ -19,6 +20,10 @@ const MAX_HEIGHT: f64 = 0.6;
 const GLOBE_MARGIN: f64 = 1.04;
 /// Points along each edge of a box, so it bends with the projection.
 const EDGE_POINTS: usize = 50;
+/// Gap between the inset and the map frame, in axes fraction.
+const PAD: f64 = 0.02;
+/// Gap between the inset and the scale bar it steps around.
+const GAP: f64 = 0.015;
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -27,9 +32,15 @@ pub struct InsetRequest {
     /// The main map's view (SVG coordinates).
     pub view: Rect,
     pub px_width: f64,
+    /// The map box's height in pixels when it is not the view's shape.
+    #[serde(default)]
+    pub px_height: Option<f64>,
     #[serde(default = "default_px_per_pt")]
     pub px_per_pt: f64,
     pub options: InsetOptions,
+    /// The scale bar's options, so an inset in its corner steps around it.
+    #[serde(default)]
+    pub scale_bar: Option<ScaleBarOptions>,
     /// The user's visible points, lon/lat.
     #[serde(default)]
     pub points: Vec<[f64; 2]>,
@@ -49,6 +60,9 @@ pub struct InsetBox {
 #[derive(Debug, Clone, Serialize)]
 pub struct RenderedInset {
     pub map: RenderedMap,
+    /// Where the inset sits on the map, in axes fractions: x and y of its
+    /// lower-left corner from the map's left and bottom, width and height.
+    pub rect: Rect,
     /// The inset's view in its own SVG coordinates.
     pub view: Rect,
     pub projection: ProjectionSpec,
@@ -119,15 +133,18 @@ pub fn render_inset(basemap: &Basemap, req: &InsetRequest) -> Result<RenderedIns
     };
     let width = opts.size.clamp(SIZE_RANGE.0, SIZE_RANGE.1);
     let (span_x, span_y) = ((x1 - x0).max(1e-9), (y1 - y0).max(1e-9));
-    let box_aspect = req.view.w / req.view.h;
-    let height = width * box_aspect * span_y / span_x;
+    let px_h = req.px_height.filter(|h| *h > 0.0).unwrap_or(req.px_width * req.view.h / req.view.w);
+    let box_aspect = req.px_width / px_h;
+    let mut height = width * box_aspect * span_y / span_x;
     if height > MAX_HEIGHT {
+        height = MAX_HEIGHT;
         let new_x = span_y * width * box_aspect / MAX_HEIGHT;
         let cx = (x0 + x1) / 2.0;
         (x0, x1) = (cx - new_x / 2.0, cx + new_x / 2.0);
     }
     let view = Rect::from_bounds([x0, x1, y0, y1]);
-    let aspect = view.h / view.w;
+    let aspect = height * px_h / (width * req.px_width);
+    let rect = place(opts, width, height, req, px_h);
 
     // The resolution that suits its own span at its size on the map.
     let zoom = ((proj.world_width() / (x1 - x0).abs().max(1e-9)).log2() + width.max(0.05).log2()).max(0.0);
@@ -210,7 +227,29 @@ pub fn render_inset(basemap: &Basemap, req: &InsetRequest) -> Result<RenderedIns
     } else {
         Vec::new()
     };
-    Ok(RenderedInset { map, view, projection: proj_spec, aspect, box_, points })
+    Ok(RenderedInset { map, rect, view, projection: proj_spec, aspect, box_, points })
+}
+
+/// Put the inset in its corner, or where it was dragged, stepping above
+/// (or below) a scale bar in the same corner (PyMappr's `_place_inset`).
+fn place(opts: &InsetOptions, width: f64, height: f64, req: &InsetRequest, px_h: f64) -> Rect {
+    if let (Some(ax), Some(ay)) = (opts.anchor_x, opts.anchor_y) {
+        return Rect { x: ax.clamp(0.0, 1.0 - width), y: ay.clamp(0.0, 1.0 - height), w: width, h: height };
+    }
+    let (cx, cy) = corner_anchor(&opts.position, PAD);
+    let (right, top) = (cx > 0.5, cy > 0.5);
+    let x = if right { cx - width } else { cx };
+    let mut y = if top { cy - height } else { cy };
+    if let Some(bar_opts) = req.scale_bar.as_ref().filter(|b| b.show && b.position == opts.position) {
+        if let Ok(proj) = Projection::new(&req.projection) {
+            let bar = scale_bar(&proj, req.view, bar_opts);
+            if let Some((frac, points)) = clearance(bar_opts, &bar) {
+                let lift = points / 72.0 * (req.px_per_pt * 72.0) / px_h.max(1.0);
+                y = if top { y.min(frac + lift - GAP - height) } else { y.max(frac + lift + GAP) };
+            }
+        }
+    }
+    Rect { x, y, w: width, h: height }
 }
 
 #[cfg(test)]
@@ -229,7 +268,16 @@ mod tests {
         let spec = spec(projection, None);
         let proj = Projection::new(&spec).unwrap();
         let view = crate::view::extent_view(&proj, extent, ASPECT);
-        InsetRequest { projection: spec, view, px_width: 900.0, px_per_pt: 100.0 / 72.0, options, points: Vec::new() }
+        InsetRequest {
+            projection: spec,
+            view,
+            px_width: 900.0,
+            px_height: None,
+            px_per_pt: 100.0 / 72.0,
+            options,
+            scale_bar: None,
+            points: Vec::new(),
+        }
     }
 
     fn opts(region: &str) -> InsetOptions {
@@ -259,7 +307,7 @@ mod tests {
         assert!(inset.box_.d.starts_with('M'));
         assert_eq!(inset.points.len(), 2);
         assert!(inset.points.iter().all(|p| p.is_some_and(|p| v.contains(p))));
-        assert!((inset.aspect - v.h / v.w).abs() < 1e-12);
+        assert!((inset.aspect - v.h / v.w).abs() < 1e-9);
     }
 
     #[test]

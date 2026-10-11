@@ -120,6 +120,11 @@ pub struct RenderRequest {
     pub view: Option<Rect>,
     /// Width of the map on screen, in pixels; sets how much detail to keep.
     pub px_width: f64,
+    /// Height of the map on screen, in pixels, when the view is stretched
+    /// to a box of another shape (PyMappr's world maps fill the canvas);
+    /// `None` for square map units.
+    #[serde(default)]
+    pub px_height: Option<f64>,
     #[serde(default = "default_px_per_pt")]
     pub px_per_pt: f64,
     #[serde(default)]
@@ -222,6 +227,8 @@ pub struct MapContext {
     /// The view in SVG coordinates.
     pub view: Rect,
     pub px_width: f64,
+    /// Height of the view on screen, in pixels.
+    pub px_height: f64,
     pub px_per_pt: f64,
     /// PyMappr's zoom: log2(world width / view width).
     pub zoom: f64,
@@ -246,7 +253,22 @@ impl MapContext {
                 offsets.push(world_w);
             }
         }
-        MapContext { proj, view, px_width: px_width.max(1.0), px_per_pt, zoom, offsets }
+        let px_width = px_width.max(1.0);
+        let px_height = px_width * view.h / view.w;
+        MapContext { proj, view, px_width, px_height, px_per_pt, zoom, offsets }
+    }
+
+    /// The same view drawn `px_height` pixels tall (map units not square).
+    pub fn with_px_height(mut self, px_height: Option<f64>) -> MapContext {
+        if let Some(h) = px_height.filter(|h| *h > 0.0 && h.is_finite()) {
+            self.px_height = h;
+        }
+        self
+    }
+
+    /// Screen pixels per map unit vertically.
+    pub fn px_per_unit_y(&self) -> f64 {
+        self.px_height / self.view.h
     }
 
     /// The view as projected bounds (x0, x1, y0, y1, y up).
@@ -254,7 +276,7 @@ impl MapContext {
         self.view.bounds()
     }
 
-    /// Screen pixels per map unit.
+    /// Screen pixels per map unit horizontally.
     pub fn px_per_unit(&self) -> f64 {
         self.px_width / self.view.w
     }
@@ -272,7 +294,7 @@ impl MapContext {
 
 pub fn render(basemap: &Basemap, req: &RenderRequest) -> Result<RenderedMap, RenderError> {
     let proj = Projection::new(&req.projection)?;
-    let ctx = MapContext::new(proj, req.view, req.px_width, req.px_per_pt);
+    let ctx = MapContext::new(proj, req.view, req.px_width, req.px_per_pt).with_px_height(req.px_height);
     let settings = &req.layers;
     let data_zoom = ctx.zoom + req.detail_boost;
     let mut missing = Vec::new();
@@ -859,6 +881,7 @@ mod tests {
             projection: spec(name),
             view,
             px_width: 1200.0,
+            px_height: None,
             px_per_pt: 96.0 / 72.0,
             detail_boost: 0.0,
             layers,

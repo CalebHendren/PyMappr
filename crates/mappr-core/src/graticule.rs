@@ -70,8 +70,13 @@ fn linspace(a: f64, b: f64, n: usize) -> Vec<f64> {
 pub fn edge_crossings(xs: &[f64], ys: &[f64], edge: f64, along: char) -> Vec<f64> {
     let (cut, other) = if along == 'x' { (ys, xs) } else { (xs, ys) };
     let mut found = Vec::new();
+    // A sample landing on the edge counts as on it, as it does in PyMappr
+    // where the edge and the samples come from the same pyproj call (the
+    // crossing is then found twice, which PyMappr's crowding rule uses).
+    let eps = 1e-9 * edge.abs().max(1.0);
+    let off = |v: f64| if (v - edge).abs() <= eps { 0.0 } else { v - edge };
     for i in 0..cut.len().saturating_sub(1) {
-        let (a, b) = (cut[i] - edge, cut[i + 1] - edge);
+        let (a, b) = (off(cut[i]), off(cut[i + 1]));
         if !(a.is_finite() && b.is_finite()) || a * b > 0.0 || a == b {
             continue;
         }
@@ -305,8 +310,7 @@ fn meridian_ticks(proj: &Projection, ticks: &[(f64, f64, f64)], view: [f64; 4]) 
 /// The ticks for both axes, thinned so neighbouring labels never touch.
 fn ticks(ctx: &MapContext, step: f64) -> (Vec<Tick>, Vec<Tick>) {
     let (xt, yt, xv, yv) = locate(ctx, step);
-    let ppu = ctx.px_per_unit();
-    let stride = |values: &[f64], ems: f64| -> usize {
+    let stride = |values: &[f64], ems: f64, ppu: f64| -> usize {
         if values.len() < 2 {
             return 1;
         }
@@ -319,8 +323,8 @@ fn ticks(ctx: &MapContext, step: f64) -> (Vec<Tick>, Vec<Tick>) {
         label_stride(gap / ctx.px_per_pt, ems * TICK_FONT_PT)
     };
     let keep = |degree: f64, stride: usize| (degree / step).round() as i64 % stride as i64 == 0;
-    let sx = stride(&xv, WIDTH_EMS);
-    let sy = stride(&yv, HEIGHT_EMS);
+    let sx = stride(&xv, WIDTH_EMS, ctx.px_per_unit());
+    let sy = stride(&yv, HEIGHT_EMS, ctx.px_per_unit_y());
     let x_ticks =
         xt.iter().filter(|t| keep(t.1, sx)).map(|&(pos, deg)| Tick { pos, text: format_lon(deg) }).collect();
     let y_ticks =
