@@ -146,10 +146,10 @@ fn interior_point_polygon(rings: &[&[Pt]]) -> Option<(Pt, f64)> {
 pub fn representative_point(polygons: &[Vec<&[Pt]>]) -> Option<Pt> {
     let mut best: Option<(Pt, f64)> = None;
     for rings in polygons {
-        if let Some((p, w)) = interior_point_polygon(rings) {
-            if best.is_none_or(|b| w > b.1) {
-                best = Some((p, w));
-            }
+        if let Some((p, w)) = interior_point_polygon(rings)
+            && best.is_none_or(|b| w > b.1)
+        {
+            best = Some((p, w));
         }
     }
     best.map(|b| b.0)

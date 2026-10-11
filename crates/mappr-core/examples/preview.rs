@@ -106,12 +106,15 @@ fn main() {
     let out = std::path::Path::new(&args[2]);
     let mode = args.get(3).map(String::as_str).unwrap_or("simple");
     let spec = |n: &str| ProjectionSpec { name: n.into(), lon_0: None, lat_0: None };
-    let mut views: Vec<(String, ProjectionSpec, Option<[f64; 4]>)> =
-        projection_names().into_iter().map(|n| (n.to_string(), spec(n), None)).collect();
-    views.push(("zoom Alps".into(), spec("Equirectangular"), Some([5.0, 12.0, 44.0, 48.5])));
-    views.push(("zoom Madagascar Robinson".into(), spec("Robinson"), Some([42.0, 51.0, -26.5, -11.5])));
-    views.push(("zoom Fiji Mercator".into(), spec("Mercator"), Some([175.0, 191.0, -23.5, -11.0])));
-    for (name, spec, lonlat) in views {
+    let mut views: Vec<(String, ProjectionSpec, Option<[f64; 4]>, f64)> =
+        projection_names().into_iter().map(|n| (n.to_string(), spec(n), None, 0.0)).collect();
+    // A world map at 50m and 10m detail, as an export at more pixels draws it.
+    views.push(("world 50m Robinson".into(), spec("Robinson"), None, 1.5));
+    views.push(("world 10m Robinson".into(), spec("Robinson"), None, 4.0));
+    views.push(("zoom Alps".into(), spec("Equirectangular"), Some([5.0, 12.0, 44.0, 48.5]), 0.0));
+    views.push(("zoom Madagascar Robinson".into(), spec("Robinson"), Some([42.0, 51.0, -26.5, -11.5]), 0.0));
+    views.push(("zoom Fiji Mercator".into(), spec("Mercator"), Some([175.0, 191.0, -23.5, -11.0]), 0.0));
+    for (name, spec, lonlat, detail_boost) in views {
         let proj = Projection::new(&spec).unwrap();
         let view = extent_view(&proj, lonlat.unwrap_or([-180.0, 180.0, -90.0, 90.0]), 0.6);
         let mut layers = settings(mode);
@@ -125,7 +128,7 @@ fn main() {
             px_width: WIDTH,
             px_height: None,
             px_per_pt: 96.0 / 72.0,
-            detail_boost: 0.0,
+            detail_boost,
             layers,
             districts: Vec::new(),
         };

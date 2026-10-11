@@ -210,8 +210,12 @@ fn multiples(a: f64, b: f64, step: f64) -> Vec<f64> {
     (first..=last).map(|k| k as f64 * step).collect()
 }
 
-/// Tick (position, degree) pairs for each axis, before thinning.
-fn locate(ctx: &MapContext, step: f64) -> (Vec<(f64, f64)>, Vec<(f64, f64)>, Vec<f64>, Vec<f64>) {
+/// (position, degree) pairs along one axis.
+type Ticks = Vec<(f64, f64)>;
+
+/// Tick (position, degree) pairs for each axis, before thinning, and the
+/// positions the label spacing is judged from.
+fn locate(ctx: &MapContext, step: f64) -> (Ticks, Ticks, Vec<f64>, Vec<f64>) {
     let proj = &ctx.proj;
     let view = ctx.data_view();
     let [x0, x1, y0, y1] = view;

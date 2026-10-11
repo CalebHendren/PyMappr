@@ -244,14 +244,12 @@ fn place(opts: &InsetOptions, width: f64, height: f64, req: &InsetRequest, px_h:
     let (right, top) = (cx > 0.5, cy > 0.5);
     let x = if right { cx - width } else { cx };
     let mut y = if top { cy - height } else { cy };
-    if let Some(bar_opts) = req.scale_bar.as_ref().filter(|b| b.show && b.position == opts.position) {
-        if let Ok(proj) = Projection::new(&req.projection) {
-            let bar = scale_bar(&proj, req.view, bar_opts);
-            if let Some((frac, points)) = clearance(bar_opts, &bar) {
-                let lift = points / 72.0 * (req.px_per_pt * 72.0) / px_h.max(1.0);
-                y = if top { y.min(frac + lift - GAP - height) } else { y.max(frac + lift + GAP) };
-            }
-        }
+    if let Some(bar_opts) = req.scale_bar.as_ref().filter(|b| b.show && b.position == opts.position)
+        && let Ok(proj) = Projection::new(&req.projection)
+        && let Some((frac, points)) = clearance(bar_opts, &scale_bar(&proj, req.view, bar_opts))
+    {
+        let lift = points / 72.0 * (req.px_per_pt * 72.0) / px_h.max(1.0);
+        y = if top { y.min(frac + lift - GAP - height) } else { y.max(frac + lift + GAP) };
     }
     Rect { x, y, w: width, h: height }
 }
