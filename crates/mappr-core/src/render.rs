@@ -799,8 +799,9 @@ fn clip_cap(proj: &Projection, pts: &[LonLat], closed: bool) -> Vec<Vec<LonLat>>
 
 // ---- path output ----------------------------------------------------------
 
-/// Writes projected rings and lines as compact SVG path data, dropping
-/// vertices closer together than about half a pixel.
+/// Writes projected rings and lines as SVG path data. Vertices closer to
+/// the last one kept than 0.01 pt on screen are dropped: the drawing stays
+/// within that of every vertex PyMappr draws.
 pub struct PathWriter {
     /// What is kept: the view and a margin, so cut edges stay off screen.
     pub clip: Rect,
@@ -808,15 +809,19 @@ pub struct PathWriter {
     decimals: usize,
 }
 
+/// How far a dropped vertex may be from the drawn path, in points.
+pub const THIN_PT: f64 = 0.01;
+
 impl PathWriter {
     pub fn new(ctx: &MapContext) -> Self {
-        Self::for_view(ctx.view, ctx.px_width)
+        Self::for_view(ctx.view, ctx.px_width, ctx.px_per_pt)
     }
 
-    pub fn for_view(view: Rect, px_width: f64) -> Self {
+    pub fn for_view(view: Rect, px_width: f64, px_per_pt: f64) -> Self {
         let per_px = view.w / px_width.max(1.0);
-        let tolerance = per_px * 0.5;
-        let decimals = (1.0 - tolerance.log10().floor()).clamp(0.0, 9.0) as usize;
+        let tolerance = per_px * px_per_pt * THIN_PT;
+        // Coordinates to a tenth of the tolerance.
+        let decimals = (1.0 - tolerance.log10().floor()).clamp(0.0, 12.0) as usize;
         PathWriter { clip: view.grow(view.w.max(view.h) * 0.05 + per_px * 4.0), tolerance, decimals }
     }
 

@@ -297,6 +297,26 @@ fn insets_match_pymappr() {
         let target = c["box"]["target"].as_str().map(|t| if t == "main" { "map" } else { t });
         if got.box_.on != target {
             errors.push(format!("box {:?} vs {target:?}", got.box_.on));
+        } else if target.is_some() {
+            let (bx, by) = if target == Some("inset") { (lx, ly) } else { case.tol() };
+            let xs = c["box"]["x"].as_array().unwrap();
+            let ys = c["box"]["y"].as_array().unwrap();
+            let pts = &got.box_.points;
+            if pts.len() != xs.len() {
+                errors.push(format!("box has {} points, want {}", pts.len(), xs.len()));
+            }
+            for (i, p) in pts.iter().enumerate().take(xs.len()) {
+                let want = (xs[i].as_f64(), ys[i].as_f64().map(|y| -y));
+                let ok = match (p, want) {
+                    (Some(p), (Some(x), Some(y))) => (p[0] - x).abs() <= bx && (p[1] - y).abs() <= by,
+                    (None, (None, _)) | (None, (_, None)) => true,
+                    _ => false,
+                };
+                if !ok {
+                    errors.push(format!("box point {i}: {p:?} vs {want:?}"));
+                    break;
+                }
+            }
         }
         if !errors.is_empty() {
             failures.push(format!("{} {}: {}", case.label(), c["options"]["region"], errors.join("; ")));

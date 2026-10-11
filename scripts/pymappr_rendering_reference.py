@@ -123,20 +123,33 @@ def tick_cases():
 
 def label_cases():
     cases = []
-    for projection, origin, extent, keys, capitals in [
-            ("Equirectangular", None, "World", ["countries", "cities"], False),
+    for projection, origin, extent, keys, capitals, zoom in [
+            ("Equirectangular", None, "World", ["countries", "cities"], False, None),
             ("Robinson", None, "Europe",
-             ["countries", "states", "cities", "lakes", "rivers"], False),
-            ("Lambert: Europe", None, "Europe", ["countries", "cities"], False),
+             ["countries", "states", "cities", "lakes", "rivers"], False, None),
+            ("Lambert: Europe", None, "Europe", ["countries", "cities"], False, None),
             ("Equirectangular", None, ALPS,
              ["countries", "states", "cities", "airports", "ports", "lakes",
-              "rivers", "regions"], False),
+              "rivers", "regions"], False, None),
             ("Mercator", None, "South America",
-             ["countries", "cities", "regions", "timezones"], True),
+             ["countries", "cities", "regions", "timezones"], True, None),
             ("Equirectangular", None, LANCASTER,
-             ["states", "counties", "cities"], False),
-            ("Mercator", None, FIJI, ["countries", "cities"], False)]:
+             ["states", "counties", "cities"], False, None),
+            ("Mercator", None, FIJI, ["countries", "cities"], False, None),
+            ("Globe (Orthographic)", (20.0, 45.0), "World",
+             ["countries", "cities", "lakes"], False, 3.0),
+            ("Lambert Azimuthal (custom)", (-178.0, -17.0), FIJI,
+             ["countries", "states", "cities"], False, None),
+            ("Natural Earth", None, "World",
+             ["countries", "cities", "lakes", "rivers", "regions",
+              "timezones"], False, None),
+            ("Winkel Tripel", None, "Asia",
+             ["countries", "states", "cities", "airports", "ports"], False, None),
+            ("Lambert: S. America", None, "South America",
+             ["countries", "states", "cities", "rivers"], True, None)]:
         r = renderer(projection, origin, extent)
+        if zoom:
+            r.zoom(zoom)
         r.set_capitals_only(capitals)
         for key in keys:
             r.set_labels(key, True)
@@ -157,12 +170,14 @@ def marker_cases():
             ("Equirectangular", "Europe", ["cities", "airports", "ports"], False),
             ("Robinson", "Africa", ["cities"], True),
             ("Lambert: Europe", "Europe", ["cities"], False),
-            ("Mercator", FIJI, ["cities", "ports"], False)]:
-        r = renderer(projection, None, extent)
+            ("Mercator", FIJI, ["cities", "ports"], False),
+            ("Lambert: Asia", "Asia", ["cities", "airports"], True),
+            ("Globe (Orthographic)", "World", ["cities", "ports"], False)]:
+        r = renderer(projection, (20.0, 45.0) if "Globe" in projection else None, extent)
         r.set_capitals_only(capitals)
         for key in keys:
             r.set_point_layer(key, True)
-        case = frame(r, projection, None, extent)
+        case = frame(r, projection, (20.0, 45.0) if "Globe" in projection else None, extent)
         case["keys"] = keys
         case["capitals_only"] = capitals
         # Only the markers on screen (and a 2% margin): PyMappr draws all

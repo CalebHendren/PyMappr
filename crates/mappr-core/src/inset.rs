@@ -55,6 +55,10 @@ pub struct InsetBox {
     /// "inset", "map" or none.
     pub on: Option<&'static str>,
     pub d: String,
+    /// The box's points before thinning, in the SVG coordinates of the
+    /// map it is drawn on (`None` where the projection has no point).
+    #[serde(skip)]
+    pub points: Vec<Option<[f64; 2]>>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -210,17 +214,17 @@ pub fn render_inset(basemap: &Basemap, req: &InsetRequest) -> Result<RenderedIns
                 .collect();
             let mut d = String::new();
             PathWriter::new(&ctx).write_gappy(&mut d, &pts);
-            InsetBox { on: Some("inset"), d }
+            InsetBox { on: Some("inset"), d, points: pts }
         }
         Some(_) => {
             let [lon0, lon1, lat0, lat1] = region;
             let pts: Vec<_> =
                 box_ring(lon0, lon1, lat0, lat1).into_iter().map(|[lon, lat]| svg(main.forward_unclamped(lon, lat))).collect();
             let mut d = String::new();
-            PathWriter::for_view(req.view, req.px_width).write_gappy(&mut d, &pts);
-            InsetBox { on: Some("map"), d }
+            PathWriter::for_view(req.view, req.px_width, req.px_per_pt).write_gappy(&mut d, &pts);
+            InsetBox { on: Some("map"), d, points: pts }
         }
-        None => InsetBox { on: None, d: String::new() },
+        None => InsetBox { on: None, d: String::new(), points: Vec::new() },
     };
     let points = if opts.points {
         req.points.iter().map(|&[lon, lat]| svg(proj.forward_unclamped(lon, lat))).collect()
