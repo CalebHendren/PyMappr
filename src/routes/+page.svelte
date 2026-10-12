@@ -44,7 +44,8 @@
   let manual = $state<{ index: number | null } | null>(null);
   let combining = $state(false);
   let editingRows = $state(false);
-  let codeOpen = $state(false);
+  /** The code export dialog's input, built once when it opens. */
+  let codeOpen = $state<ReturnType<typeof codeInput> | null>(null);
   let asking = $state<{ title: string; initial: string; resolve: (name: string | null) => void } | null>(null);
 
   // PyMappr's symbology: point styles, legend rows, warnings.
@@ -102,7 +103,7 @@
       store.setStatus(`Updated ${result.legend}.`);
     } else {
       store.addEntry(manualEntry(result, parsed));
-      store.setStatus(`Added ${parsed.rows.length} typed-in points.`);
+      store.setStatus(`Added ${parsed.rows.length} typed-in ${parsed.rows.length === 1 ? "point" : "points"}.`);
     }
     if (parsed.skipped.length)
       notices = [...notices, { title: "Some lines skipped", lines: parsed.skipped.slice(0, 12), more: Math.max(0, parsed.skipped.length - 12) }];
@@ -214,7 +215,7 @@
         { label: "Manual entry…", shortcut: "Ctrl+M", action: () => (manual = { index: null }) },
         { separator: true },
         { label: "Save map as…", shortcut: "Ctrl+E", action: () => (saving = true), disabled: !store.svgEl },
-        { label: "Export map as code (Python/R)…", action: () => (codeOpen = true), disabled: !store.doc.datasets.length },
+        { label: "Export map as code (Python/R)…", action: () => (codeOpen = codeInput()), disabled: !store.doc.datasets.length },
         { separator: true },
         { label: "Download map data…", action: () => (downloading = true) },
         { separator: true },
@@ -298,7 +299,7 @@
       </DataTab>
     {/snippet}
     {#snippet legend()}<LegendTab onCustomize={() => (editingRows = true)} />{/snippet}
-    {#snippet map()}<MapTab onSaveMap={() => (saving = true)} onExportCode={() => (codeOpen = true)} />{/snippet}
+    {#snippet map()}<MapTab onSaveMap={() => (saving = true)} onExportCode={() => (codeOpen = codeInput())} />{/snippet}
     {#snippet layers()}<LayersTab onChooseDataDir={chooseDataDir} onDownloadData={() => (downloading = true)} />{/snippet}
     {#snippet labels()}<LabelsTab />{/snippet}
   </Sidebar>
@@ -391,7 +392,7 @@
 {/if}
 
 {#if codeOpen}
-  <CodeExport input={codeInput()} getMapImage={mapImage} onClose={() => (codeOpen = false)} />
+  <CodeExport input={codeOpen} getMapImage={mapImage} onClose={() => (codeOpen = null)} />
 {/if}
 
 {#if asking}
