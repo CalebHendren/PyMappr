@@ -3,16 +3,23 @@
 RustyMappr is a Rust + Tauri 2 + Svelte 5 + Tailwind v4 + TypeScript port of PyMappr
 (`C:\PyCharm\PyMappr`). It turns species locality tables into publication distribution maps.
 
-## Git: local repo, no remote
+## Git: the `rustymappr` branch of CalebHendren/PyMappr — always open a PR
 
-- **Never commit straight to `main`.** Work on a branch (`feature/…`, `fix/…`, or a
-  version-named branch). Do not mention Claude or Anthropic in branch names. The owner merges.
-- There is no `main` yet: work so far is on `feature/proof-of-concept`, then `feature/full-port`.
-  Branch from the owner's current base branch; creating `main` is the owner's call.
-- **Never push anywhere.** There is no remote. Do not add one; creating a remote is the owner's call.
-- Parallel work lives in git worktrees under `C:\PyCharm\RustyMappr-ws\` (`ws/rendering`,
-  `ws/symbology`, `ws/codegen`). Do not rewrite or delete another workstream's branch.
+- RustyMappr is the long-lived `rustymappr` branch of the PyMappr repository
+  (`CalebHendren/PyMappr`, public). PyMappr is on `main` and MiniMappr on `minimappr`; each app
+  has its own history. `C:\PyCharm\PyMappr`, `C:\PyCharm\MiniMappr` and `C:\PyCharm\RustyMappr`
+  are worktrees of that one repository.
+- **Never push directly to `rustymappr`, `main` or `minimappr`.** This holds even if the owner
+  says "just push it". For any change:
+  1. Branch off the latest `origin/rustymappr` (`git fetch` first; `feature/…`, `fix/…` or a
+     version-named branch). Do not mention Claude or Anthropic in branch names.
+  2. Commit on that branch, push the branch, and open a PR with
+     `gh pr create --base rustymappr`.
+  3. Stop and hand back the PR URL. The owner reviews and merges.
+- A RustyMappr change never targets `main` or `minimappr`, and never merges their histories.
 - Never rewrite history on a branch the owner may have merged or based work on.
+- Parallel work may use extra worktrees (for example under `C:\PyCharm\RustyMappr-ws\`). Do not
+  rewrite or delete another workstream's branch.
 
 ## No Claude / Anthropic attribution — ever
 
