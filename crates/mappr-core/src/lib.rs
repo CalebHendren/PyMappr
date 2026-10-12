@@ -17,6 +17,7 @@ pub mod raster;
 pub mod regions;
 pub mod render;
 pub mod table;
+pub mod text;
 pub mod view;
 
 /// PyMappr's checkout, for tests that use its sample data and map data:

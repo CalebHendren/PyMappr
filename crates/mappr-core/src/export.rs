@@ -37,7 +37,7 @@ pub fn pixel_width(width_cm: f64, dpi: f64) -> u32 {
 /// The DejaVu family, matplotlib's fonts (and so PyMappr's), compiled in so
 /// exports render map and legend text exactly as the screen does on any
 /// machine: Sans for the map, Serif and Sans Mono for the legend's choices.
-const MAP_FONTS: [&[u8]; 12] = [
+pub(crate) const MAP_FONTS: [&[u8]; 12] = [
     include_bytes!("../fonts/DejaVuSans.ttf"),
     include_bytes!("../fonts/DejaVuSans-Bold.ttf"),
     include_bytes!("../fonts/DejaVuSans-Oblique.ttf"),
