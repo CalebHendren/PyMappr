@@ -6,16 +6,27 @@ legend setting is declared once in ``LEGEND_CONTROLS`` and has to line up
 with a control in the markup, with the code that reads it, and with the
 generated ``index.html``. A mismatch there is silent in the browser - the
 control simply does nothing - so it is worth catching here.
+
+Many checks compare MiniMappr with PyMappr itself, which lives on the
+repository's ``main`` branch: they look for it in ``PYMAPPR_DIR``, else in a
+``PyMappr`` worktree beside this one, and skip when it is not there.
 """
 
 from __future__ import annotations
 
+import os
 import re
+import sys
 from pathlib import Path
 
 import pytest
 
 ROOT = Path(__file__).resolve().parent.parent
+# PyMappr's checkout (the main branch), for the checks against its code.
+PYMAPPR = Path(os.environ.get("PYMAPPR_DIR") or ROOT.parent / "PyMappr")
+if (PYMAPPR / "pymappr").is_dir():
+    sys.path.insert(0, str(PYMAPPR))
+
 APP = ROOT / "minimappr" / "app"
 BODY = ROOT / "minimappr" / "body.html"
 STATE = APP / "30-styles-state.js"
@@ -276,7 +287,7 @@ def test_every_pymappr_projection_is_offered(app_js):
 
 def test_every_pymappr_grid_spacing_is_offered(body):
     # The control panel imports Tk, so its table is read as text.
-    tables = ROOT / "pymappr" / "ui" / "control_panel" / "tables.py"
+    tables = PYMAPPR / "pymappr" / "ui" / "control_panel" / "tables.py"
     source = tables.read_text(encoding="utf-8")
     # The labels hold "\N{DEGREE SIGN}", so the table ends at a brace that
     # closes a line, not at the first one.
@@ -289,7 +300,7 @@ def test_every_pymappr_grid_spacing_is_offered(body):
 def test_publication_style_matches_pymappr(app_js):
     from pymappr.styling.legend import PUBLICATION_LEGEND, LegendOptions
 
-    source = (ROOT / "pymappr" / "handlers" / "presets.py").read_text(
+    source = (PYMAPPR / "pymappr" / "handlers" / "presets.py").read_text(
         encoding="utf-8")
     dpi = re.search(r'PUBLICATION_DPI = "(\d+)"', source).group(1)
     assert _js_value(app_js, "PUBLICATION_DPI") == float(dpi)
@@ -373,7 +384,7 @@ def test_map_style_matches_pymappr(app_js):
     assert _js_value(app_js, "SCALE_FONT") == ScaleBarOptions().fontsize
     assert CompassOptions().size == 1.0
     # The grid and tick settings are literals in renderer/view.py.
-    view = (ROOT / "pymappr" / "renderer" / "view.py").read_text(encoding="utf-8")
+    view = (PYMAPPR / "pymappr" / "renderer" / "view.py").read_text(encoding="utf-8")
     grid = re.search(r'self\.ax\.grid\(True, color="(#\w+)", linewidth=([\d.]+), '
                      r'alpha=([\d.]+)\)', view)
     assert grid, "grid style not found in view.py"
@@ -388,7 +399,7 @@ def test_map_style_matches_pymappr(app_js):
 
 def test_ocean_starts_off_as_in_pymappr(body):
     # PyMappr's layers tab starts the ocean on "none".
-    tab = (ROOT / "pymappr" / "ui" / "control_panel" / "layers_tab.py").read_text(
+    tab = (PYMAPPR / "pymappr" / "ui" / "control_panel" / "layers_tab.py").read_text(
         encoding="utf-8")
     assert 'self.ocean_var = tk.StringVar(value="none")' in tab
     on = re.search(r'<button data-ocean="(\w+)" class="on">', body)
