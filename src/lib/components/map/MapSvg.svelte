@@ -22,7 +22,10 @@
   import type { Snippet } from "svelte";
   import type { Rect, RenderedInset, RenderedMap, ScaleBar } from "$lib/api";
   import type { Figure } from "$lib/layout";
-  import { mapToFigure } from "$lib/layout";
+  import { mapToFigure, pxPerUnit } from "$lib/layout";
+  import { compassArrow, compassLayout } from "$lib/compass";
+  import { markerPx, placeText, snapPx, textShape } from "$lib/mpltext.svelte";
+  import MplText from "./MplText.svelte";
   import type { CompassOptions, MapSettings } from "$lib/model";
   import { markerPath } from "$lib/markers";
   import {
@@ -37,6 +40,8 @@
     MAP_FONT,
     NE_MARKERS,
     PORTRAIT_MAT,
+    SCALE_BAR,
+    TICK,
     WATER,
   } from "$lib/styles";
 
@@ -79,9 +84,8 @@
   }: Props = $props();
 
   const pt = $derived(fig.perPt);
-  // DejaVu Sans's typo ascender and descender per em, as matplotlib lays text out.
-  const ASCENT = 1556 / 2048;
-  const DESCENT = 492 / 2048;
+  /** Raster pixels per figure unit. */
+  const px = $derived(pxPerUnit(fig));
   const box = $derived(fig.box);
   /** Map units per figure unit. */
   const k = $derived(view.w / box.w);
@@ -118,22 +122,62 @@
   }
 
   const toFig = (x: number, y: number) => mapToFigure(view, box, x, y);
+
+  /** A straight-edged shape's coordinate snapped as Agg snaps it (vector
+   * exports are left alone). `width` is the stroke in points. */
+  const snap = (v: number, width: number) => (fig.vector ? v : snapPx(v * px, width * pt * px) / px);
+  const snapRect = (r: Rect, width: number) => {
+    const x0 = snap(r.x, width);
+    const y0 = snap(r.y, width);
+    return { x: x0, y: y0, w: snap(r.x + r.w, width) - x0, h: snap(r.y + r.h, width) - y0 };
+  };
+
+  /** A tick: matplotlib draws it as a marker, stamped at the nearest pixel
+   * corner with its own straight path snapped; (dx, dy) is its far end in
+   * points from the spine. */
+  function tickMark(x: number, y: number, dx: number, dy: number) {
+    if (fig.vector) return { x1: x, y1: y, x2: x + dx * pt, y2: y + dy * pt };
+    const [ox, oy] = markerPx(x * px, y * px);
+    const w = TICK.width * pt * px;
+    const end = (d: number) => snapPx(d * pt * px, w);
+    return { x1: (ox + snapPx(0, w)) / px, y1: (oy + snapPx(0, w)) / px, x2: (ox + end(dx)) / px, y2: (oy + end(dy)) / px };
+  }
   const markerR = (area: number) => (Math.sqrt(area) / 2) * pt;
 
   // ---- compass -------------------------------------------------------------
   const compass = $derived.by(() => {
     const o: CompassOptions = settings.compass_options;
     if (!o.show) return null;
-    const size = o.size || 1;
-    const reach = 0.07 * size * box.h;
-    const pad = 0.025;
-    const right = o.position.includes("right");
-    const upper = o.position.includes("upper");
-    const x = right ? box.x + box.w * (1 - pad) - 6 * pt * size : box.x + box.w * pad + 6 * pt * size;
-    const nSize = (o.style === "arrow" ? 11 : 10) * size * pt;
-    // Top corner: the tip is at the anchor; bottom corner: the N sits on it.
-    const tipY = upper ? box.y + box.h * pad : box.y + box.h * (1 - pad) - nSize * 0.5 - reach - nSize;
-    return { o, size, x, tipY, reach, nSize };
+    const c = compassLayout(o);
+    // PyMappr's coordinates: axes fractions, then a shift and lift in points.
+    const at = (fx: number, fy: number): [number, number] => [box.x + fx * box.w + c.shiftPt * pt, box.y + (1 - fy) * box.h - c.liftPt * pt];
+    const font = { size: c.fontsize, bold: true, italic: false, family: "" };
+    if (c.triangle) {
+      const base = c.labelY + 0.02 * c.size;
+      const tri = [at(c.x, c.top), at(c.x - c.half, base), at(c.x + c.half, base)];
+      return { c, font, label: at(c.x, c.labelY), tri, arrow: null };
+    }
+    const label = at(c.x, c.labelY);
+    const shape = textShape("N", font, fig.dpi, fig.vector ? "path" : "agg");
+    if (!shape) return { c, font, label, tri: null, arrow: null };
+    // The arrow in canvas pixels, y up, as matplotlib computes it.
+    const H = fig.h * px;
+    const up = ([x, y]: [number, number]): [number, number] => [x * px, H - y * px];
+    const down = ([x, y]: [number, number]) => `${x / px} ${(H - y) / px}`;
+    const tb = placeText(shape, c.fontsize, fig.dpi, "center", "center").box;
+    const [lx, ly] = up(label);
+    const arrow = compassArrow([lx, ly], up(at(c.x, c.top)), [lx + tb.x, ly - tb.y - tb.h, lx + tb.x + tb.w, ly - tb.y], fig.dpi / 72, c.size, c.fontsize);
+    return {
+      c,
+      font,
+      label,
+      tri: null,
+      arrow: {
+        shaft: `M${down(arrow.shaft[0])}Q${down(arrow.shaft[1])} ${down(arrow.shaft[2])}`,
+        head: `M${down(arrow.head[0])}L${down(arrow.head[1])}L${down(arrow.head[2])}Z`,
+        width: arrow.lineWidth / px,
+      },
+    };
   });
 
   // ---- inset ---------------------------------------------------------------
@@ -234,124 +278,87 @@
       {@const s = LABEL_STYLES[l.layer] ?? LABEL_STYLES.states}
       {@const off = labelOffsets[`${l.layer}|${l.text}`] ?? [0, 0]}
       {@const [fx, fy] = toFig(l.x + off[0], l.y + off[1])}
-      {@const size = s.size * l.fontScale * pt}
-      <!-- matplotlib places the text box from DejaVu's ascent and descent. -->
-      <text
+      <MplText
+        {fig}
+        text={l.text}
         x={fx}
-        y={l.va === "bottom" ? fy - DESCENT * size : fy + ((ASCENT - DESCENT) / 2) * size}
-        data-anchor="{fx},{fy}"
-        font-size={size}
-        font-weight={s.bold ? "bold" : "normal"}
-        font-style={s.italic ? "italic" : "normal"}
-        text-anchor="middle"
-        fill={s.color}
-        stroke={LABEL_HALO.color}
-        stroke-opacity={LABEL_HALO.alpha}
-        stroke-width={LABEL_HALO.width * pt}
-        stroke-linejoin="round"
-        paint-order="stroke"
-        data-label="{l.layer}|{l.text}">{l.text}</text
-      >
+        y={fy}
+        font={{ size: s.size * l.fontScale, bold: !!s.bold, italic: !!s.italic, family: "" }}
+        color={s.color}
+        ha="center"
+        va={l.va === "bottom" ? "bottom" : "center"}
+        halo={LABEL_HALO}
+        data-label="{l.layer}|{l.text}"
+      />
     {/each}
   </g>
 
   {#if !globe}
-    <rect x={box.x} y={box.y} width={box.w} height={box.h} fill="none" stroke={FRAME.color} stroke-width={FRAME.width * pt} />
+    <!-- The spines: straight lines, snapped to the pixel grid as Agg snaps them. -->
+    {@const fb = snapRect(box, FRAME.width)}
+    <rect x={fb.x} y={fb.y} width={fb.w} height={fb.h} fill="none" stroke={FRAME.color} stroke-width={FRAME.width * pt} />
   {/if}
 
   {#if showTicks && map.graticule}
-    {@const fs = GRATICULE.tickSize * pt}
-    {@const tick = 2.5 * pt}
-    {@const gap = (2.5 + 3.5) * pt}
-    <g font-size={fs} fill="#000000">
-      {#each map.graticule.xTicks as t, i (i)}
-        {@const fx = box.x + ((t.pos - view.x) / view.w) * box.w}
-        <line x1={fx} x2={fx} y1={box.y + box.h} y2={box.y + box.h + tick} stroke="#000000" stroke-width={FRAME.width * pt} />
-        <!-- Tick labels sit the tick length plus matplotlib's 3.5 pt pad away. -->
-        <text x={fx} y={box.y + box.h + gap + ASCENT * fs} text-anchor="middle" data-anchor="{fx},{box.y + box.h + gap}">{t.text}</text>
-      {/each}
-      {#each map.graticule.yTicks as t, i (i)}
-        {@const fy = box.y + ((t.pos - view.y) / view.h) * box.h}
-        <line x1={box.x - tick} x2={box.x} y1={fy} y2={fy} stroke="#000000" stroke-width={FRAME.width * pt} />
-        <text x={box.x - gap} y={fy + ((ASCENT - DESCENT) / 2) * fs} text-anchor="end" data-anchor="{box.x - gap},{fy}">{t.text}</text>
-      {/each}
-    </g>
+    {@const tickFont = { size: GRATICULE.tickSize, bold: false, italic: false, family: "" }}
+    {@const gap = (TICK.length + TICK.pad) * pt}
+    {#each map.graticule.xTicks as t, i (i)}
+      {@const fx = box.x + ((t.pos - view.x) / view.w) * box.w}
+      {@const m = tickMark(fx, box.y + box.h, 0, TICK.length)}
+      <line x1={m.x1} x2={m.x2} y1={m.y1} y2={m.y2} stroke="#000000" stroke-width={TICK.width * pt} />
+      <!-- Tick labels sit the tick length plus matplotlib's 3.5 pt pad away. -->
+      <MplText {fig} text={t.text} x={fx} y={box.y + box.h + gap} font={tickFont} color="#000000" ha="center" va="top" />
+    {/each}
+    {#each map.graticule.yTicks as t, i (i)}
+      {@const fy = box.y + ((t.pos - view.y) / view.h) * box.h}
+      {@const m = tickMark(box.x, fy, -TICK.length, 0)}
+      <line x1={m.x1} x2={m.x2} y1={m.y1} y2={m.y2} stroke="#000000" stroke-width={TICK.width * pt} />
+      <MplText {fig} text={t.text} x={box.x - gap} y={fy} font={tickFont} color="#000000" ha="right" va="center_baseline" />
+    {/each}
   {/if}
 
   {#if scaleBar && settings.scale_bar.show}
     {@const sb = settings.scale_bar}
-    {@const barH = 0.011 * box.h}
-    <g font-size={sb.fontsize * pt} fill={sb.color} data-drag="scalebar">
+    <!-- PyMappr's bars and labels are placed in axes fractions. -->
+    {@const fy = (f: number) => box.y + (1 - f) * box.h}
+    <g data-drag="scalebar">
       {#each scaleBar.bars as bar, bi (bi)}
-        {@const x0 = box.x + bar.x * box.w}
-        {@const w = bar.width * box.w}
-        {@const y0 = box.y + (1 - bar.y) * box.h - barH}
-        {#if sb.style === "segmented"}
-          {#each Array.from({ length: bar.segments }) as _, si (si)}
-            <rect
-              x={x0 + (w / bar.segments) * si}
-              y={y0}
-              width={w / bar.segments}
-              height={barH}
-              fill={si % 2 === 0 ? sb.color : "#ffffff"}
-              stroke={sb.color}
-              stroke-width={0.8 * pt}
-            />
-          {/each}
-        {:else}
-          <rect x={x0} y={y0} width={w} height={barH} fill={sb.color} stroke={sb.color} stroke-width={0.8 * pt} />
-        {/if}
-        {@const above = bar.units === "km" || scaleBar.bars.length === 1}
-        <text
-          x={x0 + w / 2}
-          y={above ? y0 - 0.012 * box.h + sb.fontsize * pt * 0.2 : y0 + barH + 0.012 * box.h + sb.fontsize * pt * 0.7}
-          text-anchor="middle"
-          stroke="#ffffff"
-          stroke-opacity={LABEL_HALO.alpha}
-          stroke-width={LABEL_HALO.width * pt}
-          paint-order="stroke">{bar.label}</text
-        >
+        {#each Array.from({ length: sb.style === "segmented" ? bar.segments : 1 }) as _, si (si)}
+          {@const n = sb.style === "segmented" ? bar.segments : 1}
+          {@const r = snapRect(
+            { x: box.x + (bar.x + (bar.width * si) / n) * box.w, y: fy(bar.y + SCALE_BAR.height), w: (bar.width / n) * box.w, h: SCALE_BAR.height * box.h },
+            SCALE_BAR.edge,
+          )}
+          <rect x={r.x} y={r.y} width={r.w} height={r.h} fill={si % 2 === 0 ? sb.color : "#ffffff"} stroke={sb.color} stroke-width={SCALE_BAR.edge * pt} />
+        {/each}
+        {@const above = bi === 0}
+        <MplText
+          {fig}
+          text={bar.label}
+          x={box.x + (bar.x + bar.width / 2) * box.w}
+          y={fy(above ? bar.y + SCALE_BAR.height + SCALE_BAR.labelGap : bar.y - SCALE_BAR.labelGap)}
+          font={{ size: sb.fontsize, bold: false, italic: false, family: "" }}
+          color={sb.color}
+          ha="center"
+          va={above ? "bottom" : "top"}
+          halo={LABEL_HALO}
+        />
       {/each}
     </g>
   {/if}
 
   {#if compass}
-    {@const c = compass}
-    {@const col = c.o.color}
-    {#if c.o.style === "arrow"}
-      {@const tailY = c.tipY + c.reach}
-      <g>
-        <line x1={c.x} x2={c.x} y1={tailY} y2={c.tipY + c.nSize * 0.55} stroke={col} stroke-width={1.4 * c.size * pt} />
-        <path
-          d="M{c.x} {c.tipY} L{c.x - c.nSize * 0.28} {c.tipY + c.nSize * 0.6} L{c.x + c.nSize * 0.28} {c.tipY + c.nSize * 0.6} Z"
-          fill={col}
-        />
-        <text
-          x={c.x}
-          y={tailY + c.nSize}
-          font-size={c.nSize}
-          font-weight="bold"
-          text-anchor="middle"
-          fill={col}
-          stroke="#ffffff"
-          stroke-width={LABEL_HALO.width * pt}
-          paint-order="stroke">N</text
-        >
-      </g>
-    {:else}
-      {@const half = 0.016 * c.size * box.w}
-      <g>
-        <path
-          d="M{c.x} {c.tipY} L{c.x - half} {c.tipY + c.reach * 0.75} L{c.x + half} {c.tipY + c.reach * 0.75} Z"
-          fill={col}
-          stroke="#ffffff"
-          stroke-width={0.8 * c.size * pt}
-        />
-        <text x={c.x} y={c.tipY + c.reach * 0.75 + 0.02 * c.size * box.h + c.nSize} font-size={c.nSize} font-weight="bold" text-anchor="middle" fill={col}
-          >N</text
-        >
-      </g>
-    {/if}
+    {@const k = compass}
+    <g data-compass="true">
+      {#if k.tri}
+        <path d="M{k.tri[0].join(' ')}L{k.tri[1].join(' ')}L{k.tri[2].join(' ')}Z" fill={settings.compass_options.color} stroke="#ffffff" stroke-width={0.8 * k.c.size * pt} stroke-linejoin="miter" />
+      {/if}
+      {#if k.arrow}
+        <path d={k.arrow.shaft} fill="none" stroke={settings.compass_options.color} stroke-width={k.arrow.width} stroke-linecap="butt" />
+        <path d={k.arrow.head} fill={settings.compass_options.color} stroke={settings.compass_options.color} stroke-width={k.arrow.width} stroke-linejoin="miter" />
+      {/if}
+      <MplText {fig} text="N" x={k.label[0]} y={k.label[1]} font={k.font} color={settings.compass_options.color} ha="center" va="center" halo={LABEL_HALO} />
+    </g>
   {/if}
 
   {#if inset && insetBox}

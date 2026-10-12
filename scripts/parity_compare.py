@@ -8,7 +8,8 @@ Both sides write the same files into their own folder (PyMappr through
 
 Checks, in order of strictness:
 
-    geometry  axes boxes, texts (content, anchor, size, colour, weight, style),
+    geometry  axes boxes, texts (content, anchor, box, size, colour, weight,
+              style),
               markers (position, size, face, edge) and legend frames must match
               within TOL_PT points (default 0.01 pt);
     pixels    the PNGs are compared pixel by pixel; differences are allowed only
@@ -70,6 +71,11 @@ def compare_geometry(a, b):
         for key in ("x", "y"):
             if not close(t[key], match[key]):
                 problems.append(f"text {t['text']!r} {key} {t[key]:.3f} vs {match[key]:.3f}")
+        if t.get("box") and match.get("box") and not all(
+                close(p, q) for p, q in zip(t["box"], match["box"])):
+            problems.append(f"text {t['text']!r} box "
+                            f"{[round(v, 3) for v in t['box']]} vs "
+                            f"{[round(v, 3) for v in match['box']]}")
         if not close(float(t.get("size") or 0), float(match.get("size") or 0), 0.001):
             problems.append(f"text {t['text']!r} size {t.get('size')} vs {match.get('size')}")
         for key in ("color", "weight", "style"):

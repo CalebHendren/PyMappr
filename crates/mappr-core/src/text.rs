@@ -17,6 +17,7 @@
 //! (`TextToPath`), which `Mode::Path` reproduces.
 
 use std::collections::HashMap;
+use std::sync::{Arc, Mutex, OnceLock};
 
 use harfrust::font::{BuiltinFontFuncs, FontFuncs};
 use harfrust::{ShapeOptions, ShaperData, UnicodeBuffer};
@@ -85,12 +86,9 @@ pub fn shape(text: &str, face: usize, size_pt: f64, dpi: f64, mode: Mode) -> Sha
         Mode::Agg => (ppem(size_pt, dpi), 1.0),
         Mode::Path => (PATH_FONT_SCALE as i64, size_pt * dpi / 72.0 / PATH_FONT_SCALE),
     };
-    let hinting = match mode {
-        Mode::Agg => HintingInstance::new(&outlines, Size::new(ppem as f32), LocationRef::default(), HintingOptions::default()).ok(),
-        Mode::Path => None,
-    };
+    let (hinting, cache) = cached(face, ppem, mode, &outlines);
     let metrics = font.glyph_metrics(Size::unscaled(), LocationRef::default());
-    let mut glyphs = GlyphSource { outlines: &outlines, metrics, hinting: hinting.as_ref(), ppem, upem, cache: HashMap::new() };
+    let mut glyphs = GlyphSource { outlines: &outlines, metrics, hinting: hinting.as_deref(), ppem, upem, cache };
 
     let shaper_data = ShaperData::new(&font);
     let shaper = shaper_data.shaper(&font).build();
@@ -163,12 +161,34 @@ struct GlyphSource<'a> {
     hinting: Option<&'a HintingInstance>,
     ppem: i64,
     upem: i64,
-    cache: HashMap<u32, std::rc::Rc<Glyph>>,
+    cache: Arc<Mutex<HashMap<u32, Arc<Glyph>>>>,
+}
+
+type GlyphCache = Arc<Mutex<HashMap<u32, Arc<Glyph>>>>;
+
+/// Hinting instances (running a face's font program is not free) and
+/// loaded glyphs, per face, ppem and mode.
+fn cached(face: usize, ppem: i64, mode: Mode, outlines: &OutlineGlyphCollection) -> (Option<Arc<HintingInstance>>, GlyphCache) {
+    type Entry = (Option<Arc<HintingInstance>>, GlyphCache);
+    static CACHE: OnceLock<Mutex<HashMap<(usize, i64, Mode), Entry>>> = OnceLock::new();
+    let mut map = CACHE.get_or_init(Default::default).lock().unwrap_or_else(|e| e.into_inner());
+    if map.len() > 64 {
+        map.clear();
+    }
+    map.entry((face, ppem, mode))
+        .or_insert_with(|| {
+            let hinting = match mode {
+                Mode::Agg => HintingInstance::new(outlines, Size::new(ppem as f32), LocationRef::default(), HintingOptions::default()).ok().map(Arc::new),
+                Mode::Path => None,
+            };
+            (hinting, Arc::default())
+        })
+        .clone()
 }
 
 impl GlyphSource<'_> {
-    fn get(&mut self, gid: GlyphId) -> std::rc::Rc<Glyph> {
-        if let Some(g) = self.cache.get(&gid.to_u32()) {
+    fn get(&mut self, gid: GlyphId) -> Arc<Glyph> {
+        if let Some(g) = self.cache.lock().unwrap_or_else(|e| e.into_inner()).get(&gid.to_u32()) {
             return g.clone();
         }
         let mut pen = Recorder::default();
@@ -188,8 +208,8 @@ impl GlyphSource<'_> {
         if self.hinting.is_none() {
             advance = self.unhinted_advance(gid);
         }
-        let glyph = std::rc::Rc::new(Glyph { cbox: pen.cbox(), commands: pen.commands, advance });
-        self.cache.insert(gid.to_u32(), glyph.clone());
+        let glyph = Arc::new(Glyph { cbox: pen.cbox(), commands: pen.commands, advance });
+        self.cache.lock().unwrap_or_else(|e| e.into_inner()).insert(gid.to_u32(), glyph.clone());
         glyph
     }
 

@@ -12,6 +12,7 @@
   import { withDefaults } from "$lib/model";
   import { insetMarks, marks } from "$lib/points";
   import { parseProject } from "$lib/project";
+  import { textPending, textSettled } from "$lib/mpltext.svelte";
   import { layerSettings, lonLats, projectionSpec } from "$lib/store.svelte";
   import { symbology } from "$lib/symbology";
 
@@ -37,31 +38,28 @@
     const b = fig.box;
     const axes = [{ box: [b.x, b.y, b.x + b.w, b.y + b.h], xlim: [view.x, view.x + view.w], ylim: [-(view.y + view.h), -view.y] }];
     if (insetRect && insetLimits) axes.push({ box: insetRect, xlim: insetLimits[0], ylim: insetLimits[1] });
-    const texts = [...svg.querySelectorAll("text")].filter((t) => t.textContent?.trim()).map((t) => {
-      const cs = getComputedStyle(t);
-      const anchor = t.getAttribute("data-anchor");
-      const [x, y] = anchor ? anchor.split(",").map(Number) : toFig(t, Number(t.getAttribute("x")), Number(t.getAttribute("y")));
-      const m = root.multiply(t.getScreenCTM()!);
-      const sizePx = parseFloat(cs.fontSize) * Math.hypot(m.a, m.b);
+    // Every drawn text carries its anchor, box and font (figure units).
+    const texts = [...svg.querySelectorAll("[data-text]")].map((el) => {
+      const [x, y] = el.getAttribute("data-anchor")!.split(",").map(Number);
+      const bb = el.getAttribute("data-box")?.split(",").map(Number);
       return {
-        text: t.textContent,
+        text: el.getAttribute("data-text"),
         x,
         y,
-        size: Math.round((sizePx / fig.perPt) * 1000) / 1000,
-        color: hex(cs.fill),
-        weight: cs.fontWeight === "700" || cs.fontWeight === "bold" ? "bold" : "normal",
-        style: cs.fontStyle === "italic" ? "italic" : "normal",
+        box: bb ? [bb[0], bb[1], bb[0] + bb[2], bb[1] + bb[3]] : null,
+        size: Number(el.getAttribute("data-size")),
+        color: hex(el.getAttribute("data-color")),
+        weight: el.getAttribute("data-weight"),
+        style: el.getAttribute("data-style"),
       };
     });
     const markers = [...svg.querySelectorAll("[data-mark]")].map((el) => {
       const [x, y, size, face, edge] = el.getAttribute("data-mark")!.split(",");
       return { x: Number(x), y: Number(y), size: Number(size), face: hex(face), edge: hex(edge) };
     });
-    const patches = [...svg.querySelectorAll(".legend > path")].slice(0, 1).map((p) => {
-      const bb = (p as SVGGraphicsElement).getBBox();
-      const [x0, y0] = toFig(p as SVGGraphicsElement, bb.x, bb.y);
-      const [x1, y1] = toFig(p as SVGGraphicsElement, bb.x + bb.width, bb.y + bb.height);
-      return { kind: "LegendFrame", box: [x0, y0, x1, y1] };
+    const patches = [...svg.querySelectorAll("[data-frame]")].map((p) => {
+      const [x, y, w, h] = p.getAttribute("data-frame")!.split(",").map(Number);
+      return { kind: "LegendFrame", box: [x, y, x + w, y + h] };
     });
     return { size: [W, H], axes, texts, markers, patches };
   }
@@ -131,6 +129,12 @@
       },
     });
     flushSync();
+    // Text shapes come from the backend; draw again until all have arrived.
+    for (let i = 0; i < 10; i++) {
+      await textSettled();
+      flushSync();
+      if (!textPending()) break;
+    }
     const svg = host.querySelector("svg") as SVGSVGElement;
     const b = fig.box;
     const insetRect = inset

@@ -5,6 +5,7 @@ import { flushSync, mount, unmount } from "svelte";
 import { api } from "./api";
 import Scene from "./components/map/Scene.svelte";
 import { hasTicks, printFigure, printPixels, type Figure } from "./layout";
+import { textPending, textSettled } from "./mpltext.svelte";
 import { insetMarks, marks as buildMarks } from "./points";
 import type { Symbology } from "./symbology";
 import { layerSettings, store } from "./store.svelte";
@@ -25,13 +26,15 @@ export function exportFigure(widthCm: number | null): Figure | null {
   return store.screenFig ? printFigure(store.screenFig, widthCm) : null;
 }
 
-/** Render the current map at print size and return its SVG text. */
-export async function exportSvg(widthCm: number | null, dpi: number, sym: Symbology): Promise<{ svg: string; px: { w: number; h: number } }> {
+/** Render the current map at print size and return its SVG text. Text is
+ * measured and drawn as matplotlib does at `dpi`; a `vector` export keeps
+ * it as editable text, laid out with matplotlib's vector metrics. */
+export async function exportSvg(widthCm: number | null, dpi: number, sym: Symbology, vector = false): Promise<{ svg: string; px: { w: number; h: number } }> {
   const styles = sym.points;
   const screen = store.screenFig;
   const view = store.view;
   if (!screen || !view || !store.map) throw new Error("There is no map to save yet.");
-  const fig = printFigure(screen, widthCm);
+  const fig = printFigure(screen, widthCm, vector ? 72 : dpi, vector);
   const px = printPixels(fig, dpi);
   const boxPx = (fig.box.w / 72) * dpi;
   // More data detail for a bigger export, as PyMappr's detail boost.
@@ -70,6 +73,12 @@ export async function exportSvg(widthCm: number | null, dpi: number, sym: Symbol
     },
   });
   flushSync();
+  // Text shapes come from the backend; draw again until all have arrived.
+  for (let i = 0; i < 10; i++) {
+    await textSettled();
+    flushSync();
+    if (!textPending()) break;
+  }
   const svg = target.querySelector("svg")!.outerHTML;
   unmount(scene);
   return { svg, px };

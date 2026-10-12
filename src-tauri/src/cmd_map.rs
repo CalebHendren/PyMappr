@@ -27,6 +27,7 @@ pub fn dispatch(core: &Arc<Core>, cmd: &str, args: &Value) -> Option<CmdResult> 
         "districts_fetch" => districts_fetch(core, args),
         "districts_remove" => districts_remove(core, args),
         "countries_in_view" => countries_in_view_cmd(core, args),
+        "text_shapes" => text_shapes(args),
         _ => return None,
     })
 }
@@ -168,4 +169,37 @@ fn countries_in_view_cmd(core: &Arc<Core>, args: &Value) -> CmdResult {
     let a: A = parse(args)?;
     let basemap = core.basemap()?;
     ok(countries_in_view(&basemap, &projection(&a.projection)?, a.view))
+}
+
+/// Text measured and outlined as matplotlib's renderer does (see
+/// `mappr_core::text`): width, height and descent in pixels at `dpi`, and
+/// the glyph outlines as SVG path data (y down, baseline origin).
+fn text_shapes(args: &Value) -> CmdResult {
+    use mappr_core::text::{Mode, face_index, shape};
+    #[derive(Deserialize)]
+    struct Item {
+        text: String,
+        family: usize,
+        bold: bool,
+        italic: bool,
+        size: f64,
+        dpi: f64,
+        /// "agg" or "path".
+        mode: String,
+    }
+    #[derive(Deserialize)]
+    struct A {
+        items: Vec<Item>,
+    }
+    let a: A = parse(args)?;
+    let out: Vec<Value> = a
+        .items
+        .iter()
+        .map(|i| {
+            let mode = if i.mode == "path" { Mode::Path } else { Mode::Agg };
+            let s = shape(&i.text, face_index(i.family, i.bold, i.italic), i.size, i.dpi, mode);
+            serde_json::json!({ "w": s.width, "h": s.height, "d": s.descent, "path": s.path })
+        })
+        .collect();
+    ok(out)
 }

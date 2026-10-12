@@ -153,6 +153,9 @@ export type LegendInputs = {
   clear?: LegendClearance | null;
   /** The point outline, which filled swatches share with the map. */
   pointEdge?: { color: string; width: number };
+  /** Raster pixels per point (an underline sits at least a pixel below its
+   * text); 100 dpi by default. */
+  pxPerPt?: number;
 };
 
 export type PlacedText = {
@@ -260,10 +263,10 @@ function textArea(measure: Measure, extent: FontExtent, text: string, font: Font
   return { w: m.width, h: Math.max(lp.height - lp.descent, a) + d, d, layoutH: a + d };
 }
 
-function underline(box: Rect, font: FontSpec): PlacedText["underline"] {
+function underline(box: Rect, font: FontSpec, pxPerPt: number): PlacedText["underline"] {
   // PyMappr strokes it a tenth of the text's height (at least a pixel)
   // below the text box, max(size / 11, 0.6) points thick.
-  const y = box.y + box.h + Math.max(box.h * 0.1, 0.72);
+  const y = box.y + box.h + Math.max(box.h * 0.1, 1 / pxPerPt);
   return { x1: box.x, x2: box.x + box.w, y, width: Math.max(font.size / 11, 0.6) };
 }
 
@@ -362,7 +365,7 @@ export function legendLayout(inputs: LegendInputs): LegendLayout | null {
   const placeText = (text: string, x0: number, top: number, area: ReturnType<typeof textArea>, font: FontSpec, color: string, under: boolean): PlacedText => {
     const baseline = top + (area.h - area.d);
     const textBox = { x: x0, y: baseline + area.d - area.layoutH, w: area.w, h: area.layoutH };
-    return { text, x: x0, y: baseline, font, color, box: textBox, underline: under ? underline(textBox, font) : null };
+    return { text, x: x0, y: baseline, font, color, box: textBox, underline: under ? underline(textBox, font, inputs.pxPerPt ?? 100 / 72) : null };
   };
 
   const title =

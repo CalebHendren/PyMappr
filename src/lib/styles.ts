@@ -98,6 +98,10 @@ export const GRATICULE = { color: "#787878", width: 0.4, alpha: 0.7, horizonWidt
 /** The map frame (matplotlib's axes spines). */
 export const FRAME = { color: "#000000", width: 0.8 };
 
+/** Graticule ticks (PyMappr: tick_params(length=2.5); matplotlib's 3.5 pt
+ * pad and 0.8 pt width). */
+export const TICK = { length: 2.5, pad: 3.5, width: 0.8 };
+
 /** The inset map's look. */
 export const INSET = { land: "#e3e3e3", lineScale: 0.6, pointScale: 0.3, frameWidth: 0.8, boxWidth: 1.2 };
 
@@ -328,3 +332,7 @@ export const LEGEND_SECTIONS: [string, boolean | null, LegendRow[]][] = [
     ],
   ],
 ];
+
+/** PyMappr's scale bar, in axes fractions (bar height, label gap) and
+ * points (outline). */
+export const SCALE_BAR = { height: 0.011, labelGap: 0.012, edge: 0.8 };

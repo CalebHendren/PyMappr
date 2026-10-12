@@ -6,7 +6,7 @@
   import type { DrawnLegend } from "$lib/legend";
   import type { LegendOptions, ScaleBarOptions } from "$lib/model";
   import Legend from "../legend/Legend.svelte";
-  import { DEJAVU_FONTS, type LegendClearance } from "../legend/layout";
+  import type { LegendClearance } from "../legend/layout";
   import type { Mark } from "./MapSvg.svelte";
 
   let {
@@ -48,5 +48,5 @@
 </script>
 
 <g data-legend="true" data-drag="legend" transform="translate({box.x} {box.y}) scale({fig.perPt})">
-  <Legend {legend} {options} {boxPt} {pointEdge} {pointsPt} {clear} fonts={DEJAVU_FONTS} />
+  <Legend {legend} {options} {boxPt} {fig} origin={{ x: box.x, y: box.y }} {pointEdge} {pointsPt} {clear} />
 </g>

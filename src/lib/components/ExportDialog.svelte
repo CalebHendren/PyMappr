@@ -44,7 +44,7 @@
     saving = true;
     error = null;
     try {
-      const { svg, px } = await exportSvg(widthCm, dpi, sym);
+      const { svg, px } = await exportSvg(widthCm, dpi, sym, VECTOR.includes(format));
       await api.exportMap(svg, format, px.w, dpi, path);
       store.setStatus(`Saved ${path}`);
       onClose();

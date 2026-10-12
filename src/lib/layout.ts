@@ -16,7 +16,18 @@ export type Figure = {
   box: Rect;
   /** Portrait maps leave a mat around a narrower box. */
   mat: boolean;
+  /** Raster pixels per inch: text is measured and snapped at this dpi, as
+   * matplotlib does when it draws at it. */
+  dpi: number;
+  /** A vector export: text stays editable text, laid out with matplotlib's
+   * vector (unhinted) metrics. */
+  vector?: boolean;
 };
+
+/** Raster pixels per figure unit. */
+export function pxPerUnit(fig: Figure): number {
+  return fig.dpi / (72 * fig.perPt);
+}
 
 /** Whether the graticule tick labels need gutters. */
 export function hasTicks(graticule: string, hideLabels: boolean, globe: boolean): boolean {
@@ -38,7 +49,7 @@ export function screenFigure(w: number, h: number, ticks: boolean, portrait: boo
       box = { ...box, y: box.y + (box.h - nh) / 2, h: nh };
     }
   }
-  return { w, h, perPt: SCREEN_DPI / 72, box, mat: portrait };
+  return { w, h, perPt: SCREEN_DPI / 72, box, mat: portrait, dpi: SCREEN_DPI };
 }
 
 /** PyMappr caps an exported figure at 25 cm tall. */
@@ -46,8 +57,9 @@ const MAX_HEIGHT_CM = 25;
 
 /** The printed figure, in points, for a print width in cm (null = as on
  * screen): the map box is scaled to fill the width while the gutters keep
- * their on-screen inches; portrait mats are cropped off. */
-export function printFigure(screen: Figure, widthCm: number | null): Figure {
+ * their on-screen inches; portrait mats are cropped off. `dpi` is the raster
+ * resolution it is drawn at (vector exports: 72, with `vector`). */
+export function printFigure(screen: Figure, widthCm: number | null, dpi = 72, vector = false): Figure {
   const ptPerScreenPx = 72 / SCREEN_DPI;
   // Gutters around the box, in points (screen px at 100 dpi -> inches -> pt).
   const left = screen.mat ? 0 : screen.box.x * ptPerScreenPx;
@@ -70,6 +82,8 @@ export function printFigure(screen: Figure, widthCm: number | null): Figure {
     perPt: 1,
     box: { x: left, y: top, w: boxW, h: boxH },
     mat: false,
+    dpi,
+    vector,
   };
 }
 
