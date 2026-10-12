@@ -194,39 +194,10 @@ seabirds, and orchids.
 ## MiniMappr (browser version)
 
 **MiniMappr** is a browser-only edition of PyMappr at
-[calebhendren.github.io/PyMappr](https://calebhendren.github.io/PyMappr/),
-served by GitHub Pages from [`index.html`](index.html). It covers the core
-workflow with nothing to install.
-
-![MiniMappr in the browser: Lemur catta, Eulemur fulvus and Propithecus verreauxi in Madagascar as a black-and-white publication figure with a 5° grid, scale bar and a globe locator inset](docs/images/minimappr.png)
-
-What it has:
-
-- Points from a CSV/TSV (with a column-mapping step), a pasted table, manual
-  entry, or click-to-place, in decimal degrees or DMS.
-- Group, color and symbol styling, with Combine columns and the filter bar.
-- The same projections: Equirectangular, Mercator, Robinson, Mollweide,
-  Natural Earth, Winkel Tripel, orthographic Globe, and regional and custom
-  Lambert.
-- The same legend options, scale bar, compass and grid.
-- An inset map: a locator (the country at the map's centre, the area around
-  it, a continent or the world) or a close-up of a custom area, with a box
-  linking it to the main map. The State/province region needs outlines
-  MiniMappr does not carry.
-- The one-click publication style, as PyMappr's Standard preset: black and
-  white, a plain italic legend, 17 cm wide at 600 DPI.
-- PyMappr's look: line widths, markers and text are set in points at the
-  print width, so the map on screen is the printed figure scaled down, and
-  the export comes out at that size whatever the window.
-- Export as PNG, JPEG, WebP, TIFF, PDF or SVG at the DPI you choose.
-- **Reset** in the header removes every dataset and puts all settings back to
-  their defaults, after asking first.
-
-What it leaves out: the ~30 Natural Earth layers, relief/Blue Marble
-basemaps, bathymetry, labels, Excel import, project files, and Python/R code
-export. The page is self-contained (D3, d3-geo-projection, topojson-client,
-and a simplified world outline are all inlined) and is kept out of the
-PyInstaller build.
+[calebhendren.github.io/PyMappr](https://calebhendren.github.io/PyMappr/). It
+covers the core workflow with nothing to install. Its source is on the
+[`minimappr`](https://github.com/CalebHendren/PyMappr/tree/minimappr) branch
+of this repository, which GitHub Pages serves.
 
 ## Development
 
@@ -235,7 +206,6 @@ python -m pytest tests/            # the test suite (a few tests need the map da
 python scripts/make_screenshots.py # regenerate the README map images
 python scripts/make_screenshots.py --out preview --all  # render check, more layers
 python scripts/make_app_screenshot.py  # the app screenshots (needs a display)
-python minimappr/build.py          # rebuild index.html from minimappr/
 ```
 
 Project layout:
@@ -263,7 +233,6 @@ Project layout:
 - `pymappr/ui/` - Tkinter dialogs, and `ui/control_panel/` for the tabbed
   control panel (one module per tab, plus its tables and widget builders)
 - `scripts/fetch_data.py` - downloads and prepares the bundled map data
-- `minimappr/` - MiniMappr source; `minimappr/build.py` generates `index.html`
 - `packaging/` - PyInstaller spec, Inno Setup script, Linux/Fedora/Arch packaging
 
 Building the release packages is automated by
@@ -293,7 +262,3 @@ and Marine ecoregions from [WWF/TNC MEOW](https://hub.arcgis.com/datasets/903c3a
 are CC-BY licensed and fetched by `scripts/fetch_data.py`. If a source is
 unavailable, that layer is skipped and the rest of PyMappr works as usual.
 
-MiniMappr (the browser version) uses a simplified, Natural Earth-derived world
-outline from [world-atlas](https://github.com/topojson/world-atlas) (public
-domain), rendered with [D3](https://d3js.org) and d3-geo-projection and decoded
-with topojson-client (all ISC licensed).
