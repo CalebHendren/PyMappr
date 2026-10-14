@@ -45,19 +45,37 @@ def render_pymappr(project, out):
                     "render", str(project), str(out)], check=True, capture_output=True)
 
 
-def render_rusty(project, out):
-    marker = out / "geometry.json"
-    if marker.exists():
-        marker.unlink()
-    query = urllib.parse.urlencode({"project": str(project), "out": str(out)})
-    subprocess.run([str(CHROME), "--headless=new", "--disable-gpu", "--window-size=1000,800",
-                    "--virtual-time-budget=60000", "--dump-dom", f"{UI}/parity?{query}"],
-                   check=True, capture_output=True, timeout=180)
-    for _ in range(60):
-        if marker.exists():
+def render_rusty(project, out, tries=3):
+    # Vite may still be reloading after an edit: try again.
+    for _ in range(tries):
+        if _render_rusty(project, out):
             return
-        time.sleep(0.5)
-    raise RuntimeError(f"RustyMappr did not write {marker}")
+    raise RuntimeError(f"RustyMappr did not render {project}")
+
+
+def _render_rusty(project, out):
+    marker = out / "geometry.json"
+    for old in (marker, out / "screen.png"):
+        if old.exists():
+            old.unlink()
+    query = urllib.parse.urlencode({"project": str(project), "out": str(out)})
+    # The page writes its files through the bridge; stop Chrome as soon as
+    # they are there (a page that Vite has just rebuilt can otherwise keep
+    # headless Chrome waiting).
+    chrome = subprocess.Popen([str(CHROME), "--headless=new", "--disable-gpu",
+                               "--window-size=1000,800", "--virtual-time-budget=60000",
+                               "--dump-dom",
+                               f"{UI}/parity?{query}"],
+                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    try:
+        for _ in range(120):
+            if marker.exists():
+                time.sleep(1.0)  # screen.png follows geometry.json
+                return True
+            time.sleep(0.5)
+        return False
+    finally:
+        chrome.kill()
 
 
 def main(out_dir, *args):

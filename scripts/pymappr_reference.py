@@ -116,7 +116,9 @@ def _geometry(fig):
 
     out = {"size": [fig.bbox.width, height], "axes": [], "texts": [],
            "markers": [], "patches": []}
-    for ax in fig.axes:
+    # The map's axes and their child axes (the inset).
+    every = [a for ax in fig.axes for a in (ax, *ax.child_axes)]
+    for ax in every:
         if ax.get_visible():
             out["axes"].append({"box": box(ax.get_window_extent(renderer)),
                                 "xlim": list(ax.get_xlim()),

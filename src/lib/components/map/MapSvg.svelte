@@ -350,7 +350,8 @@
         {#each insetMarks as m, i (i)}
           {@const fx = ib.x + ((m.x - iv.x) / iv.w) * ib.w}
           {@const fy = ib.y + ((m.y - iv.y) / iv.h) * ib.h}
-          {@const r = markerR(Math.max(m.size * INSET.pointScale, 3))}
+          {@const area = Math.max(m.size * INSET.pointScale, 3)}
+          {@const r = markerR(area)}
           <path
             d={markerPath(m.marker)}
             transform="translate({fx} {fy}) scale({r})"
@@ -358,6 +359,7 @@
             stroke={m.edgeWidth > 0 ? m.edge : "none"}
             stroke-width={(m.edgeWidth * INSET.lineScale * pt) / r}
             opacity={alpha}
+            data-mark="{fx},{fy},{area},{m.face},{m.edge}"
           />
         {/each}
       {/if}
