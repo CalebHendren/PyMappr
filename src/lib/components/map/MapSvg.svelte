@@ -23,11 +23,12 @@
   import type { Rect, RenderedInset, RenderedMap, ScaleBar } from "$lib/api";
   import type { Figure } from "$lib/layout";
   import { mapToFigure, pxPerUnit } from "$lib/layout";
+  import { aggMarkerPath, snappedPath } from "$lib/agg";
   import { compassGeometry } from "$lib/compass";
   import { markerPx, snapPx } from "$lib/mpltext.svelte";
   import MplText from "./MplText.svelte";
   import type { MapSettings } from "$lib/model";
-  import { markerPath } from "$lib/markers";
+  import { markerPathAt, markerShape } from "$lib/markers";
   import {
     BATHYMETRY,
     FILL_STYLES,
@@ -123,6 +124,20 @@
 
   const toFig = (x: number, y: number) => mapToFigure(view, box, x, y);
 
+  const clip = $derived.by(() => {
+    if (fig.vector) return box;
+    const r = (v: number) => Math.floor(v * px + 0.5) / px;
+    return { x: r(box.x), y: r(box.y), w: r(box.x + box.w) - r(box.x), h: r(box.y + box.h) - r(box.y) };
+  });
+
+  /** A line layer from map units to figure units, snapped when straight. */
+  function lineD(d: string, widthPt: number): string {
+    return snappedPath(d, ([x, y]) => {
+      const [fx, fy] = toFig(x, y);
+      return [fx * px, fy * px];
+    }, widthPt * pt * px, px, !fig.vector);
+  }
+
   /** A straight-edged shape's coordinate snapped as Agg snaps it (vector
    * exports are left alone). `width` is the stroke in points. */
   const snap = (v: number, width: number) => (fig.vector ? v : snapPx(v * px, width * pt * px) / px);
@@ -142,7 +157,14 @@
     const end = (d: number) => snapPx(d * pt * px, w);
     return { x1: (ox + snapPx(0, w)) / px, y1: (oy + snapPx(0, w)) / px, x2: (ox + end(dx)) / px, y2: (oy + end(dy)) / px };
   }
-  const markerR = (area: number) => (Math.sqrt(area) / 2) * pt;
+  /** A marker of `area` pt² at (x, y) figure units with an edge `edge` pt
+   * wide: stamped on the pixel grid as Agg does, exact in a vector export. */
+  function markerD(name: string, area: number, x: number, y: number, edge: number): string {
+    const size = Math.sqrt(Math.max(area, 0)) * pt;
+    const plain = name.replace(/ \(open\)$/, "");
+    if (fig.vector) return markerPathAt(plain, size, x, y);
+    return aggMarkerPath(plain, size * px, x * px, y * px, edge * pt * px, px);
+  }
 
   // ---- compass -------------------------------------------------------------
   const compass = $derived(compassGeometry(fig, settings.compass_options));
@@ -167,13 +189,15 @@
   font-family={MAP_FONT}
 >
   <defs>
-    <clipPath id={clipId}><rect x={box.x} y={box.y} width={box.w} height={box.h} /></clipPath>
+    <!-- Agg clips to the axes box rounded to whole pixels. -->
+    <clipPath id={clipId}><rect x={clip.x} y={clip.y} width={clip.w} height={clip.h} /></clipPath>
   </defs>
   <rect width={fig.w} height={fig.h} fill={fig.mat ? PORTRAIT_MAT : "#ffffff"} />
   <rect x={box.x} y={box.y} width={box.w} height={box.h} fill="#ffffff" />
 
   <!-- Map content in map units. -->
-  <svg x={box.x} y={box.y} width={box.w} height={box.h} viewBox="{view.x} {view.y} {view.w} {view.h}" preserveAspectRatio="none">
+  <g clip-path="url(#{clipId})">
+  <svg x={box.x} y={box.y} width={box.w} height={box.h} viewBox="{view.x} {view.y} {view.w} {view.h}" preserveAspectRatio="none" overflow="visible">
     {#if map.raster}
       <image href={map.raster.href} x={map.raster.x} y={map.raster.y} width={map.raster.w} height={map.raster.h} preserveAspectRatio="none" />
     {/if}
@@ -196,22 +220,27 @@
         />
       {/if}
     {/each}
+  </svg>
+  </g>
+
+  <!-- Grid lines and the inset's box, snapped as Agg snaps straight lines. -->
+  <g clip-path="url(#{clipId})">
     {#if map.graticule}
       <path
-        d={map.graticule.d}
+        d={lineD(map.graticule.d, GRATICULE.width)}
         fill="none"
         stroke={GRATICULE.color}
         stroke-opacity={GRATICULE.alpha}
-        stroke-width={GRATICULE.width * pt * k}
+        stroke-width={GRATICULE.width * pt}
       />
       {#if map.graticule.horizon}
-        <path d={map.graticule.horizon} fill="none" stroke={GRATICULE.color} stroke-width={GRATICULE.horizonWidth * pt * k} />
+        <path d={lineD(map.graticule.horizon, GRATICULE.horizonWidth)} fill="none" stroke={GRATICULE.color} stroke-width={GRATICULE.horizonWidth * pt} />
       {/if}
     {/if}
     {#if inset && insetBox && settings.inset.box && inset.box.on === "map" && inset.box.d}
-      <path d={inset.box.d} fill="none" stroke={settings.inset.box_color} stroke-width={INSET.boxWidth * pt * k} />
+      <path d={lineD(inset.box.d, INSET.boxWidth)} fill="none" stroke={settings.inset.box_color} stroke-width={INSET.boxWidth * pt} />
     {/if}
-  </svg>
+  </g>
 
   <!-- Points, markers and labels in figure units, clipped to the map box. -->
   <g clip-path="url(#{clipId})">
@@ -219,28 +248,28 @@
       {@const s = NE_MARKERS[m.layer]}
       {@const [fx, fy] = toFig(m.x, m.y)}
       <path
-        d={markerPath(s.marker)}
-        transform="translate({fx} {fy}) scale({markerR(s.size)})"
+        d={markerD(s.marker, s.size, fx, fy, 0.5)}
         fill={s.face}
         stroke={s.edge}
-        stroke-width={(0.5 * pt) / markerR(s.size)}
+        stroke-width={0.5 * pt}
+        stroke-linejoin={markerShape(s.marker).join}
         data-mark="{fx},{fy},{s.size},{s.face},{s.edge}"
       />
     {/each}
-    <g opacity={alpha}>
-      {#each marks as m, i (i)}
-        {@const [fx, fy] = toFig(m.x, m.y)}
-        {@const r = markerR(m.size)}
-        <path
-          d={markerPath(m.marker)}
-          transform="translate({fx} {fy}) scale({r})"
-          fill={m.face}
-          stroke={m.edgeWidth > 0 ? m.edge : "none"}
-          stroke-width={(m.edgeWidth * pt) / r}
-          data-mark="{fx},{fy},{m.size},{m.face},{m.edge}"
-        />
-      {/each}
-    </g>
+    <!-- matplotlib applies the alpha to each marker's fill and edge. -->
+    {#each marks as m, i (i)}
+      {@const [fx, fy] = toFig(m.x, m.y)}
+      <path
+        d={markerD(m.marker, m.size, fx, fy, m.edgeWidth)}
+        fill={m.face}
+        fill-opacity={alpha}
+        stroke={m.edgeWidth > 0 ? m.edge : "none"}
+        stroke-opacity={alpha}
+        stroke-width={m.edgeWidth * pt}
+        stroke-linejoin={markerShape(m.marker).join}
+        data-mark="{fx},{fy},{m.size},{m.face},{m.edge}"
+      />
+    {/each}
     {#each map.labels as l, i (i)}
       {@const s = LABEL_STYLES[l.layer] ?? LABEL_STYLES.states}
       {@const off = labelOffsets[`${l.layer}|${l.text}`] ?? [0, 0]}
@@ -351,14 +380,14 @@
           {@const fx = ib.x + ((m.x - iv.x) / iv.w) * ib.w}
           {@const fy = ib.y + ((m.y - iv.y) / iv.h) * ib.h}
           {@const area = Math.max(m.size * INSET.pointScale, 3)}
-          {@const r = markerR(area)}
           <path
-            d={markerPath(m.marker)}
-            transform="translate({fx} {fy}) scale({r})"
+            d={markerD(m.marker, area, fx, fy, m.edgeWidth * INSET.lineScale)}
             fill={m.face}
+            fill-opacity={alpha}
             stroke={m.edgeWidth > 0 ? m.edge : "none"}
-            stroke-width={(m.edgeWidth * INSET.lineScale * pt) / r}
-            opacity={alpha}
+            stroke-opacity={alpha}
+            stroke-width={m.edgeWidth * INSET.lineScale * pt}
+            stroke-linejoin={markerShape(m.marker).join}
             data-mark="{fx},{fy},{area},{m.face},{m.edge}"
           />
         {/each}

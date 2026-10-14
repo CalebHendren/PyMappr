@@ -171,3 +171,23 @@ export function markerPathAt(name: string, sizePt: number, cx = 0, cy = 0): stri
 export function markerPath(marker: string): string {
   return markerPathAt(marker.replace(/ \(open\)$/, ""), 2);
 }
+
+/** A marker's outline with each unit-shape vertex (size 1, centred on 0,
+ * y down) mapped through `f`. */
+export function markerPathWith(name: string, f: (x: number, y: number) => [number, number]): string {
+  let out = "";
+  let pending: number | null = null;
+  for (const token of tokens(markerShape(name).d)) {
+    if (typeof token === "string") {
+      out += token;
+      pending = null;
+    } else if (pending === null) {
+      pending = token;
+    } else {
+      const [x, y] = f(pending, token);
+      out += (out.endsWith("M") || out.endsWith("L") || out.endsWith("C") || out.endsWith("Q") ? "" : " ") + `${num(x)} ${num(y)}`;
+      pending = null;
+    }
+  }
+  return out;
+}

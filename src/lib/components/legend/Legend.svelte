@@ -8,8 +8,8 @@
   import type { LegendOptions } from "$lib/model";
   import type { Figure } from "$lib/layout";
   import { pxPerUnit } from "$lib/layout";
-  import { aggOrigin, markerPx, snapPx, textData, textShape } from "$lib/mpltext.svelte";
-  import { markerPathAt } from "$lib/markers";
+  import { aggMarkerPath } from "$lib/agg";
+  import { aggOrigin, snapPx, textData, textShape } from "$lib/mpltext.svelte";
   import { DEJAVU_STACKS, type LegendClearance, type LegendLayout, type Measure, type PlacedMarker, type PlacedText, type Rect, dejaVuExtent, fontAttrs, framePath, legendLayout } from "./layout";
 
   let {
@@ -103,13 +103,17 @@
     return framePath({ x: x0, y: y0, w: sx(b.x + b.w) - x0, h: sy(b.y + b.h) - y0 }, 0);
   });
 
-  /** A swatch stamped at the nearest pixel corner, as Agg draws markers. */
+  /** A swatch stamped on the pixel grid, as Agg draws markers; back in
+   * legend points. */
   function swatchD(m: PlacedMarker): string {
     if (fig.vector) return m.d;
     const k = pxPerUnit(fig);
-    const [px, py] = markerPx((origin.x + m.cx * fig.perPt) * k, (origin.y + m.cy * fig.perPt) * k);
-    return markerPathAt(m.style.marker, m.size, (px / k - origin.x) / fig.perPt, (py / k - origin.y) / fig.perPt);
+    // Through figure units (k pixels each) to points from the box corner.
+    const perPx = k * fig.perPt;
+    const d = aggMarkerPath(m.style.marker.replace(/ \(open\)$/, ""), m.size * pxPt, (origin.x + m.cx * fig.perPt) * k, (origin.y + m.cy * fig.perPt) * k, m.edgeWidth * pxPt, 1);
+    return d.replace(/(-?\d*\.?\d+(?:e[-+]?\d+)?) (-?\d*\.?\d+(?:e[-+]?\d+)?)/g, (_, x, y) => `${round(Number(x) / perPx - origin.x / fig.perPt)} ${round(Number(y) / perPx - origin.y / fig.perPt)}`);
   }
+  const round = (v: number) => String(Math.round(v * 1e4) / 1e4);
 </script>
 
 {#snippet label(t: PlacedText)}
