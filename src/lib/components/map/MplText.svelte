@@ -18,6 +18,7 @@
     ha = "left",
     va = "baseline",
     halo = null,
+    extent = null,
     ...rest
   }: {
     fig: Figure;
@@ -31,6 +32,9 @@
     va?: VAlign;
     /** matplotlib's withStroke: width in points, colour and alpha. */
     halo?: { width: number; color: string; alpha: number } | null;
+    /** More of the artist (an annotation's arrow) for the reported box:
+     * [x0, y0, x1, y1] in figure units. */
+    extent?: [number, number, number, number] | null;
     [attr: string]: unknown;
   } = $props();
 
@@ -41,9 +45,13 @@
   const base = $derived(placed ? [x * k + placed.dx, y * k + placed.dy] : null);
   const drawShape = $derived(fig.vector ? null : textShape(text, font, fig.dpi, halo ? "path" : "agg"));
   const origin = $derived(base ? (halo ? base : aggOrigin(base[0], base[1], fig.h * k)) : null);
-  const data = $derived(
-    placed ? textData(text, x, y, font, color, { x: x + placed.box.x / k, y: y + placed.box.y / k, w: placed.box.w / k, h: placed.box.h / k }) : null,
-  );
+  const data = $derived.by(() => {
+    if (!placed) return null;
+    let [x0, y0] = [x + placed.box.x / k, y + placed.box.y / k];
+    let [x1, y1] = [x0 + placed.box.w / k, y0 + placed.box.h / k];
+    if (extent) [x0, y0, x1, y1] = [Math.min(x0, extent[0]), Math.min(y0, extent[1]), Math.max(x1, extent[2]), Math.max(y1, extent[3])];
+    return textData(text, x, y, font, color, { x: x0, y: y0, w: x1 - x0, h: y1 - y0 });
+  });
 </script>
 
 {#if base && data}

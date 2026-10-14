@@ -94,7 +94,20 @@ def _geometry(fig):
     from matplotlib.patches import Patch
     from matplotlib.text import Text
 
-    fig.canvas.draw()
+    # Only texts that are really drawn: an axis keeps tick labels for
+    # ticks outside the view, which it does not draw.
+    drawn = set()
+    text_draw = Text.draw
+
+    def recording_draw(self, renderer):
+        drawn.add(id(self))
+        return text_draw(self, renderer)
+
+    Text.draw = recording_draw
+    try:
+        fig.canvas.draw()
+    finally:
+        Text.draw = text_draw
     renderer = fig.canvas.get_renderer()
     height = fig.bbox.height
 
@@ -113,7 +126,7 @@ def _geometry(fig):
             continue
         if isinstance(artist, Text):
             text = artist.get_text()
-            if not text.strip():
+            if not text.strip() or id(artist) not in drawn:
                 continue
             x, y = artist.get_transform().transform(artist.get_unitless_position())
             bb = artist.get_window_extent(renderer)
@@ -171,10 +184,12 @@ def render(project_path, out_dir, width_cm=None, dpi="100"):
     fig.canvas.draw()
     # The figure's own face: white, or the mat around a portrait map.
     fig.savefig(out / "screen.png", dpi=100, facecolor=fig.get_facecolor())
+    # Measured now: an export re-lays the figure out at its own size, and
+    # "best" legend placement need not come back the same afterwards.
+    geometry = _geometry(fig)
     width = None if width_cm in (None, "", "screen") else float(width_cm)
     app.renderer.save_image(str(out / "export.png"), "png", int(dpi), width)
     app.renderer.save_image(str(out / "export.svg"), "svg", int(dpi), width)
-    geometry = _geometry(fig)
     geometry["project"] = str(project_path)
     (out / "geometry.json").write_text(json.dumps(geometry, indent=1),
                                        encoding="utf-8")

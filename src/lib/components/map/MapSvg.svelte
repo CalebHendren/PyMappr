@@ -23,10 +23,10 @@
   import type { Rect, RenderedInset, RenderedMap, ScaleBar } from "$lib/api";
   import type { Figure } from "$lib/layout";
   import { mapToFigure, pxPerUnit } from "$lib/layout";
-  import { compassArrow, compassLayout } from "$lib/compass";
-  import { markerPx, placeText, snapPx, textShape } from "$lib/mpltext.svelte";
+  import { compassGeometry } from "$lib/compass";
+  import { markerPx, snapPx } from "$lib/mpltext.svelte";
   import MplText from "./MplText.svelte";
-  import type { CompassOptions, MapSettings } from "$lib/model";
+  import type { MapSettings } from "$lib/model";
   import { markerPath } from "$lib/markers";
   import {
     BATHYMETRY,
@@ -145,40 +145,7 @@
   const markerR = (area: number) => (Math.sqrt(area) / 2) * pt;
 
   // ---- compass -------------------------------------------------------------
-  const compass = $derived.by(() => {
-    const o: CompassOptions = settings.compass_options;
-    if (!o.show) return null;
-    const c = compassLayout(o);
-    // PyMappr's coordinates: axes fractions, then a shift and lift in points.
-    const at = (fx: number, fy: number): [number, number] => [box.x + fx * box.w + c.shiftPt * pt, box.y + (1 - fy) * box.h - c.liftPt * pt];
-    const font = { size: c.fontsize, bold: true, italic: false, family: "" };
-    if (c.triangle) {
-      const base = c.labelY + 0.02 * c.size;
-      const tri = [at(c.x, c.top), at(c.x - c.half, base), at(c.x + c.half, base)];
-      return { c, font, label: at(c.x, c.labelY), tri, arrow: null };
-    }
-    const label = at(c.x, c.labelY);
-    const shape = textShape("N", font, fig.dpi, fig.vector ? "path" : "agg");
-    if (!shape) return { c, font, label, tri: null, arrow: null };
-    // The arrow in canvas pixels, y up, as matplotlib computes it.
-    const H = fig.h * px;
-    const up = ([x, y]: [number, number]): [number, number] => [x * px, H - y * px];
-    const down = ([x, y]: [number, number]) => `${x / px} ${(H - y) / px}`;
-    const tb = placeText(shape, c.fontsize, fig.dpi, "center", "center").box;
-    const [lx, ly] = up(label);
-    const arrow = compassArrow([lx, ly], up(at(c.x, c.top)), [lx + tb.x, ly - tb.y - tb.h, lx + tb.x + tb.w, ly - tb.y], fig.dpi / 72, c.size, c.fontsize);
-    return {
-      c,
-      font,
-      label,
-      tri: null,
-      arrow: {
-        shaft: `M${down(arrow.shaft[0])}Q${down(arrow.shaft[1])} ${down(arrow.shaft[2])}`,
-        head: `M${down(arrow.head[0])}L${down(arrow.head[1])}L${down(arrow.head[2])}Z`,
-        width: arrow.lineWidth / px,
-      },
-    };
-  });
+  const compass = $derived(compassGeometry(fig, settings.compass_options));
 
   // ---- inset ---------------------------------------------------------------
   // The backend places the inset (corner, drag anchor, stepping around a
@@ -357,7 +324,7 @@
         <path d={k.arrow.shaft} fill="none" stroke={settings.compass_options.color} stroke-width={k.arrow.width} stroke-linecap="butt" />
         <path d={k.arrow.head} fill={settings.compass_options.color} stroke={settings.compass_options.color} stroke-width={k.arrow.width} stroke-linejoin="miter" />
       {/if}
-      <MplText {fig} text="N" x={k.label[0]} y={k.label[1]} font={k.font} color={settings.compass_options.color} ha="center" va="center" halo={LABEL_HALO} />
+      <MplText {fig} text="N" x={k.label[0]} y={k.label[1]} font={k.font} color={settings.compass_options.color} ha="center" va="center" halo={LABEL_HALO} extent={k.arrow?.extent ?? null} />
     </g>
   {/if}
 

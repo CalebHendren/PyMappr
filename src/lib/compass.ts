@@ -5,7 +5,10 @@
 // (patches.py ConnectionStyle._Base, ArrowStyle._Curve; bezier.py).
 // Everything here is in canvas pixels with y UP, as matplotlib works, so
 // the bisection lands on the same points.
+import type { Figure } from "./layout";
+import { pxPerUnit } from "./layout";
 import type { CompassOptions } from "./model";
+import { placeText, textShape } from "./mpltext.svelte";
 
 type Pt = [number, number];
 
@@ -118,4 +121,50 @@ export function compassArrow(from: Pt, tip: Pt, textBox: [number, number, number
     [x3 + ddx + dx2, y3 + ddy + dy2],
   ];
   return { shaft, head, lineWidth: lw };
+}
+
+/** The compass in figure units: the "N" (anchor and font), and the
+ * triangle or the arrow (SVG paths, stroke width, and the arrow's extent,
+ * which matplotlib counts in the annotation's box). Null when hidden; no
+ * arrow until the "N" has been measured. */
+export function compassGeometry(fig: Figure, o: CompassOptions) {
+  if (!o.show) return null;
+  const box = fig.box;
+  const pt = fig.perPt;
+  const px = pxPerUnit(fig);
+  const c = compassLayout(o);
+  // PyMappr's coordinates: axes fractions, then a shift and lift in points.
+  const at = (fx: number, fy: number): Pt => [box.x + fx * box.w + c.shiftPt * pt, box.y + (1 - fy) * box.h - c.liftPt * pt];
+  const font = { size: c.fontsize, bold: true, italic: false, family: "" };
+  const label = at(c.x, c.labelY);
+  if (c.triangle) {
+    const base = c.labelY + 0.02 * c.size;
+    const tri = [at(c.x, c.top), at(c.x - c.half, base), at(c.x + c.half, base)];
+    return { c, font, label, tri, arrow: null };
+  }
+  const shape = textShape("N", font, fig.dpi, fig.vector ? "path" : "agg");
+  if (!shape) return { c, font, label, tri: null, arrow: null };
+  // The arrow in canvas pixels, y up, as matplotlib computes it.
+  const H = fig.h * px;
+  const up = ([x, y]: Pt): Pt => [x * px, H - y * px];
+  const toFig = ([x, y]: Pt): Pt => [x / px, (H - y) / px];
+  const down = (p: Pt) => toFig(p).join(" ");
+  const tb = placeText(shape, c.fontsize, fig.dpi, "center", "center").box;
+  const [lx, ly] = up(label);
+  const arrow = compassArrow([lx, ly], up(at(c.x, c.top)), [lx + tb.x, ly - tb.y - tb.h, lx + tb.x + tb.w, ly - tb.y], fig.dpi / 72, c.size, c.fontsize);
+  const pts = [...arrow.shaft, ...arrow.head].map(toFig);
+  const xs = pts.map((p) => p[0]);
+  const ys = pts.map((p) => p[1]);
+  return {
+    c,
+    font,
+    label,
+    tri: null,
+    arrow: {
+      shaft: `M${down(arrow.shaft[0])}Q${down(arrow.shaft[1])} ${down(arrow.shaft[2])}`,
+      head: `M${down(arrow.head[0])}L${down(arrow.head[1])}L${down(arrow.head[2])}Z`,
+      width: arrow.lineWidth / px,
+      extent: [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)] as [number, number, number, number],
+    },
+  };
 }

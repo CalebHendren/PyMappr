@@ -4,6 +4,7 @@
   import type { ComponentProps } from "svelte";
   import type { DrawnLegend } from "$lib/legend";
   import type { LegendOptions } from "$lib/model";
+  import { legendObstacles } from "$lib/obstacles";
   import LegendLayer from "./LegendLayer.svelte";
   import MapSvg from "./MapSvg.svelte";
 
@@ -13,6 +14,19 @@
     pointEdge: { color: string; width: number };
   };
   let { legend, legendOptions, pointEdge, svgEl = $bindable(null), ...rest }: Props = $props();
+
+  // Everything else on the map that "best" keeps the legend off.
+  const obstacles = $derived(
+    legendObstacles({
+      fig: rest.fig,
+      view: rest.view,
+      map: rest.map,
+      settings: rest.settings,
+      scaleBar: rest.scaleBar ?? null,
+      inset: rest.inset ?? null,
+      labelOffsets: rest.labelOffsets ?? {},
+    }),
+  );
 
   const points = $derived(
     rest.marks.map((m) => {
@@ -32,7 +46,8 @@
       {legend}
       options={legendOptions}
       {pointEdge}
-      {points}
+      points={[...points, ...obstacles.points]}
+      {obstacles}
       scaleBar={rest.scaleBar ?? null}
       scaleBarOptions={rest.settings.scale_bar}
     />

@@ -6,6 +6,7 @@
   import type { DrawnLegend } from "$lib/legend";
   import type { LegendOptions, ScaleBarOptions } from "$lib/model";
   import Legend from "../legend/Legend.svelte";
+  import type { Obstacles } from "$lib/obstacles";
   import type { LegendClearance } from "../legend/layout";
   import type { Mark } from "./MapSvg.svelte";
 
@@ -17,6 +18,7 @@
     points,
     scaleBar,
     scaleBarOptions,
+    obstacles = null,
   }: {
     fig: Figure;
     legend: DrawnLegend;
@@ -26,11 +28,18 @@
     points: [number, number][];
     scaleBar: ScaleBar | null;
     scaleBarOptions: ScaleBarOptions;
+    /** Boxes and shapes (figure units) "best" keeps clear of. */
+    obstacles?: Obstacles | null;
   } = $props();
 
   const box = $derived(fig.box);
   const boxPt = $derived({ w: box.w / fig.perPt, h: box.h / fig.perPt });
-  const pointsPt = $derived(points.map(([x, y]) => [(x - box.x) / fig.perPt, (y - box.y) / fig.perPt] as [number, number]));
+  const toPt = ([x, y]: [number, number]) => [(x - box.x) / fig.perPt, (y - box.y) / fig.perPt] as [number, number];
+  const pointsPt = $derived(points.map(toPt));
+  const avoidPt = $derived(
+    (obstacles?.rects ?? []).map((r) => ({ x: (r.x - box.x) / fig.perPt, y: (r.y - box.y) / fig.perPt, w: r.w / fig.perPt, h: r.h / fig.perPt })),
+  );
+  const linesPt = $derived((obstacles?.lines ?? []).map((l) => l.map(toPt)));
 
   // A legend in the scale bar's corner sits beyond the bar and its label
   // (PyMappr's _scale_bar_clearance): an axes fraction plus points.
@@ -48,5 +57,5 @@
 </script>
 
 <g data-legend="true" data-drag="legend" transform="translate({box.x} {box.y}) scale({fig.perPt})">
-  <Legend {legend} {options} {boxPt} {fig} origin={{ x: box.x, y: box.y }} {pointEdge} {pointsPt} {clear} />
+  <Legend {legend} {options} {boxPt} {fig} origin={{ x: box.x, y: box.y }} {pointEdge} {pointsPt} {avoidPt} {linesPt} {clear} />
 </g>

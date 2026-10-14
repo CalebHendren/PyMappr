@@ -150,6 +150,9 @@ export type LegendInputs = {
   pointsPt?: [number, number][];
   /** Other boxes for "best" to keep clear of (scale bar, inset…). */
   avoidPt?: Rect[];
+  /** Other shapes "best" keeps clear of, as vertex lists (a closed shape
+   * repeats its first vertex). */
+  linesPt?: [number, number][][];
   clear?: LegendClearance | null;
   /** The point outline, which filled swatches share with the map. */
   pointEdge?: { color: string; width: number };
@@ -353,7 +356,7 @@ export function legendLayout(inputs: LegendInputs): LegendLayout | null {
     const py = inputs.clear.frac * H + (inputs.clear.liftPt ?? 0);
     [left, bottom] = anchored(code, w, h, { x0: px, y0: py, x1: px, y1: py }, pad);
   } else if (code === 0) {
-    [code, left, bottom] = bestPosition(w, h, axes, pad, inputs.pointsPt ?? [], inputs.avoidPt ?? [], H);
+    [code, left, bottom] = bestPosition(w, h, axes, pad, inputs.pointsPt ?? [], inputs.avoidPt ?? [], H, inputs.linesPt ?? []);
   } else {
     [left, bottom] = anchored(code, w, h, axes, pad);
   }
@@ -458,8 +461,20 @@ function darken(color: string, factor: number): string {
   return "#" + c.map((x) => x.toString(16).padStart(2, "0")).join("");
 }
 
-/** matplotlib's "best": the first location whose box covers no point and
- * overlaps no other box, else the least bad (ties to the lower code). */
+/** matplotlib's segment_intersects_rectangle (_path.h). */
+function segmentHitsBox(x1: number, y1: number, x2: number, y2: number, cx: number, cy: number, w: number, h: number): boolean {
+  return (
+    Math.abs(x1 + x2 - 2 * cx) < w + Math.abs(x1 - x2) &&
+    Math.abs(y1 + y2 - 2 * cy) < h + Math.abs(y1 - y2) &&
+    2 * Math.abs((x1 - cx) * (y1 - y2) - (y1 - cy) * (x1 - x2)) < w * Math.abs(y1 - y2) + h * Math.abs(x1 - x2)
+  );
+}
+
+/** matplotlib's "best" (legend.py `_find_best_position`): the first
+ * location with nothing in the way, else the least bad (ties to the lower
+ * code). Badness counts the points inside, the boxes (texts, rectangles)
+ * it overlaps, and for each other shape its vertices inside plus one if
+ * an edge crosses it. */
 function bestPosition(
   w: number,
   h: number,
@@ -468,6 +483,7 @@ function bestPosition(
   points: [number, number][],
   avoid: Rect[],
   H: number,
+  lines: [number, number][][] = [],
 ): [number, number, number] {
   let best: [number, number, number, number] | null = null;
   for (let code = 1; code < ANCHORS.length; code++) {
@@ -480,6 +496,11 @@ function bestPosition(
     let badness = 0;
     for (const [px, py] of points) if (x0 < px && px < x1 && y0 < py && py < y1) badness++;
     for (const r of avoid) if (x0 < r.x + r.w && r.x < x1 && y0 < r.y + r.h && r.y < y1) badness++;
+    for (const line of lines) {
+      for (const [px, py] of line) if (x0 < px && px < x1 && y0 < py && py < y1) badness++;
+      const hit = line.some((p, i) => i > 0 && segmentHitsBox(line[i - 1][0], line[i - 1][1], p[0], p[1], (x0 + x1) / 2, (y0 + y1) / 2, w, h));
+      if (hit) badness++;
+    }
     if (badness === 0) return [code, l, b];
     if (best === null || badness < best[0]) best = [badness, code, l, b];
   }

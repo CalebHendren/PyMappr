@@ -22,6 +22,7 @@
     markerSize,
     pointsPt,
     avoidPt,
+    linesPt,
     clear = null,
     onlayout,
   }: {
@@ -43,6 +44,8 @@
     pointsPt?: [number, number][];
     /** Other boxes "best" keeps clear of. */
     avoidPt?: Rect[];
+    /** Other shapes "best" keeps clear of (vertex lists). */
+    linesPt?: [number, number][][];
     /** A scale bar or inset in the legend's corner. */
     clear?: LegendClearance | null;
     /** Called with the layout whenever it changes (the box is what a drag
@@ -61,7 +64,7 @@
     return { width: s.w / pxPt, height: s.h / pxPt, descent: s.d / pxPt };
   };
 
-  const layout = $derived(legendLayout({ legend, options, boxPt, measure, fontExtent: dejaVuExtent, markerSize, pointsPt, avoidPt, clear, pointEdge, pxPerPt: pxPt }));
+  const layout = $derived(legendLayout({ legend, options, boxPt, measure, fontExtent: dejaVuExtent, markerSize, pointsPt, avoidPt, linesPt, clear, pointEdge, pxPerPt: pxPt }));
 
   $effect(() => {
     onlayout?.(layout);
