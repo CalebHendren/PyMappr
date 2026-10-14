@@ -9,6 +9,11 @@ Commands:
     project OUT.pymappr STANDARD CSV...    a project holding the CSVs, as PyMappr
                                            saves it; STANDARD is 1 to apply the
                                            Standard preset, else 0
+    variant PROJECT OUT.pymappr PATCH.json a copy of a project with PATCH (a JSON
+                                           object) merged into its state and
+                                           applied in PyMappr; "zoom": true in the
+                                           patch frames the data afterwards (on
+                                           the render's 900x650 px figure)
     render PROJECT OUT_DIR [WIDTH_CM DPI]  PyMappr's own rendering of a project on
                                            a 900x650 px (9 x 6.5 in at 100 dpi)
                                            figure: screen.png, export.png/.svg
@@ -38,7 +43,11 @@ def make_app():
     root = tk.Tk()
     root.withdraw()
     store = LayerStore(PYMAPPR / "data")
-    return root, PyMapprApp(root, store, restore_session=False)
+    app = PyMapprApp(root, store, restore_session=False)
+    # The portrait mat takes the Tk theme's background, which a withdrawn
+    # root does not resolve; use PyMappr's own default.
+    app.renderer.set_mat_color("#e6e6e6")
+    return root, app
 
 
 def default_state(out):
@@ -160,7 +169,8 @@ def render(project_path, out_dir, width_cm=None, dpi="100"):
     app._apply_state(state)
     fig = app.renderer.fig
     fig.canvas.draw()
-    fig.savefig(out / "screen.png", dpi=100, facecolor="white")
+    # The figure's own face: white, or the mat around a portrait map.
+    fig.savefig(out / "screen.png", dpi=100, facecolor=fig.get_facecolor())
     width = None if width_cm in (None, "", "screen") else float(width_cm)
     app.renderer.save_image(str(out / "export.png"), "png", int(dpi), width)
     app.renderer.save_image(str(out / "export.svg"), "svg", int(dpi), width)
@@ -171,8 +181,39 @@ def render(project_path, out_dir, width_cm=None, dpi="100"):
     root.destroy()
 
 
+def _merge(base, patch):
+    """Deep-merge *patch* into *base*; a list of objects merges by index."""
+    for key, value in patch.items():
+        if isinstance(value, dict) and isinstance(base.get(key), dict):
+            _merge(base[key], value)
+        elif (isinstance(value, list) and isinstance(base.get(key), list)
+              and all(isinstance(v, dict) for v in value)):
+            for old, new in zip(base[key], value):
+                _merge(old, new)
+        else:
+            base[key] = value
+
+
+def variant(project_path, out, patch_path):
+    from pymappr.files import projects
+
+    patch = json.loads(Path(patch_path).read_text(encoding="utf-8"))
+    zoom = patch.pop("zoom", False)
+    root, app = make_app()
+    app.renderer.fig.set_size_inches(*FIG_INCHES, forward=False)
+    app.renderer.fig.set_dpi(100)
+    _name, state = projects.load_project(project_path)
+    _merge(state, patch)
+    app._apply_state(state)
+    if zoom:
+        app._zoom_to_data()
+    app.renderer.fig.canvas.draw()
+    projects.save_project(out, Path(out).stem, app._collect_state())
+    root.destroy()
+
+
 COMMANDS = {"default-state": default_state, "project": project,
-            "render": render}
+            "variant": variant, "render": render}
 
 if __name__ == "__main__":
     COMMANDS[sys.argv[2]](*sys.argv[3:])
