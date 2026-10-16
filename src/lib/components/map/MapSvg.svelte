@@ -381,6 +381,9 @@
         <rect x={ib.x} y={ib.y} width={ib.w} height={ib.h} fill="none" stroke="#000000" stroke-width={INSET.frameWidth * pt} />
       {/if}
       {#if o.points}
+        <!-- matplotlib clips the inset's points to its axes. -->
+        <clipPath id="{clipId}-inset"><rect x={ib.x} y={ib.y} width={ib.w} height={ib.h} /></clipPath>
+        <g clip-path="url(#{clipId}-inset)">
         {#each insetMarks as m, i (i)}
           {@const fx = ib.x + ((m.x - iv.x) / iv.w) * ib.w}
           {@const fy = ib.y + ((m.y - iv.y) / iv.h) * ib.h}
@@ -396,6 +399,7 @@
             data-mark="{fx},{fy},{area},{m.face},{m.edge}"
           />
         {/each}
+        </g>
       {/if}
     </g>
   {/if}
