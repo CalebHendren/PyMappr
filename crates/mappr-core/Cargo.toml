@@ -6,10 +6,25 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+base64 = "0.22"
 calamine = "0.36"
 csv = "1.4"
 fancy-regex = "0.19"
+image = { version = "0.25", default-features = false, features = ["jpeg", "webp"] }
+geo = "0.33"
+geographiclib-rs = "0.2"
+geojson = "1"
+png = "0.18"
+rayon = "1"
+reqwest = { version = "0.13", default-features = false, features = ["blocking", "rustls-no-provider"] }
 resvg = "0.48"
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
 serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+harfrust = "0.12"
+skrifa = "0.44"
 shapefile = "0.9"
+svg2pdf = "0.13"
 thiserror = "2"
+tiff = { version = "0.11", default-features = false, features = ["lzw"] }
+zune-jpeg = "0.5"

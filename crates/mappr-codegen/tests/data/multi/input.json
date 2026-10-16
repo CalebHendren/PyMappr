@@ -1,0 +1,329 @@
+{
+ "state": {
+  "datasets": [
+   {
+    "name": "Sites",
+    "visible": true,
+    "source_path": "C:\\data\\Sites",
+    "columns": [
+     "lon",
+     "lat"
+    ],
+    "name_labels": [],
+    "rows": [
+     [
+      -60.0,
+      -10.0
+     ],
+     [
+      -61.5,
+      -11.25
+     ]
+    ],
+    "group_by": "",
+    "color_by": "",
+    "symbol_by": "",
+    "vary_symbols": false,
+    "open_by": "",
+    "open_values": [],
+    "styles": {},
+    "legend_overrides": {},
+    "manual": null
+   },
+   {
+    "name": "sites",
+    "visible": true,
+    "source_path": "C:\\data\\sites",
+    "columns": [
+     "lon",
+     "lat"
+    ],
+    "name_labels": [],
+    "rows": [
+     [
+      -50.0,
+      -5.0
+     ]
+    ],
+    "group_by": "",
+    "color_by": "",
+    "symbol_by": "",
+    "vary_symbols": false,
+    "open_by": "",
+    "open_values": [],
+    "styles": {},
+    "legend_overrides": {},
+    "manual": null
+   },
+   {
+    "name": "CON.csv",
+    "visible": true,
+    "source_path": "C:\\data\\CON.csv",
+    "columns": [
+     "name1",
+     "lon",
+     "lat"
+    ],
+    "name_labels": [
+     "Legend"
+    ],
+    "rows": [
+     [
+      "All points",
+      -40.0,
+      0.0
+     ],
+     [
+      "Other",
+      -41.0,
+      1.0
+     ]
+    ],
+    "group_by": "Legend",
+    "color_by": "",
+    "symbol_by": "",
+    "vary_symbols": true,
+    "open_by": "",
+    "open_values": [],
+    "styles": {},
+    "legend_overrides": {
+     "group\u0000Other": {
+      "hidden": true
+     }
+    },
+    "manual": null
+   },
+   {
+    "name": "hidden.csv",
+    "visible": false,
+    "source_path": "C:\\data\\hidden.csv",
+    "columns": [
+     "name1",
+     "lon",
+     "lat"
+    ],
+    "name_labels": [
+     "Legend"
+    ],
+    "rows": [
+     [
+      "x",
+      1.0,
+      1.0
+     ]
+    ],
+    "group_by": "Legend",
+    "color_by": "",
+    "symbol_by": "",
+    "vary_symbols": false,
+    "open_by": "",
+    "open_values": [],
+    "styles": {},
+    "legend_overrides": {},
+    "manual": null
+   },
+   {
+    "name": "empty.csv",
+    "visible": true,
+    "source_path": "C:\\data\\empty.csv",
+    "columns": [
+     "name1",
+     "lon",
+     "lat"
+    ],
+    "name_labels": [
+     "Legend"
+    ],
+    "rows": [],
+    "group_by": "Legend",
+    "color_by": "",
+    "symbol_by": "",
+    "vary_symbols": false,
+    "open_by": "",
+    "open_values": [],
+    "styles": {},
+    "legend_overrides": {},
+    "manual": null
+   }
+  ],
+  "active": 0,
+  "map": {
+   "projection": "Equirectangular",
+   "proj_lon0": "",
+   "proj_lat0": "",
+   "basemap": "simple",
+   "continent": "World",
+   "orientation": "Landscape",
+   "compass": false,
+   "compass_options": {
+    "show": false,
+    "position": "upper right",
+    "style": "arrow",
+    "size": 1.0,
+    "color": "#1a1a1a"
+   },
+   "scale_bar": {
+    "show": false,
+    "units": "km",
+    "position": "lower left",
+    "style": "segmented",
+    "length_mode": "auto",
+    "fixed_length": null,
+    "segments": 4,
+    "width": 0.22,
+    "fontsize": 8.0,
+    "color": "#1a1a1a",
+    "draggable": false,
+    "anchor_x": null,
+    "anchor_y": null
+   },
+   "inset": {
+    "show": false,
+    "position": "lower right",
+    "size": 0.3,
+    "region": "state",
+    "zoom_out": 6.0,
+    "lon_min": null,
+    "lon_max": null,
+    "lat_min": null,
+    "lat_max": null,
+    "projection": "same",
+    "countries": true,
+    "states": false,
+    "counties": false,
+    "land": true,
+    "ocean": "none",
+    "points": true,
+    "box": true,
+    "box_color": "#d62728",
+    "draggable": false,
+    "anchor_x": null,
+    "anchor_y": null
+   },
+   "palette": "Default",
+   "graticule": "Off",
+   "hide_grid_labels": false,
+   "line_width": 1.0,
+   "dpi": "600",
+   "export_width": "17 cm (Zootaxa / Phytotaxa page)",
+   "ocean": "none",
+   "lake_fill": "none",
+   "bathymetry": false,
+   "capitals_only": false,
+   "lines": {
+    "countries": true,
+    "states": false,
+    "counties": false,
+    "sovereignty": false,
+    "map_units": false,
+    "subunits": false,
+    "dependencies": false,
+    "disputed_lines": false,
+    "timezones": false,
+    "lakes_outline": false,
+    "rivers": false,
+    "wadis": false,
+    "maritime": false,
+    "eez": false,
+    "reefs": false,
+    "regions": false,
+    "roads": false
+   },
+   "fills": {
+    "disputed": false,
+    "land": false,
+    "glaciers": false,
+    "ice_shelves": false,
+    "playas": false,
+    "deserts": false,
+    "urban": false,
+    "parks": false,
+    "biodiversity": false,
+    "ecoregions": false,
+    "marine_ecoregions": false
+   },
+   "points": {
+    "cities": false,
+    "airports": false,
+    "ports": false
+   },
+   "labels": {
+    "countries": false,
+    "states": false,
+    "counties": false,
+    "cities": false,
+    "airports": false,
+    "ports": false,
+    "lakes": false,
+    "rivers": false,
+    "regions": false,
+    "timezones": false
+   }
+  },
+  "legend": {
+   "show": true,
+   "title": "",
+   "show_title": true,
+   "location": "best",
+   "hierarchy": "auto",
+   "order": "count_desc",
+   "counts": true,
+   "count_format": "%",
+   "blank_label": "(blank)",
+   "section_titles": true,
+   "title_separator": " / ",
+   "dataset_prefix": true,
+   "empty_groups": false,
+   "indent": 3,
+   "bold_groups": true,
+   "group_spacer": true,
+   "group_swatch": "circle",
+   "symbol_swatch_color": "#555555",
+   "columns": 1,
+   "label_spacing": 0.5,
+   "column_spacing": 2.0,
+   "handle_text_pad": null,
+   "handle_length": 2.0,
+   "border_pad": 0.4,
+   "marker_scale": 1.0,
+   "frame": true,
+   "frame_color": "#ffffff",
+   "frame_alpha": 1.0,
+   "frame_edge_color": "#000000",
+   "frame_width": 0.5,
+   "rounded": false,
+   "shadow": false,
+   "fontsize": 9.0,
+   "title_fontsize": 10.0,
+   "font_family": "",
+   "label_color": "#000000",
+   "title_color": "#000000",
+   "label_bold": false,
+   "label_italic": true,
+   "label_underline": false,
+   "title_bold": true,
+   "title_italic": false,
+   "title_underline": false,
+   "title_align": "center",
+   "draggable": false,
+   "anchor": null
+  },
+  "point_alpha": 1.0,
+  "point_edge": {
+   "color": "#000000",
+   "width": 0.6
+  },
+  "view": {
+   "xlim": [
+    -112.49683419262297,
+    -2.0863138073770315
+   ],
+   "ylim": [
+    -59.9441341,
+    19.4713241
+   ]
+  }
+ },
+ "projectName": "multi",
+ "figureSize": null
+}

@@ -1,0 +1,1256 @@
+{
+ "pymappr_version": "1.34.0",
+ "repo": "CalebHendren/PyMappr",
+ "cap_clip_radius": 88.0,
+ "line_layers": {
+  "countries": [
+   "countries",
+   "#000000",
+   0.8,
+   1.6,
+   "solid"
+  ],
+  "continents": [
+   "continents",
+   "#000000",
+   0.8,
+   1.55,
+   "solid"
+  ],
+  "sovereignty": [
+   "sovereignty",
+   "#5b2d8b",
+   0.9,
+   1.58,
+   "solid"
+  ],
+  "map_units": [
+   "map_units",
+   "#2d6b8b",
+   0.6,
+   1.57,
+   "solid"
+  ],
+  "subunits": [
+   "subunits",
+   "#8b6b2d",
+   0.5,
+   1.56,
+   "solid"
+  ],
+  "dependencies": [
+   "dependencies",
+   "#c2571a",
+   0.9,
+   1.62,
+   "solid"
+  ],
+  "disputed_lines": [
+   "disputed_lines",
+   "#c0392b",
+   0.9,
+   1.65,
+   [
+    0,
+    [
+     4,
+     2
+    ]
+   ]
+  ],
+  "maritime": [
+   "maritime",
+   "#3b7bbf",
+   0.7,
+   1.3,
+   [
+    0,
+    [
+     5,
+     3
+    ]
+   ]
+  ],
+  "eez": [
+   "eez",
+   "#1c5c99",
+   0.8,
+   1.31,
+   [
+    0,
+    [
+     1,
+     2
+    ]
+   ]
+  ],
+  "timezones": [
+   "timezones",
+   "#8a5fbf",
+   0.6,
+   1.35,
+   [
+    0,
+    [
+     6,
+     3
+    ]
+   ]
+  ],
+  "states": [
+   "states",
+   "#5a5a5a",
+   0.5,
+   1.5,
+   "solid"
+  ],
+  "counties": [
+   "counties",
+   "#8a8a8a",
+   0.35,
+   1.4,
+   "solid"
+  ],
+  "lakes_outline": [
+   "lakes",
+   "#2d5f8a",
+   0.6,
+   1.2,
+   "solid"
+  ],
+  "rivers": [
+   "rivers",
+   "#4a90c4",
+   0.5,
+   1.0,
+   "solid"
+  ],
+  "wadis": [
+   "wadis",
+   "#b3985c",
+   0.6,
+   1.0,
+   [
+    0,
+    [
+     3,
+     2
+    ]
+   ]
+  ],
+  "reefs": [
+   "reefs",
+   "#25a08c",
+   0.7,
+   1.15,
+   "solid"
+  ],
+  "regions": [
+   "regions",
+   "#a8763e",
+   0.5,
+   1.12,
+   [
+    0,
+    [
+     3,
+     3
+    ]
+   ]
+  ],
+  "roads": [
+   "roads",
+   "#b0693c",
+   0.35,
+   1.1,
+   "solid"
+  ]
+ },
+ "fill_colors": [
+  [
+   "lakes",
+   "grey",
+   "#c9c9c9"
+  ],
+  [
+   "lakes",
+   "blue",
+   "#a6cae0"
+  ],
+  [
+   "ocean",
+   "grey",
+   "#dcdcdc"
+  ],
+  [
+   "ocean",
+   "blue",
+   "#d4e6f4"
+  ]
+ ],
+ "fill_layers": {
+  "land": [
+   "land",
+   "#f0ece1",
+   "none",
+   0.0,
+   1.0,
+   0.35
+  ],
+  "deserts": [
+   "deserts",
+   "#f3e6c0",
+   "none",
+   0.0,
+   0.65,
+   0.52
+  ],
+  "playas": [
+   "playas",
+   "#efe7c3",
+   "#d8c98a",
+   0.3,
+   1.0,
+   0.55
+  ],
+  "urban": [
+   "urban",
+   "#d95f4e",
+   "none",
+   0.0,
+   0.55,
+   0.58
+  ],
+  "parks": [
+   "parks",
+   "#bfe3b4",
+   "#4e9a51",
+   0.4,
+   0.85,
+   0.6
+  ],
+  "ice_shelves": [
+   "ice_shelves",
+   "#d8ecf7",
+   "#a8cfe6",
+   0.3,
+   1.0,
+   0.61
+  ],
+  "glaciers": [
+   "glaciers",
+   "#e6f3fb",
+   "#b9d9ec",
+   0.3,
+   1.0,
+   0.62
+  ],
+  "disputed": [
+   "disputed",
+   "#e8b4b8",
+   "#b03a48",
+   0.5,
+   0.75,
+   0.66
+  ],
+  "ecoregions": [
+   "ecoregions",
+   "#8fbf6f",
+   "#4e7a3a",
+   0.25,
+   0.42,
+   0.44
+  ],
+  "marine_ecoregions": [
+   "marine_ecoregions",
+   "#5fa8c4",
+   "#2d6b8b",
+   0.25,
+   0.42,
+   0.43
+  ],
+  "biodiversity": [
+   "biodiversity",
+   "#e0954a",
+   "#a85f16",
+   0.5,
+   0.5,
+   0.53
+  ]
+ },
+ "bathymetry_colors": [
+  [
+   0,
+   "#e3f2fa"
+  ],
+  [
+   200,
+   "#d2e9f5"
+  ],
+  [
+   1000,
+   "#c0dff0"
+  ],
+  [
+   2000,
+   "#a8d1e8"
+  ],
+  [
+   3000,
+   "#8fc2e0"
+  ],
+  [
+   4000,
+   "#74b2d8"
+  ],
+  [
+   5000,
+   "#5a9fcd"
+  ],
+  [
+   6000,
+   "#4489bd"
+  ],
+  [
+   7000,
+   "#3273aa"
+  ],
+  [
+   8000,
+   "#245e94"
+  ],
+  [
+   9000,
+   "#194a7d"
+  ],
+  [
+   10000,
+   "#103862"
+  ]
+ ],
+ "bathymetry_steps": [
+  [
+   "L",
+   0
+  ],
+  [
+   "K",
+   200
+  ],
+  [
+   "J",
+   1000
+  ],
+  [
+   "I",
+   2000
+  ],
+  [
+   "H",
+   3000
+  ],
+  [
+   "G",
+   4000
+  ],
+  [
+   "F",
+   5000
+  ],
+  [
+   "E",
+   6000
+  ],
+  [
+   "D",
+   7000
+  ],
+  [
+   "C",
+   8000
+  ],
+  [
+   "B",
+   9000
+  ],
+  [
+   "A",
+   10000
+  ]
+ ],
+ "point_layers": {
+  "cities": [
+   "cities",
+   "o",
+   11.0,
+   "#333333",
+   "white",
+   2.0
+  ],
+  "capitals": [
+   "capitals",
+   "*",
+   60.0,
+   "#b03a2e",
+   "white",
+   99.0
+  ],
+  "airports": [
+   "airports",
+   "^",
+   18.0,
+   "#4757a8",
+   "white",
+   4.0
+  ],
+  "ports": [
+   "ports",
+   "v",
+   16.0,
+   "#1f7a70",
+   "white",
+   3.5
+  ]
+ },
+ "label_styles": [
+  [
+   "countries",
+   "countries",
+   [
+    [
+     "fontsize",
+     9
+    ],
+    [
+     "color",
+     "#1a1a1a"
+    ],
+    [
+     "fontweight",
+     "bold"
+    ]
+   ],
+   0.0,
+   null
+  ],
+  [
+   "states",
+   "states",
+   [
+    [
+     "fontsize",
+     8
+    ],
+    [
+     "color",
+     "#3a3a3a"
+    ]
+   ],
+   1.2,
+   null
+  ],
+  [
+   "counties",
+   "counties",
+   [
+    [
+     "fontsize",
+     6.5
+    ],
+    [
+     "color",
+     "#4a4a4a"
+    ]
+   ],
+   3.6,
+   null
+  ],
+  [
+   "cities",
+   "cities",
+   [
+    [
+     "fontsize",
+     7.5
+    ],
+    [
+     "color",
+     "#222222"
+    ]
+   ],
+   0.0,
+   2.0
+  ],
+  [
+   "airports",
+   "airports",
+   [
+    [
+     "fontsize",
+     6.5
+    ],
+    [
+     "color",
+     "#3a4c8c"
+    ]
+   ],
+   2.0,
+   3.0
+  ],
+  [
+   "ports",
+   "ports",
+   [
+    [
+     "fontsize",
+     6.5
+    ],
+    [
+     "color",
+     "#14614f"
+    ],
+    [
+     "fontstyle",
+     "italic"
+    ]
+   ],
+   2.0,
+   3.0
+  ],
+  [
+   "lakes",
+   "lakes",
+   [
+    [
+     "fontsize",
+     7.5
+    ],
+    [
+     "color",
+     "#14477a"
+    ],
+    [
+     "fontstyle",
+     "italic"
+    ]
+   ],
+   1.5,
+   null
+  ],
+  [
+   "rivers",
+   "rivers",
+   [
+    [
+     "fontsize",
+     7
+    ],
+    [
+     "color",
+     "#14477a"
+    ],
+    [
+     "fontstyle",
+     "italic"
+    ]
+   ],
+   1.5,
+   null
+  ],
+  [
+   "regions",
+   "regions",
+   [
+    [
+     "fontsize",
+     8
+    ],
+    [
+     "color",
+     "#7a5230"
+    ],
+    [
+     "fontstyle",
+     "italic"
+    ]
+   ],
+   0.5,
+   3.0
+  ],
+  [
+   "timezones",
+   "timezones",
+   [
+    [
+     "fontsize",
+     8
+    ],
+    [
+     "color",
+     "#6a4a9c"
+    ]
+   ],
+   0.0,
+   null
+  ]
+ ],
+ "z": {
+  "bathymetry": 0.32,
+  "ocean": 0.3,
+  "lake_fill": 0.5,
+  "point_layers": 2.45
+ },
+ "margins_with_ticks": [
+  0.055,
+  0.045,
+  0.99,
+  0.99
+ ],
+ "margins_plain": [
+  0.01,
+  0.012,
+  0.99,
+  0.988
+ ],
+ "layer_specs": {
+  "countries": {
+   "directory": "ne_50m_admin_0_countries",
+   "geometry": "polygon",
+   "label_cap": 400,
+   "shapefile": null,
+   "resolutions": [
+    [
+     0.0,
+     "ne_110m_admin_0_countries"
+    ],
+    [
+     1.0,
+     "ne_50m_admin_0_countries"
+    ],
+    [
+     3.5,
+     "ne_10m_admin_0_countries"
+    ]
+   ],
+   "label_column": "name"
+  },
+  "states": {
+   "directory": "ne_10m_admin_1_states_provinces",
+   "geometry": "polygon",
+   "label_cap": 600,
+   "shapefile": null,
+   "resolutions": [],
+   "label_column": "name"
+  },
+  "counties": {
+   "directory": "ne_10m_admin_2_counties",
+   "geometry": "polygon",
+   "label_cap": 1200,
+   "shapefile": null,
+   "resolutions": [],
+   "label_column": "name"
+  },
+  "sovereignty": {
+   "directory": "ne_50m_admin_0_sovereignty",
+   "geometry": "polygon",
+   "label_cap": 0,
+   "shapefile": null,
+   "resolutions": [],
+   "label_column": "name"
+  },
+  "map_units": {
+   "directory": "ne_50m_admin_0_map_units",
+   "geometry": "polygon",
+   "label_cap": 0,
+   "shapefile": null,
+   "resolutions": [],
+   "label_column": "name"
+  },
+  "subunits": {
+   "directory": "ne_50m_admin_0_map_subunits",
+   "geometry": "polygon",
+   "label_cap": 0,
+   "shapefile": null,
+   "resolutions": [],
+   "label_column": "name"
+  },
+  "disputed": {
+   "directory": "ne_10m_admin_0_disputed_areas",
+   "geometry": "polygon",
+   "label_cap": 80,
+   "shapefile": null,
+   "resolutions": [],
+   "label_column": "name"
+  },
+  "disputed_lines": {
+   "directory": "ne_10m_admin_0_boundary_lines_disputed_areas",
+   "geometry": "line",
+   "label_cap": 0,
+   "shapefile": null,
+   "resolutions": [],
+   "label_column": "name"
+  },
+  "maritime_all": {
+   "directory": "ne_10m_admin_0_boundary_lines_maritime_indicator",
+   "geometry": "line",
+   "label_cap": 0,
+   "shapefile": null,
+   "resolutions": [],
+   "label_column": "name"
+  },
+  "timezones": {
+   "directory": "ne_10m_time_zones",
+   "geometry": "polygon",
+   "label_cap": 60,
+   "shapefile": null,
+   "resolutions": [],
+   "label_column": "time_zone"
+  },
+  "cities": {
+   "directory": "ne_10m_populated_places_simple",
+   "geometry": "point",
+   "label_cap": 250,
+   "shapefile": null,
+   "resolutions": [],
+   "label_column": "name"
+  },
+  "urban": {
+   "directory": "ne_10m_urban_areas",
+   "geometry": "polygon",
+   "label_cap": 0,
+   "shapefile": null,
+   "resolutions": [],
+   "label_column": "name"
+  },
+  "airports": {
+   "directory": "ne_10m_airports",
+   "geometry": "point",
+   "label_cap": 150,
+   "shapefile": null,
+   "resolutions": [],
+   "label_column": "name"
+  },
+  "ports": {
+   "directory": "ne_10m_ports",
+   "geometry": "point",
+   "label_cap": 150,
+   "shapefile": null,
+   "resolutions": [],
+   "label_column": "name"
+  },
+  "parks": {
+   "directory": "ne_10m_parks_and_protected_lands",
+   "geometry": "polygon",
+   "label_cap": 60,
+   "shapefile": "ne_10m_parks_and_protected_lands_area",
+   "resolutions": [],
+   "label_column": "name"
+  },
+  "roads": {
+   "directory": "ne_10m_roads",
+   "geometry": "line",
+   "label_cap": 0,
+   "shapefile": null,
+   "resolutions": [],
+   "label_column": "name"
+  },
+  "lakes": {
+   "directory": "ne_50m_lakes",
+   "geometry": "polygon",
+   "label_cap": 60,
+   "shapefile": null,
+   "resolutions": [
+    [
+     0.0,
+     "ne_110m_lakes"
+    ],
+    [
+     1.0,
+     "ne_50m_lakes"
+    ],
+    [
+     3.5,
+     "ne_10m_lakes"
+    ]
+   ],
+   "label_column": "name"
+  },
+  "rivers": {
+   "directory": "ne_10m_rivers_lake_centerlines",
+   "geometry": "line",
+   "label_cap": 60,
+   "shapefile": null,
+   "resolutions": [
+    [
+     0.0,
+     "ne_110m_rivers_lake_centerlines"
+    ],
+    [
+     1.0,
+     "ne_50m_rivers_lake_centerlines"
+    ],
+    [
+     3.5,
+     "ne_10m_rivers_lake_centerlines"
+    ]
+   ],
+   "label_column": "name"
+  },
+  "ocean": {
+   "directory": "ne_50m_ocean",
+   "geometry": "polygon",
+   "label_cap": 0,
+   "shapefile": null,
+   "resolutions": [
+    [
+     0.0,
+     "ne_110m_ocean"
+    ],
+    [
+     1.0,
+     "ne_50m_ocean"
+    ],
+    [
+     3.5,
+     "ne_10m_ocean"
+    ]
+   ],
+   "label_column": "name"
+  },
+  "land": {
+   "directory": "ne_50m_land",
+   "geometry": "polygon",
+   "label_cap": 0,
+   "shapefile": null,
+   "resolutions": [
+    [
+     0.0,
+     "ne_110m_land"
+    ],
+    [
+     1.0,
+     "ne_50m_land"
+    ],
+    [
+     3.5,
+     "ne_10m_land"
+    ]
+   ],
+   "label_column": "name"
+  },
+  "glaciers": {
+   "directory": "ne_10m_glaciated_areas",
+   "geometry": "polygon",
+   "label_cap": 0,
+   "shapefile": null,
+   "resolutions": [],
+   "label_column": "name"
+  },
+  "ice_shelves": {
+   "directory": "ne_50m_antarctic_ice_shelves_polys",
+   "geometry": "polygon",
+   "label_cap": 0,
+   "shapefile": null,
+   "resolutions": [],
+   "label_column": "name"
+  },
+  "reefs": {
+   "directory": "ne_10m_reefs",
+   "geometry": "line",
+   "label_cap": 0,
+   "shapefile": null,
+   "resolutions": [],
+   "label_column": "name"
+  },
+  "playas": {
+   "directory": "ne_10m_playas",
+   "geometry": "polygon",
+   "label_cap": 40,
+   "shapefile": null,
+   "resolutions": [],
+   "label_column": "name"
+  },
+  "regions": {
+   "directory": "ne_10m_geography_regions_polys",
+   "geometry": "polygon",
+   "label_cap": 150,
+   "shapefile": null,
+   "resolutions": [],
+   "label_column": "name"
+  },
+  "biodiversity": {
+   "directory": "biodiversity_hotspots",
+   "geometry": "polygon",
+   "label_cap": 0,
+   "shapefile": null,
+   "resolutions": [],
+   "label_column": "name"
+  },
+  "ecoregions": {
+   "directory": "ecoregions_2017",
+   "geometry": "polygon",
+   "label_cap": 0,
+   "shapefile": null,
+   "resolutions": [],
+   "label_column": "name"
+  },
+  "marine_ecoregions": {
+   "directory": "marine_ecoregions",
+   "geometry": "polygon",
+   "label_cap": 0,
+   "shapefile": null,
+   "resolutions": [],
+   "label_column": "name"
+  }
+ },
+ "category": {
+  "countries": "cultural",
+  "continents": "cultural",
+  "states": "cultural",
+  "counties": "cultural",
+  "sovereignty": "cultural",
+  "map_units": "cultural",
+  "subunits": "cultural",
+  "dependencies": "cultural",
+  "disputed": "cultural",
+  "disputed_lines": "cultural",
+  "maritime_all": "cultural",
+  "maritime": "cultural",
+  "eez": "cultural",
+  "timezones": "cultural",
+  "cities": "cultural",
+  "capitals": "cultural",
+  "urban": "cultural",
+  "airports": "cultural",
+  "ports": "cultural",
+  "parks": "cultural",
+  "roads": "cultural",
+  "lakes": "physical",
+  "rivers": "physical",
+  "wadis": "physical",
+  "ocean": "physical",
+  "land": "physical",
+  "glaciers": "physical",
+  "ice_shelves": "physical",
+  "reefs": "physical",
+  "playas": "physical",
+  "regions": "physical",
+  "deserts": "physical",
+  "bathymetry": "physical"
+ },
+ "derived_sources": {
+  "dependencies": [
+   "countries",
+   [
+    "type",
+    [
+     "Dependency",
+     "Lease"
+    ],
+    true
+   ]
+  ],
+  "deserts": [
+   "regions",
+   [
+    "featurecla",
+    [
+     "Desert"
+    ],
+    true
+   ]
+  ],
+  "wadis": [
+   "rivers",
+   [
+    "featurecla",
+    [
+     "River (Intermittent)"
+    ],
+    true
+   ]
+  ],
+  "capitals": [
+   "cities",
+   [
+    "adm0cap",
+    [
+     "1"
+    ],
+    true
+   ]
+  ],
+  "maritime": [
+   "maritime_all",
+   [
+    "featurecla",
+    [
+     "Marine Indicator 200 mi nl"
+    ],
+    false
+   ]
+  ],
+  "eez": [
+   "maritime_all",
+   [
+    "featurecla",
+    [
+     "Marine Indicator 200 mi nl"
+    ],
+    true
+   ]
+  ]
+ },
+ "external_fills": {
+  "biodiversity": "Biodiversity hotspots overlay (Conservation International data, not Natural Earth)",
+  "ecoregions": "Terrestrial ecoregions overlay (RESOLVE data, not Natural Earth)",
+  "marine_ecoregions": "Marine ecoregions overlay (WWF/TNC data, not Natural Earth)"
+ },
+ "continent_extents": {
+  "World": [
+   -180.0,
+   180.0,
+   -90.0,
+   90.0
+  ],
+  "Africa": [
+   -20.0,
+   55.0,
+   -38.0,
+   40.0
+  ],
+  "Antarctica": [
+   -180.0,
+   180.0,
+   -90.0,
+   -60.0
+  ],
+  "Asia": [
+   25.0,
+   180.0,
+   -12.0,
+   78.0
+  ],
+  "Europe": [
+   -25.0,
+   45.0,
+   34.0,
+   72.0
+  ],
+  "North America": [
+   -170.0,
+   -50.0,
+   5.0,
+   84.0
+  ],
+  "Oceania": [
+   105.0,
+   180.0,
+   -50.0,
+   10.0
+  ],
+  "South America": [
+   -85.0,
+   -33.0,
+   -58.0,
+   14.0
+  ]
+ },
+ "projections": {
+  "Equirectangular": {
+   "crs": null,
+   "bounds": [
+    -180.0,
+    180.0,
+    -90.0,
+    90.0
+   ],
+   "max_lat": 90.0,
+   "min_lat": -90.0,
+   "lon_0": 0.0,
+   "lat_0": 0.0,
+   "lon_halfspan": 180.0,
+   "hemisphere": false
+  },
+  "Mercator": {
+   "crs": "+proj=merc +lon_0=0 +datum=WGS84 +units=m +no_defs",
+   "bounds": [
+    -20037508.342789244,
+    20037508.342789244,
+    -19993418.899403367,
+    19993418.899403367
+   ],
+   "max_lat": 85.05,
+   "min_lat": -85.05,
+   "lon_0": 0.0,
+   "lat_0": 0.0,
+   "lon_halfspan": 180.0,
+   "hemisphere": false
+  },
+  "Robinson": {
+   "crs": "+proj=robin +lon_0=0 +datum=WGS84 +units=m +no_defs",
+   "bounds": [
+    -17003189.700318325,
+    17003189.700318325,
+    -8625154.6651,
+    8625154.6651
+   ],
+   "max_lat": 90.0,
+   "min_lat": -90.0,
+   "lon_0": 0.0,
+   "lat_0": 0.0,
+   "lon_halfspan": 180.0,
+   "hemisphere": false
+  },
+  "Mollweide": {
+   "crs": "+proj=moll +lon_0=0 +datum=WGS84 +units=m +no_defs",
+   "bounds": [
+    -18036151.73622525,
+    18036151.73622525,
+    -9020047.847897757,
+    9020047.847897757
+   ],
+   "max_lat": 90.0,
+   "min_lat": -90.0,
+   "lon_0": 0.0,
+   "lat_0": 0.0,
+   "lon_halfspan": 180.0,
+   "hemisphere": false
+  },
+  "Natural Earth": {
+   "crs": "+proj=natearth +lon_0=0 +datum=WGS84 +units=m +no_defs",
+   "bounds": [
+    -17444783.8802535,
+    17444783.8802535,
+    -9072201.519427164,
+    9072201.519427164
+   ],
+   "max_lat": 90.0,
+   "min_lat": -90.0,
+   "lon_0": 0.0,
+   "lat_0": 0.0,
+   "lon_halfspan": 180.0,
+   "hemisphere": false
+  },
+  "Winkel Tripel": {
+   "crs": "+proj=wintri +lon_0=0 +datum=WGS84 +units=m +no_defs",
+   "bounds": [
+    -20033957.80775404,
+    20033957.80775404,
+    -10018754.171394622,
+    10018754.171394622
+   ],
+   "max_lat": 90.0,
+   "min_lat": -90.0,
+   "lon_0": 0.0,
+   "lat_0": 0.0,
+   "lon_halfspan": 180.0,
+   "hemisphere": false
+  },
+  "Globe (Orthographic)": {
+   "crs": "+proj=ortho +lat_0=0.0 +lon_0=0.0 +x_0=0 +y_0=0 +datum=WGS84 +units=m +no_defs",
+   "bounds": [
+    -6378127.2855442865,
+    6378127.2855442865,
+    -6356742.567109314,
+    6356742.567109314
+   ],
+   "max_lat": 90.0,
+   "min_lat": -90.0,
+   "lon_0": 0.0,
+   "lat_0": 0.0,
+   "lon_halfspan": 180.0,
+   "hemisphere": true
+  },
+  "Lambert: N. America": {
+   "crs": "+proj=lcc +lat_1=20.0 +lat_2=60.0 +lat_0=40.0 +lon_0=-96.0 +x_0=0 +y_0=0 +datum=WGS84 +units=m +no_defs",
+   "bounds": [
+    -9125450.01792427,
+    9125450.01792427,
+    -3633845.6166622792,
+    6140801.925019262
+   ],
+   "max_lat": 84.0,
+   "min_lat": 7.0,
+   "lon_0": -96.0,
+   "lat_0": 0.0,
+   "lon_halfspan": 90.0,
+   "hemisphere": false
+  },
+  "Lambert: Europe": {
+   "crs": "+proj=lcc +lat_1=35.0 +lat_2=65.0 +lat_0=52.0 +lon_0=10.0 +x_0=0 +y_0=0 +datum=WGS84 +units=m +no_defs",
+   "bounds": [
+    -4950015.707696673,
+    4950015.707696673,
+    -2404656.448355694,
+    2925355.51732776
+   ],
+   "max_lat": 72.0,
+   "min_lat": 30.0,
+   "lon_0": 10.0,
+   "lat_0": 0.0,
+   "lon_halfspan": 55.0,
+   "hemisphere": false
+  },
+  "Lambert: Asia": {
+   "crs": "+proj=lcc +lat_1=15.0 +lat_2=65.0 +lat_0=30.0 +lon_0=95.0 +x_0=0 +y_0=0 +datum=WGS84 +units=m +no_defs",
+   "bounds": [
+    -10971122.190616427,
+    10971122.190616423,
+    -5010251.804775147,
+    6426449.6298155775
+   ],
+   "max_lat": 78.0,
+   "min_lat": -12.0,
+   "lon_0": 95.0,
+   "lat_0": 0.0,
+   "lon_halfspan": 90.0,
+   "hemisphere": false
+  },
+  "Lambert: S. America": {
+   "crs": "+proj=lcc +lat_1=-5.0 +lat_2=-42.0 +lat_0=-32.0 +lon_0=-60.0 +x_0=0 +y_0=0 +datum=WGS84 +units=m +no_defs",
+   "bounds": [
+    -6804406.66508882,
+    6804406.665088819,
+    -3724896.528702856,
+    5131490.271220111
+   ],
+   "max_lat": 14.0,
+   "min_lat": -58.0,
+   "lon_0": -60.0,
+   "lat_0": 0.0,
+   "lon_halfspan": 55.0,
+   "hemisphere": false
+  },
+  "Lambert: Africa": {
+   "crs": "+proj=laea +lat_0=5.0 +lon_0=20.0 +x_0=0 +y_0=0 +datum=WGS84 +units=m +no_defs",
+   "bounds": [
+    -6385238.630193025,
+    6385238.630193025,
+    -5021733.460076023,
+    4543659.2582821045
+   ],
+   "max_lat": 40.0,
+   "min_lat": -38.0,
+   "lon_0": 20.0,
+   "lat_0": 0.0,
+   "lon_halfspan": 60.0,
+   "hemisphere": false
+  },
+  "Lambert Azimuthal (custom)": {
+   "crs": "+proj=laea +lat_0=0.0 +lon_0=0.0 +x_0=0 +y_0=0 +datum=WGS84 +units=m +no_defs",
+   "bounds": [
+    -11041694.035474967,
+    11041694.035474967,
+    -9314392.792930333,
+    9314392.792930333
+   ],
+   "max_lat": 88.0,
+   "min_lat": -88.0,
+   "lon_0": 0.0,
+   "lat_0": 0.0,
+   "lon_halfspan": 120.0,
+   "hemisphere": false
+  }
+ }
+}

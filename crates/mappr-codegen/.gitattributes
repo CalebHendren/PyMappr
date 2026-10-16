@@ -1,0 +1,5 @@
+# Byte-exact: the templates are pasted into the scripts verbatim, and the
+# reference outputs are compared byte for byte (their CSVs end lines in 
+).
+templates/** -text
+tests/data/** -text

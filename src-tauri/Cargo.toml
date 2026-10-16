@@ -5,6 +5,7 @@ authors = ["Caleb Hendren"]
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+default-run = "rustymappr"
 
 [lib]
 # The `_lib` suffix keeps the lib name distinct from the bin name, which
@@ -15,9 +16,26 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
+[[bin]]
+name = "devbridge"
+required-features = ["devbridge"]
+
+[features]
+# A dev-only HTTP front door to the same commands, so the UI can be driven
+# from a browser: cargo run -p rustymappr --bin devbridge --features devbridge
+devbridge = ["dep:tiny_http"]
+
 [dependencies]
+dirs = "7"
+image = { version = "0.25", default-features = false, features = ["jpeg", "tiff", "png"] }
+keyring = { version = "3", features = ["apple-native", "linux-native", "windows-native"] }
+mappr-codegen = { path = "../crates/mappr-codegen" }
 mappr-core = { path = "../crates/mappr-core" }
+reqwest = { version = "0.13", default-features = false, features = ["blocking", "charset", "http2", "json", "rustls"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tauri = { version = "2", features = [] }
 tauri-plugin-dialog = "2"
+tauri-plugin-opener = "2"
+tiny_http = { version = "0.12", optional = true }
+zip = { version = "9", default-features = false, features = ["deflate"] }

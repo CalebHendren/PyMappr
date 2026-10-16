@@ -1,0 +1,1426 @@
+{
+ "name": "beetles-nested",
+ "state": {
+  "datasets": [
+   {
+    "name": "south_america_beetles.csv",
+    "visible": true,
+    "source_path": "C:\\PyCharm\\PyMappr\\sample_data\\south_america_beetles.csv",
+    "columns": [
+     "name1",
+     "name2",
+     "lon",
+     "lat"
+    ],
+    "name_labels": [
+     "Genus",
+     "Species"
+    ],
+    "group_by": "Genus",
+    "color_by": "Genus",
+    "symbol_by": "Species",
+    "vary_symbols": true,
+    "open_by": "",
+    "open_values": [],
+    "styles": {},
+    "legend_overrides": {},
+    "manual": null,
+    "rowsFrom": "beetles-standard#0"
+   }
+  ],
+  "active": 0,
+  "map": {
+   "projection": "Equirectangular",
+   "proj_lon0": "",
+   "proj_lat0": "",
+   "basemap": "simple",
+   "continent": "World",
+   "orientation": "Landscape",
+   "compass": false,
+   "compass_options": {
+    "show": false,
+    "position": "upper right",
+    "style": "arrow",
+    "size": 1.0,
+    "color": "#1a1a1a"
+   },
+   "scale_bar": {
+    "show": false,
+    "units": "km",
+    "position": "lower left",
+    "style": "segmented",
+    "length_mode": "auto",
+    "fixed_length": null,
+    "segments": 4,
+    "width": 0.22,
+    "fontsize": 8.0,
+    "color": "#1a1a1a",
+    "draggable": false,
+    "anchor_x": null,
+    "anchor_y": null
+   },
+   "inset": {
+    "show": false,
+    "position": "lower right",
+    "size": 0.3,
+    "region": "state",
+    "zoom_out": 6.0,
+    "lon_min": null,
+    "lon_max": null,
+    "lat_min": null,
+    "lat_max": null,
+    "projection": "same",
+    "countries": true,
+    "states": false,
+    "counties": false,
+    "land": true,
+    "ocean": "none",
+    "points": true,
+    "box": true,
+    "box_color": "#d62728",
+    "draggable": false,
+    "anchor_x": null,
+    "anchor_y": null
+   },
+   "palette": "Black & white",
+   "graticule": "Off",
+   "hide_grid_labels": false,
+   "line_width": 1.0,
+   "dpi": "600",
+   "export_width": "17 cm (Zootaxa / Phytotaxa page)",
+   "ocean": "none",
+   "lake_fill": "none",
+   "bathymetry": false,
+   "capitals_only": false,
+   "lines": {
+    "countries": true,
+    "states": false,
+    "counties": false,
+    "sovereignty": false,
+    "map_units": false,
+    "subunits": false,
+    "dependencies": false,
+    "disputed_lines": false,
+    "timezones": false,
+    "lakes_outline": false,
+    "rivers": false,
+    "wadis": false,
+    "maritime": false,
+    "eez": false,
+    "reefs": false,
+    "regions": false,
+    "roads": false
+   },
+   "fills": {
+    "disputed": false,
+    "land": false,
+    "glaciers": false,
+    "ice_shelves": false,
+    "playas": false,
+    "deserts": false,
+    "urban": false,
+    "parks": false,
+    "biodiversity": false,
+    "ecoregions": false,
+    "marine_ecoregions": false
+   },
+   "points": {
+    "cities": false,
+    "airports": false,
+    "ports": false
+   },
+   "labels": {
+    "countries": false,
+    "states": false,
+    "counties": false,
+    "cities": false,
+    "airports": false,
+    "ports": false,
+    "lakes": false,
+    "rivers": false,
+    "regions": false,
+    "timezones": false
+   }
+  },
+  "legend": {
+   "show": true,
+   "title": null,
+   "show_title": false,
+   "location": "best",
+   "hierarchy": "auto",
+   "order": "az",
+   "counts": false,
+   "count_format": "(n)",
+   "blank_label": "(blank)",
+   "section_titles": true,
+   "title_separator": " / ",
+   "dataset_prefix": true,
+   "empty_groups": false,
+   "indent": 3,
+   "bold_groups": true,
+   "group_spacer": true,
+   "group_swatch": "circle",
+   "symbol_swatch_color": "#555555",
+   "columns": 1,
+   "label_spacing": 0.5,
+   "column_spacing": 2.0,
+   "handle_text_pad": null,
+   "handle_length": 2.0,
+   "border_pad": 0.4,
+   "marker_scale": 1.0,
+   "frame": true,
+   "frame_color": "#ffffff",
+   "frame_alpha": 1.0,
+   "frame_edge_color": "#000000",
+   "frame_width": 0.5,
+   "rounded": false,
+   "shadow": false,
+   "fontsize": 9.0,
+   "title_fontsize": 10.0,
+   "font_family": "",
+   "label_color": "#000000",
+   "title_color": "#000000",
+   "label_bold": false,
+   "label_italic": true,
+   "label_underline": false,
+   "title_bold": true,
+   "title_italic": false,
+   "title_underline": false,
+   "title_align": "center",
+   "draggable": false,
+   "anchor": null
+  },
+  "point_alpha": 1.0,
+  "point_edge": {
+   "color": "#000000",
+   "width": 0.6
+  },
+  "view": {
+   "xlim": [
+    -112.49683419262297,
+    -2.0863138073770315
+   ],
+   "ylim": [
+    -59.9441341,
+    19.4713241
+   ]
+  }
+ },
+ "filter": null,
+ "layout": {
+  "datasets": [
+   {
+    "name": "south_america_beetles.csv",
+    "groups": [
+     {
+      "label": "Eleusis / chapadensis",
+      "style": {
+       "color": "#000000",
+       "marker": "Circle",
+       "size": 30.0,
+       "fill": null
+      },
+      "rows": [
+       0,
+       7,
+       16,
+       26,
+       28,
+       31
+      ]
+     },
+     {
+      "label": "Eleusis / riograndensis",
+      "style": {
+       "color": "#000000",
+       "marker": "Square",
+       "size": 30.0,
+       "fill": null
+      },
+      "rows": [
+       1,
+       17,
+       27,
+       36,
+       37,
+       49
+      ]
+     },
+     {
+      "label": "Xanthopygus / santanderensis",
+      "style": {
+       "color": "#ffffff",
+       "marker": "Circle",
+       "size": 30.0,
+       "fill": null
+      },
+      "rows": [
+       2,
+       10,
+       33,
+       42,
+       45
+      ]
+     },
+     {
+      "label": "Plociopterus / ecuadoriana",
+      "style": {
+       "color": "#808080",
+       "marker": "Circle",
+       "size": 30.0,
+       "fill": null
+      },
+      "rows": [
+       3,
+       22,
+       25,
+       32,
+       43
+      ]
+     },
+     {
+      "label": "Xanthopygus / huilaensis",
+      "style": {
+       "color": "#ffffff",
+       "marker": "Square",
+       "size": 30.0,
+       "fill": null
+      },
+      "rows": [
+       4,
+       29,
+       40,
+       47,
+       48
+      ]
+     },
+     {
+      "label": "Plociopterus / paranaensis",
+      "style": {
+       "color": "#808080",
+       "marker": "Square",
+       "size": 30.0,
+       "fill": null
+      },
+      "rows": [
+       5,
+       11,
+       14,
+       15,
+       18,
+       39
+      ]
+     },
+     {
+      "label": "Xanthopygus / orinocensis",
+      "style": {
+       "color": "#ffffff",
+       "marker": "Triangle",
+       "size": 30.0,
+       "fill": null
+      },
+      "rows": [
+       6,
+       13,
+       24,
+       34,
+       35,
+       41
+      ]
+     },
+     {
+      "label": "Plociopterus / antioquensis",
+      "style": {
+       "color": "#808080",
+       "marker": "Triangle",
+       "size": 30.0,
+       "fill": null
+      },
+      "rows": [
+       8,
+       20,
+       21,
+       30,
+       38
+      ]
+     },
+     {
+      "label": "Eleusis / andina",
+      "style": {
+       "color": "#000000",
+       "marker": "Triangle",
+       "size": 30.0,
+       "fill": null
+      },
+      "rows": [
+       9,
+       12,
+       19,
+       23,
+       44,
+       46
+      ]
+     }
+    ],
+    "openGroups": [],
+    "labelMap": {},
+    "rows": [],
+    "sections": [
+     {
+      "title": "Genus / Species",
+      "rows": [
+       {
+        "label": "Eleusis",
+        "style": {
+         "color": "#000000",
+         "marker": "Circle",
+         "size": 30.0,
+         "fill": null
+        },
+        "depth": 0
+       },
+       {
+        "label": "andina",
+        "style": {
+         "color": "#000000",
+         "marker": "Triangle",
+         "size": 30.0,
+         "fill": null
+        },
+        "depth": 1
+       },
+       {
+        "label": "chapadensis",
+        "style": {
+         "color": "#000000",
+         "marker": "Circle",
+         "size": 30.0,
+         "fill": null
+        },
+        "depth": 1
+       },
+       {
+        "label": "riograndensis",
+        "style": {
+         "color": "#000000",
+         "marker": "Square",
+         "size": 30.0,
+         "fill": null
+        },
+        "depth": 1
+       },
+       {
+        "label": "Plociopterus",
+        "style": {
+         "color": "#808080",
+         "marker": "Circle",
+         "size": 30.0,
+         "fill": null
+        },
+        "depth": 0
+       },
+       {
+        "label": "antioquensis",
+        "style": {
+         "color": "#808080",
+         "marker": "Triangle",
+         "size": 30.0,
+         "fill": null
+        },
+        "depth": 1
+       },
+       {
+        "label": "ecuadoriana",
+        "style": {
+         "color": "#808080",
+         "marker": "Circle",
+         "size": 30.0,
+         "fill": null
+        },
+        "depth": 1
+       },
+       {
+        "label": "paranaensis",
+        "style": {
+         "color": "#808080",
+         "marker": "Square",
+         "size": 30.0,
+         "fill": null
+        },
+        "depth": 1
+       },
+       {
+        "label": "Xanthopygus",
+        "style": {
+         "color": "#ffffff",
+         "marker": "Circle",
+         "size": 30.0,
+         "fill": null
+        },
+        "depth": 0
+       },
+       {
+        "label": "huilaensis",
+        "style": {
+         "color": "#ffffff",
+         "marker": "Square",
+         "size": 30.0,
+         "fill": null
+        },
+        "depth": 1
+       },
+       {
+        "label": "orinocensis",
+        "style": {
+         "color": "#ffffff",
+         "marker": "Triangle",
+         "size": 30.0,
+         "fill": null
+        },
+        "depth": 1
+       },
+       {
+        "label": "santanderensis",
+        "style": {
+         "color": "#ffffff",
+         "marker": "Circle",
+         "size": 30.0,
+         "fill": null
+        },
+        "depth": 1
+       }
+      ]
+     }
+    ],
+    "attribute": true,
+    "paletteOffset": 0
+   }
+  ],
+  "sections": [
+   {
+    "title": "Genus / Species",
+    "rows": [
+     {
+      "label": "Eleusis",
+      "style": {
+       "color": "#000000",
+       "marker": "Circle",
+       "size": 30.0,
+       "fill": null
+      },
+      "depth": 0
+     },
+     {
+      "label": "andina",
+      "style": {
+       "color": "#000000",
+       "marker": "Triangle",
+       "size": 30.0,
+       "fill": null
+      },
+      "depth": 1
+     },
+     {
+      "label": "chapadensis",
+      "style": {
+       "color": "#000000",
+       "marker": "Circle",
+       "size": 30.0,
+       "fill": null
+      },
+      "depth": 1
+     },
+     {
+      "label": "riograndensis",
+      "style": {
+       "color": "#000000",
+       "marker": "Square",
+       "size": 30.0,
+       "fill": null
+      },
+      "depth": 1
+     },
+     {
+      "label": "Plociopterus",
+      "style": {
+       "color": "#808080",
+       "marker": "Circle",
+       "size": 30.0,
+       "fill": null
+      },
+      "depth": 0
+     },
+     {
+      "label": "antioquensis",
+      "style": {
+       "color": "#808080",
+       "marker": "Triangle",
+       "size": 30.0,
+       "fill": null
+      },
+      "depth": 1
+     },
+     {
+      "label": "ecuadoriana",
+      "style": {
+       "color": "#808080",
+       "marker": "Circle",
+       "size": 30.0,
+       "fill": null
+      },
+      "depth": 1
+     },
+     {
+      "label": "paranaensis",
+      "style": {
+       "color": "#808080",
+       "marker": "Square",
+       "size": 30.0,
+       "fill": null
+      },
+      "depth": 1
+     },
+     {
+      "label": "Xanthopygus",
+      "style": {
+       "color": "#ffffff",
+       "marker": "Circle",
+       "size": 30.0,
+       "fill": null
+      },
+      "depth": 0
+     },
+     {
+      "label": "huilaensis",
+      "style": {
+       "color": "#ffffff",
+       "marker": "Square",
+       "size": 30.0,
+       "fill": null
+      },
+      "depth": 1
+     },
+     {
+      "label": "orinocensis",
+      "style": {
+       "color": "#ffffff",
+       "marker": "Triangle",
+       "size": 30.0,
+       "fill": null
+      },
+      "depth": 1
+     },
+     {
+      "label": "santanderensis",
+      "style": {
+       "color": "#ffffff",
+       "marker": "Circle",
+       "size": 30.0,
+       "fill": null
+      },
+      "depth": 1
+     }
+    ]
+   }
+  ],
+  "rowOrder": null,
+  "openNote": null
+ },
+ "title": null,
+ "editor": [
+  {
+   "key": "color\u0000Eleusis",
+   "value": "Eleusis",
+   "style": {
+    "color": "#000000",
+    "marker": "Circle",
+    "size": 30.0,
+    "fill": null
+   },
+   "depth": 0
+  },
+  {
+   "key": "pair\u0000Eleusis\u0000chapadensis",
+   "value": "chapadensis",
+   "style": {
+    "color": "#000000",
+    "marker": "Circle",
+    "size": 30.0,
+    "fill": null
+   },
+   "depth": 1
+  },
+  {
+   "key": "pair\u0000Eleusis\u0000riograndensis",
+   "value": "riograndensis",
+   "style": {
+    "color": "#000000",
+    "marker": "Square",
+    "size": 30.0,
+    "fill": null
+   },
+   "depth": 1
+  },
+  {
+   "key": "pair\u0000Eleusis\u0000andina",
+   "value": "andina",
+   "style": {
+    "color": "#000000",
+    "marker": "Triangle",
+    "size": 30.0,
+    "fill": null
+   },
+   "depth": 1
+  },
+  {
+   "key": "color\u0000Xanthopygus",
+   "value": "Xanthopygus",
+   "style": {
+    "color": "#ffffff",
+    "marker": "Circle",
+    "size": 30.0,
+    "fill": null
+   },
+   "depth": 0
+  },
+  {
+   "key": "pair\u0000Xanthopygus\u0000santanderensis",
+   "value": "santanderensis",
+   "style": {
+    "color": "#ffffff",
+    "marker": "Circle",
+    "size": 30.0,
+    "fill": null
+   },
+   "depth": 1
+  },
+  {
+   "key": "pair\u0000Xanthopygus\u0000huilaensis",
+   "value": "huilaensis",
+   "style": {
+    "color": "#ffffff",
+    "marker": "Square",
+    "size": 30.0,
+    "fill": null
+   },
+   "depth": 1
+  },
+  {
+   "key": "pair\u0000Xanthopygus\u0000orinocensis",
+   "value": "orinocensis",
+   "style": {
+    "color": "#ffffff",
+    "marker": "Triangle",
+    "size": 30.0,
+    "fill": null
+   },
+   "depth": 1
+  },
+  {
+   "key": "color\u0000Plociopterus",
+   "value": "Plociopterus",
+   "style": {
+    "color": "#808080",
+    "marker": "Circle",
+    "size": 30.0,
+    "fill": null
+   },
+   "depth": 0
+  },
+  {
+   "key": "pair\u0000Plociopterus\u0000ecuadoriana",
+   "value": "ecuadoriana",
+   "style": {
+    "color": "#808080",
+    "marker": "Circle",
+    "size": 30.0,
+    "fill": null
+   },
+   "depth": 1
+  },
+  {
+   "key": "pair\u0000Plociopterus\u0000paranaensis",
+   "value": "paranaensis",
+   "style": {
+    "color": "#808080",
+    "marker": "Square",
+    "size": 30.0,
+    "fill": null
+   },
+   "depth": 1
+  },
+  {
+   "key": "pair\u0000Plociopterus\u0000antioquensis",
+   "value": "antioquensis",
+   "style": {
+    "color": "#808080",
+    "marker": "Triangle",
+    "size": 30.0,
+    "fill": null
+   },
+   "depth": 1
+  }
+ ],
+ "warning": "",
+ "status": "Ready.",
+ "legend": {
+  "title": null,
+  "entries": [
+   {
+    "text": "Genus / Species",
+    "size": 9.0,
+    "weight": "bold",
+    "style": "normal",
+    "color": "#000000",
+    "family": [
+     "sans-serif"
+    ],
+    "underline": false,
+    "handle": null
+   },
+   {
+    "text": "   Eleusis",
+    "size": 9.0,
+    "weight": "bold",
+    "style": "normal",
+    "color": "#000000",
+    "family": [
+     "sans-serif"
+    ],
+    "underline": false,
+    "handle": {
+     "marker": "o",
+     "markersize": 6.708203932499369,
+     "face": "#000000",
+     "edge": "#000000",
+     "edgeWidth": 0.6
+    }
+   },
+   {
+    "text": "      andina",
+    "size": 9.0,
+    "weight": "normal",
+    "style": "italic",
+    "color": "#000000",
+    "family": [
+     "sans-serif"
+    ],
+    "underline": false,
+    "handle": {
+     "marker": "^",
+     "markersize": 6.708203932499369,
+     "face": "#000000",
+     "edge": "#000000",
+     "edgeWidth": 0.6
+    }
+   },
+   {
+    "text": "      chapadensis",
+    "size": 9.0,
+    "weight": "normal",
+    "style": "italic",
+    "color": "#000000",
+    "family": [
+     "sans-serif"
+    ],
+    "underline": false,
+    "handle": {
+     "marker": "o",
+     "markersize": 6.708203932499369,
+     "face": "#000000",
+     "edge": "#000000",
+     "edgeWidth": 0.6
+    }
+   },
+   {
+    "text": "      riograndensis",
+    "size": 9.0,
+    "weight": "normal",
+    "style": "italic",
+    "color": "#000000",
+    "family": [
+     "sans-serif"
+    ],
+    "underline": false,
+    "handle": {
+     "marker": "s",
+     "markersize": 6.708203932499369,
+     "face": "#000000",
+     "edge": "#000000",
+     "edgeWidth": 0.6
+    }
+   },
+   {
+    "text": " ",
+    "size": 9.0,
+    "weight": "bold",
+    "style": "normal",
+    "color": "#000000",
+    "family": [
+     "sans-serif"
+    ],
+    "underline": false,
+    "handle": null
+   },
+   {
+    "text": "   Plociopterus",
+    "size": 9.0,
+    "weight": "bold",
+    "style": "normal",
+    "color": "#000000",
+    "family": [
+     "sans-serif"
+    ],
+    "underline": false,
+    "handle": {
+     "marker": "o",
+     "markersize": 6.708203932499369,
+     "face": "#808080",
+     "edge": "#000000",
+     "edgeWidth": 0.6
+    }
+   },
+   {
+    "text": "      antioquensis",
+    "size": 9.0,
+    "weight": "normal",
+    "style": "italic",
+    "color": "#000000",
+    "family": [
+     "sans-serif"
+    ],
+    "underline": false,
+    "handle": {
+     "marker": "^",
+     "markersize": 6.708203932499369,
+     "face": "#808080",
+     "edge": "#000000",
+     "edgeWidth": 0.6
+    }
+   },
+   {
+    "text": "      ecuadoriana",
+    "size": 9.0,
+    "weight": "normal",
+    "style": "italic",
+    "color": "#000000",
+    "family": [
+     "sans-serif"
+    ],
+    "underline": false,
+    "handle": {
+     "marker": "o",
+     "markersize": 6.708203932499369,
+     "face": "#808080",
+     "edge": "#000000",
+     "edgeWidth": 0.6
+    }
+   },
+   {
+    "text": "      paranaensis",
+    "size": 9.0,
+    "weight": "normal",
+    "style": "italic",
+    "color": "#000000",
+    "family": [
+     "sans-serif"
+    ],
+    "underline": false,
+    "handle": {
+     "marker": "s",
+     "markersize": 6.708203932499369,
+     "face": "#808080",
+     "edge": "#000000",
+     "edgeWidth": 0.6
+    }
+   },
+   {
+    "text": " ",
+    "size": 9.0,
+    "weight": "bold",
+    "style": "normal",
+    "color": "#000000",
+    "family": [
+     "sans-serif"
+    ],
+    "underline": false,
+    "handle": null
+   },
+   {
+    "text": "   Xanthopygus",
+    "size": 9.0,
+    "weight": "bold",
+    "style": "normal",
+    "color": "#000000",
+    "family": [
+     "sans-serif"
+    ],
+    "underline": false,
+    "handle": {
+     "marker": "o",
+     "markersize": 6.708203932499369,
+     "face": "#ffffff",
+     "edge": "#000000",
+     "edgeWidth": 0.6
+    }
+   },
+   {
+    "text": "      huilaensis",
+    "size": 9.0,
+    "weight": "normal",
+    "style": "italic",
+    "color": "#000000",
+    "family": [
+     "sans-serif"
+    ],
+    "underline": false,
+    "handle": {
+     "marker": "s",
+     "markersize": 6.708203932499369,
+     "face": "#ffffff",
+     "edge": "#000000",
+     "edgeWidth": 0.6
+    }
+   },
+   {
+    "text": "      orinocensis",
+    "size": 9.0,
+    "weight": "normal",
+    "style": "italic",
+    "color": "#000000",
+    "family": [
+     "sans-serif"
+    ],
+    "underline": false,
+    "handle": {
+     "marker": "^",
+     "markersize": 6.708203932499369,
+     "face": "#ffffff",
+     "edge": "#000000",
+     "edgeWidth": 0.6
+    }
+   },
+   {
+    "text": "      santanderensis",
+    "size": 9.0,
+    "weight": "normal",
+    "style": "italic",
+    "color": "#000000",
+    "family": [
+     "sans-serif"
+    ],
+    "underline": false,
+    "handle": {
+     "marker": "o",
+     "markersize": 6.708203932499369,
+     "face": "#ffffff",
+     "edge": "#000000",
+     "edgeWidth": 0.6
+    }
+   }
+  ]
+ },
+ "geometry": {
+  "axes": [
+   635.04,
+   456.768
+  ],
+  "box": [
+   513.18,
+   235.1564,
+   117.36,
+   217.1116
+  ],
+  "frame": [
+   513.18,
+   235.1564,
+   117.36,
+   217.1116
+  ],
+  "texts": [
+   [
+    538.38,
+    439.3059,
+    84.24,
+    9.3621
+   ],
+   [
+    538.38,
+    425.4438,
+    47.52,
+    9.3621
+   ],
+   [
+    538.38,
+    410.8617,
+    48.96,
+    10.0821
+   ],
+   [
+    538.38,
+    396.2796,
+    75.6,
+    10.0821
+   ],
+   [
+    538.38,
+    381.6975,
+    80.64,
+    10.0821
+   ],
+   [
+    538.38,
+    367.8353,
+    3.6,
+    9.0
+   ],
+   [
+    538.38,
+    353.9732,
+    76.32,
+    9.3621
+   ],
+   [
+    538.38,
+    339.3911,
+    77.04,
+    10.0821
+   ],
+   [
+    538.38,
+    324.809,
+    74.88,
+    10.0821
+   ],
+   [
+    538.38,
+    310.2269,
+    74.16,
+    10.0821
+   ],
+   [
+    538.38,
+    296.3648,
+    3.6,
+    9.0
+   ],
+   [
+    538.38,
+    282.5027,
+    79.2,
+    9.3621
+   ],
+   [
+    538.38,
+    267.9206,
+    64.8,
+    10.0821
+   ],
+   [
+    538.38,
+    253.3385,
+    70.56,
+    10.0821
+   ],
+   [
+    538.38,
+    238.7564,
+    88.56,
+    10.0821
+   ]
+  ],
+  "title": null,
+  "markers": [
+   [
+    525.78,
+    444.618
+   ],
+   [
+    525.78,
+    430.7559
+   ],
+   [
+    525.78,
+    416.1738
+   ],
+   [
+    525.78,
+    401.5917
+   ],
+   [
+    525.78,
+    387.0096
+   ],
+   [
+    525.78,
+    373.1475
+   ],
+   [
+    525.78,
+    359.2853
+   ],
+   [
+    525.78,
+    344.7032
+   ],
+   [
+    525.78,
+    330.1211
+   ],
+   [
+    525.78,
+    315.539
+   ],
+   [
+    525.78,
+    301.6769
+   ],
+   [
+    525.78,
+    287.8148
+   ],
+   [
+    525.78,
+    273.2327
+   ],
+   [
+    525.78,
+    258.6506
+   ],
+   [
+    525.78,
+    244.0685
+   ]
+  ],
+  "baselines": [
+   [
+    538.38,
+    441.468
+   ],
+   [
+    538.38,
+    427.6059
+   ],
+   [
+    538.38,
+    413.0238
+   ],
+   [
+    538.38,
+    398.4417
+   ],
+   [
+    538.38,
+    383.8596
+   ],
+   [
+    538.38,
+    369.9975
+   ],
+   [
+    538.38,
+    356.1353
+   ],
+   [
+    538.38,
+    341.5532
+   ],
+   [
+    538.38,
+    326.9711
+   ],
+   [
+    538.38,
+    312.389
+   ],
+   [
+    538.38,
+    298.5269
+   ],
+   [
+    538.38,
+    284.6648
+   ],
+   [
+    538.38,
+    270.0827
+   ],
+   [
+    538.38,
+    255.5006
+   ],
+   [
+    538.38,
+    240.9185
+   ]
+  ],
+  "titleBaseline": null,
+  "metrics": [
+   {
+    "text": "Genus / Species",
+    "size": 9.0,
+    "weight": "bold",
+    "style": "normal",
+    "w": 84.24,
+    "h": 9.36,
+    "d": 2.16,
+    "lpH": 9.36,
+    "lpD": 2.16
+   },
+   {
+    "text": "   Eleusis",
+    "size": 9.0,
+    "weight": "bold",
+    "style": "normal",
+    "w": 47.519999999999996,
+    "h": 7.199999999999999,
+    "d": 0.0,
+    "lpH": 9.36,
+    "lpD": 2.16
+   },
+   {
+    "text": "      andina",
+    "size": 9.0,
+    "weight": "normal",
+    "style": "italic",
+    "w": 48.96,
+    "h": 7.92,
+    "d": 0.0,
+    "lpH": 10.08,
+    "lpD": 2.16
+   },
+   {
+    "text": "      chapadensis",
+    "size": 9.0,
+    "weight": "normal",
+    "style": "italic",
+    "w": 75.6,
+    "h": 10.08,
+    "d": 2.16,
+    "lpH": 10.08,
+    "lpD": 2.16
+   },
+   {
+    "text": "      riograndensis",
+    "size": 9.0,
+    "weight": "normal",
+    "style": "italic",
+    "w": 80.64,
+    "h": 10.08,
+    "d": 2.16,
+    "lpH": 10.08,
+    "lpD": 2.16
+   },
+   {
+    "text": " ",
+    "size": 9.0,
+    "weight": "bold",
+    "style": "normal",
+    "w": 3.5999999999999996,
+    "h": 0.0,
+    "d": 0.0,
+    "lpH": 9.36,
+    "lpD": 2.16
+   },
+   {
+    "text": "   Plociopterus",
+    "size": 9.0,
+    "weight": "bold",
+    "style": "normal",
+    "w": 76.32,
+    "h": 9.36,
+    "d": 2.16,
+    "lpH": 9.36,
+    "lpD": 2.16
+   },
+   {
+    "text": "      antioquensis",
+    "size": 9.0,
+    "weight": "normal",
+    "style": "italic",
+    "w": 77.03999999999999,
+    "h": 10.08,
+    "d": 2.16,
+    "lpH": 10.08,
+    "lpD": 2.16
+   },
+   {
+    "text": "      ecuadoriana",
+    "size": 9.0,
+    "weight": "normal",
+    "style": "italic",
+    "w": 74.88,
+    "h": 7.92,
+    "d": 0.0,
+    "lpH": 10.08,
+    "lpD": 2.16
+   },
+   {
+    "text": "      paranaensis",
+    "size": 9.0,
+    "weight": "normal",
+    "style": "italic",
+    "w": 74.16,
+    "h": 10.08,
+    "d": 2.16,
+    "lpH": 10.08,
+    "lpD": 2.16
+   },
+   {
+    "text": " ",
+    "size": 9.0,
+    "weight": "bold",
+    "style": "normal",
+    "w": 3.5999999999999996,
+    "h": 0.0,
+    "d": 0.0,
+    "lpH": 9.36,
+    "lpD": 2.16
+   },
+   {
+    "text": "   Xanthopygus",
+    "size": 9.0,
+    "weight": "bold",
+    "style": "normal",
+    "w": 79.2,
+    "h": 9.36,
+    "d": 2.16,
+    "lpH": 9.36,
+    "lpD": 2.16
+   },
+   {
+    "text": "      huilaensis",
+    "size": 9.0,
+    "weight": "normal",
+    "style": "italic",
+    "w": 64.8,
+    "h": 7.92,
+    "d": 0.0,
+    "lpH": 10.08,
+    "lpD": 2.16
+   },
+   {
+    "text": "      orinocensis",
+    "size": 9.0,
+    "weight": "normal",
+    "style": "italic",
+    "w": 70.56,
+    "h": 7.92,
+    "d": 0.0,
+    "lpH": 10.08,
+    "lpD": 2.16
+   },
+   {
+    "text": "      santanderensis",
+    "size": 9.0,
+    "weight": "normal",
+    "style": "italic",
+    "w": 88.56,
+    "h": 7.92,
+    "d": 0.0,
+    "lpH": 10.08,
+    "lpD": 2.16
+   }
+  ]
+ }
+}

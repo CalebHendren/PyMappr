@@ -1,0 +1,504 @@
+{
+ "state": {
+  "datasets": [
+   {
+    "name": "south_america_beetles.csv",
+    "visible": true,
+    "source_path": "C:\\PyCharm\\PyMappr\\sample_data\\south_america_beetles.csv",
+    "columns": [
+     "name1",
+     "name2",
+     "lon",
+     "lat"
+    ],
+    "name_labels": [
+     "Genus",
+     "Species"
+    ],
+    "rows": [
+     [
+      "Eleusis",
+      "chapadensis",
+      -68.434871,
+      -12.354055
+     ],
+     [
+      "Eleusis",
+      "riograndensis",
+      -64.38023,
+      -30.421336
+     ],
+     [
+      "Xanthopygus",
+      "santanderensis",
+      -41.202349,
+      -18.16267
+     ],
+     [
+      "Plociopterus",
+      "ecuadoriana",
+      -47.766964,
+      -9.22203
+     ],
+     [
+      "Xanthopygus",
+      "huilaensis",
+      -75.2345,
+      8.049103
+     ],
+     [
+      "Plociopterus",
+      "paranaensis",
+      -74.276261,
+      -3.723631
+     ],
+     [
+      "Xanthopygus",
+      "orinocensis",
+      -67.56034,
+      10.308002
+     ],
+     [
+      "Eleusis",
+      "chapadensis",
+      -55.641162,
+      0.828438
+     ],
+     [
+      "Plociopterus",
+      "antioquensis",
+      -52.121166,
+      -1.711516
+     ],
+     [
+      "Eleusis",
+      "andina",
+      -76.896131,
+      2.059427
+     ],
+     [
+      "Xanthopygus",
+      "santanderensis",
+      -69.803429,
+      -42.668279
+     ],
+     [
+      "Plociopterus",
+      "paranaensis",
+      -45.905311,
+      -3.497461
+     ],
+     [
+      "Eleusis",
+      "andina",
+      -72.129013,
+      -11.387757
+     ],
+     [
+      "Xanthopygus",
+      "orinocensis",
+      -61.664552,
+      9.532805
+     ],
+     [
+      "Plociopterus",
+      "paranaensis",
+      -56.232217,
+      -2.626973
+     ],
+     [
+      "Plociopterus",
+      "paranaensis",
+      -51.074018,
+      -25.799499
+     ],
+     [
+      "Eleusis",
+      "chapadensis",
+      -47.34637,
+      -19.121973
+     ],
+     [
+      "Eleusis",
+      "riograndensis",
+      -66.721481,
+      -11.009797
+     ],
+     [
+      "Plociopterus",
+      "paranaensis",
+      -70.921858,
+      -32.605401
+     ],
+     [
+      "Eleusis",
+      "andina",
+      -74.153012,
+      9.52569
+     ],
+     [
+      "Plociopterus",
+      "antioquensis",
+      -62.94247,
+      6.622341
+     ],
+     [
+      "Plociopterus",
+      "antioquensis",
+      -59.991303,
+      -37.586964
+     ],
+     [
+      "Plociopterus",
+      "ecuadoriana",
+      -51.584174,
+      -14.171935
+     ],
+     [
+      "Eleusis",
+      "andina",
+      -70.991254,
+      -5.495602
+     ],
+     [
+      "Xanthopygus",
+      "orinocensis",
+      -54.374257,
+      -18.715917
+     ],
+     [
+      "Plociopterus",
+      "ecuadoriana",
+      -61.115688,
+      -24.736325
+     ],
+     [
+      "Eleusis",
+      "chapadensis",
+      -70.544043,
+      -48.73877
+     ],
+     [
+      "Eleusis",
+      "riograndensis",
+      -37.687017,
+      -11.513584
+     ],
+     [
+      "Eleusis",
+      "chapadensis",
+      -54.459596,
+      -7.666327
+     ],
+     [
+      "Xanthopygus",
+      "huilaensis",
+      -54.754109,
+      -23.446976
+     ],
+     [
+      "Plociopterus",
+      "antioquensis",
+      -69.145915,
+      -15.83126
+     ],
+     [
+      "Eleusis",
+      "chapadensis",
+      -52.537853,
+      3.026577
+     ],
+     [
+      "Plociopterus",
+      "ecuadoriana",
+      -69.115692,
+      -21.547379
+     ],
+     [
+      "Xanthopygus",
+      "santanderensis",
+      -60.469236,
+      -26.90315
+     ],
+     [
+      "Xanthopygus",
+      "orinocensis",
+      -75.814522,
+      4.97145
+     ],
+     [
+      "Xanthopygus",
+      "orinocensis",
+      -54.140978,
+      -21.393297
+     ],
+     [
+      "Eleusis",
+      "riograndensis",
+      -71.630956,
+      -37.444221
+     ],
+     [
+      "Eleusis",
+      "riograndensis",
+      -68.912545,
+      -41.25463
+     ],
+     [
+      "Plociopterus",
+      "antioquensis",
+      -69.898137,
+      -17.411215
+     ],
+     [
+      "Plociopterus",
+      "paranaensis",
+      -71.130986,
+      -50.780812
+     ],
+     [
+      "Xanthopygus",
+      "huilaensis",
+      -72.522427,
+      -49.015772
+     ],
+     [
+      "Xanthopygus",
+      "orinocensis",
+      -72.736457,
+      -15.120207
+     ],
+     [
+      "Xanthopygus",
+      "santanderensis",
+      -68.408191,
+      -38.612718
+     ],
+     [
+      "Plociopterus",
+      "ecuadoriana",
+      -73.071303,
+      6.491703
+     ],
+     [
+      "Eleusis",
+      "andina",
+      -53.228438,
+      -0.687451
+     ],
+     [
+      "Xanthopygus",
+      "santanderensis",
+      -65.571975,
+      3.024239
+     ],
+     [
+      "Eleusis",
+      "andina",
+      -53.903461,
+      -0.530789
+     ],
+     [
+      "Xanthopygus",
+      "huilaensis",
+      -59.609788,
+      -5.998851
+     ],
+     [
+      "Xanthopygus",
+      "huilaensis",
+      -61.289064,
+      -26.787672
+     ],
+     [
+      "Eleusis",
+      "riograndensis",
+      -51.535146,
+      -17.711883
+     ]
+    ],
+    "group_by": "Genus",
+    "color_by": "",
+    "symbol_by": "",
+    "vary_symbols": true,
+    "open_by": "",
+    "open_values": [],
+    "styles": {},
+    "legend_overrides": {},
+    "manual": null
+   }
+  ],
+  "active": 0,
+  "map": {
+   "projection": "Equirectangular",
+   "proj_lon0": "",
+   "proj_lat0": "",
+   "basemap": "simple",
+   "continent": "South America",
+   "orientation": "Landscape",
+   "compass": false,
+   "compass_options": {
+    "show": false,
+    "position": "upper right",
+    "style": "arrow",
+    "size": 1.0,
+    "color": "#1a1a1a"
+   },
+   "scale_bar": {
+    "show": false,
+    "units": "km",
+    "position": "lower left",
+    "style": "segmented",
+    "length_mode": "auto",
+    "fixed_length": null,
+    "segments": 4,
+    "width": 0.22,
+    "fontsize": 8.0,
+    "color": "#1a1a1a",
+    "draggable": false,
+    "anchor_x": null,
+    "anchor_y": null
+   },
+   "inset": {
+    "show": false,
+    "position": "lower right",
+    "size": 0.3,
+    "region": "state",
+    "zoom_out": 6.0,
+    "lon_min": null,
+    "lon_max": null,
+    "lat_min": null,
+    "lat_max": null,
+    "projection": "same",
+    "countries": true,
+    "states": false,
+    "counties": false,
+    "land": true,
+    "ocean": "none",
+    "points": true,
+    "box": true,
+    "box_color": "#d62728",
+    "draggable": false,
+    "anchor_x": null,
+    "anchor_y": null
+   },
+   "palette": "Black & white",
+   "graticule": "10\u00b0",
+   "hide_grid_labels": true,
+   "line_width": 1.0,
+   "dpi": "600",
+   "export_width": "17 cm (Zootaxa / Phytotaxa page)",
+   "ocean": "none",
+   "lake_fill": "none",
+   "bathymetry": false,
+   "capitals_only": false,
+   "lines": {
+    "countries": true,
+    "states": false,
+    "counties": false,
+    "sovereignty": false,
+    "map_units": false,
+    "subunits": false,
+    "dependencies": false,
+    "disputed_lines": false,
+    "timezones": false,
+    "lakes_outline": false,
+    "rivers": false,
+    "wadis": false,
+    "maritime": false,
+    "eez": false,
+    "reefs": false,
+    "regions": false,
+    "roads": false
+   },
+   "fills": {
+    "disputed": false,
+    "land": false,
+    "glaciers": false,
+    "ice_shelves": false,
+    "playas": false,
+    "deserts": false,
+    "urban": false,
+    "parks": false,
+    "biodiversity": false,
+    "ecoregions": false,
+    "marine_ecoregions": false
+   },
+   "points": {
+    "cities": false,
+    "airports": false,
+    "ports": false
+   },
+   "labels": {
+    "countries": false,
+    "states": false,
+    "counties": false,
+    "cities": false,
+    "airports": false,
+    "ports": false,
+    "lakes": false,
+    "rivers": false,
+    "regions": false,
+    "timezones": false
+   }
+  },
+  "legend": {
+   "show": true,
+   "title": null,
+   "show_title": false,
+   "location": "best",
+   "hierarchy": "auto",
+   "order": "az",
+   "counts": false,
+   "count_format": "(n)",
+   "blank_label": "(blank)",
+   "section_titles": true,
+   "title_separator": " / ",
+   "dataset_prefix": true,
+   "empty_groups": false,
+   "indent": 3,
+   "bold_groups": true,
+   "group_spacer": true,
+   "group_swatch": "circle",
+   "symbol_swatch_color": "#555555",
+   "columns": 1,
+   "label_spacing": 0.5,
+   "column_spacing": 2.0,
+   "handle_text_pad": null,
+   "handle_length": 2.0,
+   "border_pad": 0.4,
+   "marker_scale": 1.0,
+   "frame": true,
+   "frame_color": "#ffffff",
+   "frame_alpha": 1.0,
+   "frame_edge_color": "#000000",
+   "frame_width": 0.5,
+   "rounded": false,
+   "shadow": false,
+   "fontsize": 9.0,
+   "title_fontsize": 10.0,
+   "font_family": "",
+   "label_color": "#000000",
+   "title_color": "#000000",
+   "label_bold": false,
+   "label_italic": true,
+   "label_underline": false,
+   "title_bold": true,
+   "title_italic": false,
+   "title_underline": false,
+   "title_align": "center",
+   "draggable": false,
+   "anchor": null
+  },
+  "point_alpha": 1.0,
+  "point_edge": {
+   "color": "#000000",
+   "width": 0.6
+  }
+ },
+ "projectName": "no view",
+ "figureSize": [
+  7.5,
+  5.0
+ ]
+}
