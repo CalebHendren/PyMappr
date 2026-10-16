@@ -170,7 +170,8 @@ type GlyphCache = Arc<Mutex<HashMap<u32, Arc<Glyph>>>>;
 /// loaded glyphs, per face, ppem and mode.
 fn cached(face: usize, ppem: i64, mode: Mode, outlines: &OutlineGlyphCollection) -> (Option<Arc<HintingInstance>>, GlyphCache) {
     type Entry = (Option<Arc<HintingInstance>>, GlyphCache);
-    static CACHE: OnceLock<Mutex<HashMap<(usize, i64, Mode), Entry>>> = OnceLock::new();
+    type Faces = Mutex<HashMap<(usize, i64, Mode), Entry>>;
+    static CACHE: OnceLock<Faces> = OnceLock::new();
     let mut map = CACHE.get_or_init(Default::default).lock().unwrap_or_else(|e| e.into_inner());
     if map.len() > 64 {
         map.clear();
