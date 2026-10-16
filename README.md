@@ -5,8 +5,7 @@ at [calebhendren.github.io/PyMappr](https://calebhendren.github.io/PyMappr/). It
 workflow of turning a table of localities into a publication map, with nothing to install.
 
 This is the `minimappr` branch of the PyMappr repository. GitHub Pages serves it from
-[`index.html`](index.html). The desktop app, PyMappr, is on `main`, and its Rust port, RustyMappr,
-is on `rustymappr`.
+[`index.html`](index.html). The desktop app, PyMappr, is on `main`.
 
 ![MiniMappr in the browser: Lemur catta, Eulemur fulvus and Propithecus verreauxi in Madagascar as a black-and-white publication figure with a 5° grid, scale bar and a globe locator inset](docs/images/minimappr.png)
 
