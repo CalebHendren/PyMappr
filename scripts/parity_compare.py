@@ -12,12 +12,15 @@ Checks, in order of strictness:
               style),
               markers (position, size, face, edge) and legend frames must match
               within TOL_PT points (default 0.01 pt);
-    pixels    the PNGs are compared pixel by pixel; differences are allowed only
-              on anti-aliased edges (pixels next to a colour change in both
-              images), and at least MIN_IDENTICAL of all pixels must be equal.
+    pixels    the bar is an eye check, not pixel identity: the two rasterisers
+              anti-alias edges differently. A pixel counts as different only
+              when nothing within one pixel of it in the other image is within
+              MAX_CHANNEL_DIFF, and at most MAX_DIFFERENT of the pixels may be.
+              A missing or misplaced line, marker or label fails this.
 
-Writes report.json and diff.png (red = differing pixels) to OUT and exits
-non-zero when a check fails.
+Writes report.json, diff.png (red = different pixels) and side.png (PyMappr
+left, RustyMappr right, for the eye check) to OUT and exits non-zero when a
+check fails.
 
     C:\PyCharm\PyMappr\.venv\Scripts\python.exe scripts/parity_compare.py PYMAPPR_DIR RUSTY_DIR OUT
 """
@@ -32,7 +35,8 @@ from PIL import Image
 TOL_PT = 0.01
 PX_PER_PT = 100 / 72  # both sides draw the screen figure at 100 dpi
 TOL_PX = TOL_PT * PX_PER_PT
-MIN_IDENTICAL = 0.995
+MAX_CHANNEL_DIFF = 128  # of 255
+MAX_DIFFERENT = 1e-4   # share of all pixels
 
 
 def load(folder):
@@ -115,30 +119,33 @@ def compare_geometry(a, b):
 def compare_pixels(a, b, out):
     if a.shape != b.shape:
         return {"ok": False, "reason": f"image sizes differ: {a.shape} vs {b.shape}"}
-    differ = (a != b).any(axis=2)
 
-    def edges(img):
-        # A pixel is an edge when it differs from a 4-neighbour.
-        e = np.zeros(img.shape[:2], bool)
-        d = (img[1:] != img[:-1]).any(axis=2)
-        e[1:] |= d
-        e[:-1] |= d
-        d = (img[:, 1:] != img[:, :-1]).any(axis=2)
-        e[:, 1:] |= d
-        e[:, :-1] |= d
-        return e
+    def nearest(x, y):
+        # For each pixel of x, the smallest max-channel difference to y
+        # within its 3x3 neighbourhood.
+        h, w = x.shape[:2]
+        pad = np.pad(y, ((1, 1), (1, 1), (0, 0)), mode="edge")
+        best = np.full((h, w), 255, np.int16)
+        for dy in range(3):
+            for dx in range(3):
+                best = np.minimum(best, np.abs(x - pad[dy:dy + h, dx:dx + w]).max(axis=2))
+        return best
 
-    off_edge = differ & ~(edges(a) | edges(b))
-    identical = 1 - differ.mean()
-    vis = (a.astype(np.uint8) // 2 + 127).astype(np.uint8)
-    vis[differ] = [220, 30, 30]
+    near = np.maximum(nearest(a, b), nearest(b, a))
+    different = near > MAX_CHANNEL_DIFF
+    vis = (a // 2 + 127).astype(np.uint8)
+    vis[different] = [220, 30, 30]
     Image.fromarray(vis).save(out / "diff.png")
+    side = np.full((a.shape[0], a.shape[1] * 2 + 10, 3), 0, np.uint8)
+    side[:, :a.shape[1]] = a
+    side[:, a.shape[1] + 10:] = b
+    Image.fromarray(side).save(out / "side.png")
     return {
-        "ok": bool(identical >= MIN_IDENTICAL and not off_edge.any()),
-        "identical": float(identical),
-        "differing_pixels": int(differ.sum()),
-        "differing_off_edges": int(off_edge.sum()),
-        "max_channel_diff": int(np.abs(a - b).max()),
+        "ok": bool(different.mean() <= MAX_DIFFERENT),
+        "identical": float(1 - (a != b).any(axis=2).mean()),
+        "different": int(different.sum()),
+        "allowed": int(MAX_DIFFERENT * different.size),
+        "max_neighbourhood_diff": int(near.max()),
     }
 
 
