@@ -174,8 +174,8 @@ pub fn render_inset(basemap: &Basemap, req: &InsetRequest) -> Result<RenderedIns
         match basemap.layer(source, Some(zoom)) {
             Ok(layer) => {
                 let mut d = String::new();
-                draw(&mut d, &projected(basemap, &layer, &proj), kind, &ctx);
-                layers.push(RenderedLayer { id: id.into(), kind, d });
+                let breaks = draw(&mut d, &projected(basemap, &layer, &proj), kind, &ctx);
+                layers.push(RenderedLayer { id: id.into(), kind, d, breaks });
             }
             Err(e) => missing.push(format!("inset {id}: {e}")),
         }

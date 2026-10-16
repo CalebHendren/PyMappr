@@ -164,7 +164,27 @@ export type RenderRequest = {
  * one "districts" line layer). Fill paths keep each polygon's ring
  * orientation, so draw them with fill-rule "nonzero". Paths are thinned
  * to 0.01 pt and cut to the view plus a 5% margin. */
-export type RenderedLayer = { id: string; kind: "fill" | "line"; d: string };
+export type RenderedLayer = {
+  id: string;
+  kind: "fill" | "line";
+  d: string;
+  /** Offsets in `d` where each feature's own path starts: matplotlib draws
+   * every feature separately, so shared borders are stroked twice. */
+  breaks?: number[];
+};
+
+/** A layer's path data split into its features' paths. */
+export function layerParts(layer: RenderedLayer): string[] {
+  const b = layer.breaks;
+  if (!b || b.length < 2) return [layer.d];
+  const parts: string[] = [];
+  for (let i = 0; i < b.length; i++) {
+    const part = layer.d.slice(b[i], i + 1 < b.length ? b[i + 1] : undefined);
+    if (part) parts.push(part);
+  }
+  if (b[0] > 0) parts.unshift(layer.d.slice(0, b[0]));
+  return parts;
+}
 
 export type NeMarker = { layer: "cities" | "capitals" | "airports" | "ports"; x: number; y: number };
 

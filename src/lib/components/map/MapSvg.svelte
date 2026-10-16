@@ -21,6 +21,7 @@
   // compass, scale bar, inset) are drawn in figure units on top.
   import type { Snippet } from "svelte";
   import type { Rect, RenderedInset, RenderedMap, ScaleBar } from "$lib/api";
+  import { layerParts } from "$lib/api";
   import type { Figure } from "$lib/layout";
   import { mapToFigure, pxPerUnit } from "$lib/layout";
   import { aggMarkerPath, snappedPath } from "$lib/agg";
@@ -207,8 +208,8 @@
     {#each map.layers as layer, i (layer.id + i)}
       {@const s = layerStyle(layer.id, layer.kind, lineScale, pt * k)}
       {#if layer.d}
-        <path
-          d={layer.d}
+        <!-- One path per feature, as matplotlib's collections draw them. -->
+        <g
           fill={s.fill}
           fill-rule="nonzero"
           fill-opacity={s.opacity}
@@ -216,8 +217,12 @@
           stroke-width={s.width}
           stroke-dasharray={s.dash}
           stroke-linejoin="round"
-          stroke-linecap="round"
-        />
+          stroke-linecap="butt"
+        >
+          {#each layerParts(layer) as part, pi (pi)}
+            <path d={part} />
+          {/each}
+        </g>
       {/if}
     {/each}
   </svg>
@@ -403,15 +408,18 @@
     {#each inset.map.layers as layer, i (layer.id + i)}
       {@const s = layerStyle(layer.id, layer.kind, Math.max(lineScale * INSET.lineScale, 0.2), pt * insetK)}
       {#if layer.d && layer.id !== "ocean"}
-        <path
-          d={layer.d}
+        <g
           fill={layer.id === "land" ? INSET.land : s.fill}
           fill-rule="nonzero"
           fill-opacity={s.opacity}
           stroke={s.stroke}
           stroke-width={s.width}
           stroke-linejoin="round"
-        />
+        >
+          {#each layerParts(layer) as part, pi (pi)}
+            <path d={part} />
+          {/each}
+        </g>
       {/if}
     {/each}
     {#if settings.inset.box && inset.box.on === "inset" && inset.box.d}

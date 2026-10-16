@@ -147,6 +147,10 @@ pub struct RenderedLayer {
     pub id: String,
     pub kind: Kind,
     pub d: String,
+    /// Byte offsets in `d` where each feature's own path starts (per wrap
+    /// copy). matplotlib draws every feature as a path of its own, so a
+    /// border two countries share is stroked twice.
+    pub breaks: Vec<u32>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -308,22 +312,23 @@ pub fn render(basemap: &Basemap, req: &RenderRequest) -> Result<RenderedMap, Ren
     }
 
     let plan = layer_plan(basemap, settings, &req.districts, &mut missing);
-    let drawn: Vec<Result<String, String>> = plan
+    let drawn: Vec<Result<(String, Vec<u32>), String>> = plan
         .par_iter()
         .map(|entry| {
             let mut d = String::new();
+            let mut breaks = Vec::new();
             for source in &entry.sources {
                 let layer = basemap.layer(source, Some(data_zoom)).map_err(|e| format!("{}: {e}", entry.id))?;
                 let pieces = projected(basemap, &layer, &ctx.proj);
-                draw(&mut d, &pieces, entry.kind, &ctx);
+                breaks.extend(draw(&mut d, &pieces, entry.kind, &ctx));
             }
-            Ok(d)
+            Ok((d, breaks))
         })
         .collect();
     let mut layers = Vec::new();
     for (entry, result) in plan.iter().zip(drawn) {
         match result {
-            Ok(d) => layers.push(RenderedLayer { id: entry.id.clone(), kind: entry.kind, d }),
+            Ok((d, breaks)) => layers.push(RenderedLayer { id: entry.id.clone(), kind: entry.kind, d, breaks }),
             Err(e) => missing.push(e),
         }
     }
@@ -473,9 +478,12 @@ pub fn projected(basemap: &Basemap, layer: &Layer, proj: &Projection) -> Arc<Vec
 
 /// Write the pieces in view (and in any wrap copy in view) as path data:
 /// fills cut to the view's surroundings, lines split where they leave it.
-pub fn draw(d: &mut String, pieces: &[Piece], kind: Kind, ctx: &MapContext) {
+/// Returns where each feature's path starts in `d`.
+pub fn draw(d: &mut String, pieces: &[Piece], kind: Kind, ctx: &MapContext) -> Vec<u32> {
     let mut writer = PathWriter::new(ctx);
-    for &off in &ctx.offsets {
+    let mut breaks = Vec::new();
+    let mut last: Option<(usize, u32)> = None;
+    for (copy, &off) in ctx.offsets.iter().enumerate() {
         let clip_box = writer.clip.shift(-off);
         let [x0, x1, y0, y1] = [clip_box.x, clip_box.x + clip_box.w, clip_box.y, clip_box.y + clip_box.h];
         let shift = |pts: &[[f64; 2]]| -> Vec<[f64; 2]> { pts.iter().map(|p| [p[0] + off, p[1]]).collect() };
@@ -484,6 +492,12 @@ pub fn draw(d: &mut String, pieces: &[Piece], kind: Kind, ctx: &MapContext) {
                 continue;
             }
             let inside = clip_box.contains_rect(&piece.bbox);
+            if last != Some((copy, piece.feature)) {
+                last = Some((copy, piece.feature));
+                if breaks.last() != Some(&(d.len() as u32)) {
+                    breaks.push(d.len() as u32);
+                }
+            }
             match (kind, piece.closed) {
                 (Kind::Fill, _) => {
                     if inside {
@@ -511,6 +525,7 @@ pub fn draw(d: &mut String, pieces: &[Piece], kind: Kind, ctx: &MapContext) {
             }
         }
     }
+    breaks
 }
 
 fn project(proj: &Projection, pts: &[LonLat]) -> Vec<[f64; 2]> {
