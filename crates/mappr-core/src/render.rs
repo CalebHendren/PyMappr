@@ -571,7 +571,11 @@ pub fn clip(proj: &Projection, pts: &[LonLat], closed: bool) -> Vec<Vec<LonLat>>
     if proj.is_globe() {
         return clip_cap(proj, pts, closed);
     }
-    let (hs, lo, hi) = (proj.lon_halfspan, proj.min_lat, proj.max_lat);
+    // PyMappr clips a regional (Lambert) map's layers to its latitude band
+    // only (`clip_shape`): the longitude span bounds its labels, not its
+    // layers, so land beyond the region's edge is still drawn. Rings are
+    // still split at the cut meridian, where PyMappr would smear them.
+    let (hs, lo, hi) = (180.0, proj.min_lat, proj.max_lat);
 
     // Longitudes relative to the central meridian, unwrapped so that a ring
     // crossing the cut meridian stays continuous (it may run past ±180).
@@ -932,8 +936,8 @@ mod tests {
 
     #[test]
     fn ring_across_the_cut_meridian_is_not_smeared() {
-        // Centred on 0° with ±120° drawn: a ring straddling 180° comes back
-        // as two pieces, not one smeared across the whole map.
+        // Centred on 0°: a ring straddling the cut at 180° comes back as two
+        // pieces, one on each side, not one smeared across the whole map.
         let proj = Projection::new(&spec("Lambert Azimuthal (custom)")).unwrap();
         let ring = [[100.0, 10.0], [-100.0, 10.0], [-100.0, 20.0], [100.0, 20.0]];
         let pieces = clip(&proj, &ring, true);
@@ -941,7 +945,7 @@ mod tests {
         for piece in pieces {
             let lons: Vec<f64> = piece.iter().map(|p| proj.relative_lon(p[0])).collect();
             let span = lons.iter().cloned().fold(f64::MIN, f64::max) - lons.iter().cloned().fold(f64::MAX, f64::min);
-            assert!(span <= 20.0 + 1e-6, "piece spans {span}°");
+            assert!(span <= 80.0 + 1e-6, "piece spans {span}°");
         }
     }
 
