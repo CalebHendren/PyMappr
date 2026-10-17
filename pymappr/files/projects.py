@@ -15,7 +15,8 @@ from pymappr.styling.styles import PointStyle, row_key
 
 __all__ = ["PROJECT_EXTENSION", "DatasetEntry", "config_dir",
            "load_settings", "save_settings", "projects_dir",
-           "set_projects_dir", "session_path", "entry_to_dict",
+           "set_projects_dir", "kofi_dismissed", "set_kofi_dismissed",
+           "session_path", "entry_to_dict",
            "entry_from_dict", "save_project", "load_project",
            "list_projects", "delete_project", "rename_project",
            "safe_filename", "RESERVED_FILENAMES"]
@@ -68,6 +69,17 @@ def save_settings(settings: dict) -> None:
         path.write_text(json.dumps(settings, indent=2), encoding="utf-8")
     except OSError:
         pass  # settings are conveniences; never block the app on them
+
+
+def kofi_dismissed() -> bool:
+    """True once the user has hidden the Ko-fi button in the panel footer."""
+    return load_settings().get("kofi_dismissed") is True
+
+
+def set_kofi_dismissed(dismissed: bool = True) -> None:
+    settings = load_settings()
+    settings["kofi_dismissed"] = bool(dismissed)
+    save_settings(settings)
 
 
 def _default_projects_dir() -> Path:

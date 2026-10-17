@@ -12,6 +12,7 @@ from pymappr.ui.control_panel.map_tab import MapTabMixin
 from pymappr.ui.control_panel.tables import PANEL_WIDTH
 from pymappr.ui.control_panel.values import ValuesMixin
 from pymappr.ui.control_panel.widgets import WidgetsMixin
+from pymappr.ui.tooltip import Tooltip
 
 
 class ControlPanel(ttk.Frame, WidgetsMixin, DataTabMixin, MapTabMixin,
@@ -66,11 +67,29 @@ class ControlPanel(ttk.Frame, WidgetsMixin, DataTabMixin, MapTabMixin,
         notebook, so it shows on every tab): support and update actions."""
         bar = ttk.Frame(self)
         bar.pack(side="bottom", fill="x", padx=6, pady=(2, 4))
-        ttk.Button(bar, text="\N{BLACK HEART SUIT} Support on Ko-fi",
-                   command=self.app.on_open_kofi).pack(fill="x", pady=(2, 0))
+        if not self.app.kofi_dismissed():
+            # The row is its own frame so dismissing it removes the whole
+            # line and leaves no gap above "Check for updates".
+            self._kofi_row = ttk.Frame(bar)
+            self._kofi_row.pack(fill="x", pady=(2, 0))
+            ttk.Button(self._kofi_row,
+                       text="\N{BLACK HEART SUIT} Support on Ko-fi",
+                       command=self.app.on_open_kofi).pack(
+                side="left", fill="x", expand=True)
+            self._kofi_dismiss = ttk.Button(
+                self._kofi_row, text="\N{MULTIPLICATION SIGN}", width=2,
+                command=self._dismiss_kofi)
+            self._kofi_dismiss.pack(side="left", padx=(2, 0))
+            Tooltip(self._kofi_dismiss, "Hide this button")
         ttk.Button(bar, text="Check for updates\N{HORIZONTAL ELLIPSIS}",
                    command=self.app.on_check_updates).pack(fill="x",
                                                            pady=(2, 0))
+
+    def _dismiss_kofi(self) -> None:
+        """Hide the footer's Ko-fi button for good (the Help menu keeps the
+        link)."""
+        self.app.on_dismiss_kofi()
+        self._kofi_row.destroy()
 
     # --------------------------------------------------------------- theme
 
