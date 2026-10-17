@@ -129,6 +129,8 @@ class Store {
   info = $state<AppInfo | null>(null);
   theme = $state<Theme>("light");
   advanced = $state(false);
+  /** The footer's Ko-fi button was dismissed; the Help menu and About keep the link. */
+  kofiHidden = $state(false);
   status = $state("Ready. Add a data file or open a project to begin.");
   error = $state<string | null>(null);
   busy = $state(false);
@@ -178,6 +180,7 @@ class Store {
       const theme = s.theme === "dark" || s.theme === "light" ? (s.theme as Theme) : null;
       this.setTheme(theme ?? (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"), false);
       this.advanced = s.advanced === true;
+      this.kofiHidden = s.kofiHidden === true;
       this.districts = Array.isArray(s.districtsShown) ? (s.districtsShown as string[]) : [];
     } catch (e) {
       this.error = String(e);
@@ -202,6 +205,11 @@ class Store {
   setAdvanced(on: boolean) {
     this.advanced = on;
     api.setSettings({ advanced: on }).catch(() => {});
+  }
+
+  setKofiHidden(hidden: boolean) {
+    this.kofiHidden = hidden;
+    api.setSettings({ kofiHidden: hidden }).catch(() => {});
   }
 
   // ---- project lifecycle (file handling lives in documents.svelte.ts) ----

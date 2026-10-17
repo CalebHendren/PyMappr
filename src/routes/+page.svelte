@@ -275,7 +275,11 @@
   <div class="col-span-2"><MenuBar {menus} /></div>
   <div class="col-span-2"><Toolbar onAddData={addData} onSaveMap={() => (saving = true)} /></div>
 
-  <Sidebar onKofi={() => openUrl(KOFI)} onCheckUpdates={() => checkUpdates(true)}>
+  <Sidebar
+    showKofi={!store.kofiHidden}
+    onKofi={() => openUrl(KOFI)}
+    onHideKofi={() => store.setKofiHidden(true)}
+    onCheckUpdates={() => checkUpdates(true)}>
     {#snippet data()}
       <DataTab
         onAddData={addData}
