@@ -283,6 +283,14 @@ class PyMapprApp(ProjectFilesMixin, StateMixin, DatasetsMixin, PresetsMixin,
     def on_open_kofi(self) -> None:
         webbrowser.open(updates.KOFI_URL)
 
+    def kofi_dismissed(self) -> bool:
+        return projects.kofi_dismissed()
+
+    def on_dismiss_kofi(self) -> None:
+        """Remember that the panel's Ko-fi button was hidden (the Help menu
+        entry stays)."""
+        projects.set_kofi_dismissed(True)
+
     # -------------------------------------------------------------- updates
 
     def _auto_update_check(self) -> None:

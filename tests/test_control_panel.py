@@ -7,6 +7,7 @@ display (a headless Linux runner, typically).
 from __future__ import annotations
 
 import tkinter as tk
+from tkinter import ttk
 
 import pytest
 
@@ -294,3 +295,55 @@ def test_bad_print_widths_are_rejected(text):
     from pymappr.ui.save_image import parse_print_width
     with pytest.raises(ValueError):
         parse_print_width(text)
+
+
+# ------------------------------------------------------- Ko-fi footer button
+
+class _KofiApp(_FakeApp):
+    def __init__(self, dismissed=False):
+        self.dismissed = dismissed
+        self.persisted = 0
+
+    def kofi_dismissed(self):
+        return self.dismissed
+
+    def on_dismiss_kofi(self):
+        self.persisted += 1
+        self.dismissed = True
+
+
+def _footer_buttons(widget):
+    found, pending = [], [widget]
+    while pending:
+        w = pending.pop()
+        pending.extend(w.winfo_children())
+        if isinstance(w, ttk.Button):
+            found.append(w.cget("text"))
+    return found
+
+
+def test_kofi_button_has_a_dismiss_control(tk_root):
+    app = _KofiApp()
+    widget = ControlPanel(tk_root, app)
+    widget.pack()
+    try:
+        assert any("Support on Ko-fi" in t for t in _footer_buttons(widget))
+        widget._kofi_dismiss.invoke()
+        tk_root.update_idletasks()
+        assert app.persisted == 1
+        texts = _footer_buttons(widget)
+        assert not any("Support on Ko-fi" in t for t in texts)
+        assert "Check for updates…" in texts
+    finally:
+        widget.destroy()
+
+
+def test_dismissed_kofi_button_stays_hidden_on_the_next_launch(tk_root):
+    widget = ControlPanel(tk_root, _KofiApp(dismissed=True))
+    widget.pack()
+    try:
+        texts = _footer_buttons(widget)
+        assert not any("Support on Ko-fi" in t for t in texts)
+        assert not hasattr(widget, "_kofi_row")
+    finally:
+        widget.destroy()

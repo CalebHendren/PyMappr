@@ -165,6 +165,28 @@ def test_settings_and_projects_dir(tmp_path, monkeypatch):
     assert projects.session_path().parent == projects.config_dir()
 
 
+def test_kofi_button_is_shown_until_dismissed(tmp_path, monkeypatch):
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    monkeypatch.setattr(projects.sys, "platform", "linux")
+    assert projects.kofi_dismissed() is False
+    projects.set_projects_dir(tmp_path / "My Projects")
+    projects.set_kofi_dismissed()
+    assert projects.kofi_dismissed() is True
+    # Written to settings.json, and the other settings survive.
+    stored = projects.load_settings()
+    assert stored["kofi_dismissed"] is True
+    assert stored["projects_dir"] == str(tmp_path / "My Projects")
+    projects.set_kofi_dismissed(False)
+    assert projects.kofi_dismissed() is False
+
+
+def test_kofi_dismissed_ignores_a_malformed_value(tmp_path, monkeypatch):
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    monkeypatch.setattr(projects.sys, "platform", "linux")
+    projects.save_settings({"kofi_dismissed": "yes"})
+    assert projects.kofi_dismissed() is False
+
+
 # ------------------------------------------------- legend row overrides
 
 
